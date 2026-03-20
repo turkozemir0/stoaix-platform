@@ -27,40 +27,55 @@ export default function AgentPage() {
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(async ({ data }) => {
       if (!data.user) return
-      supabase
+
+      // Org bul: önce org_users, yoksa super_admin → ilk aktif org
+      let resolvedOrgId = ''
+      const { data: ou } = await supabase
         .from('org_users')
         .select('organization_id')
         .eq('user_id', data.user.id)
         .maybeSingle()
-        .then(({ data: ou }) => {
-          if (!ou) return
-          setOrgId(ou.organization_id)
-          supabase
-            .from('agent_playbooks')
-            .select('id, name, system_prompt_template, hard_blocks')
-            .eq('organization_id', ou.organization_id)
-            .eq('is_active', true)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-            .then(({ data: pb }) => {
-              if (pb) {
-                setPlaybook(pb)
-                setSystemPrompt(pb.system_prompt_template || '')
-                const hb = Array.isArray(pb.hard_blocks) ? pb.hard_blocks : []
-                setBlocks(hb.map((b: any) => ({
-                  keywords: Array.isArray(b.keywords) ? b.keywords.join(', ') : '',
-                  response: b.response || '',
-                })))
-                // working hours satırını çek
-                const match = pb.system_prompt_template?.match(/Çalışma saatleri[^.]+\./i)
-                setWorkingHours(match ? match[0] : '')
-              }
-              setLoading(false)
-            })
-        })
+
+      if (ou) {
+        resolvedOrgId = ou.organization_id
+      } else {
+        // Super admin: ilk aktif org'u göster
+        const { data: firstOrg } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('status', 'active')
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+        if (firstOrg) resolvedOrgId = firstOrg.id
+      }
+
+      if (!resolvedOrgId) { setLoading(false); return }
+      setOrgId(resolvedOrgId)
+
+      const { data: pb } = await supabase
+        .from('agent_playbooks')
+        .select('id, name, system_prompt_template, hard_blocks')
+        .eq('organization_id', resolvedOrgId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (pb) {
+        setPlaybook(pb)
+        setSystemPrompt(pb.system_prompt_template || '')
+        const hb = Array.isArray(pb.hard_blocks) ? pb.hard_blocks : []
+        setBlocks(hb.map((b: any) => ({
+          keywords: Array.isArray(b.keywords) ? b.keywords.join(', ') : '',
+          response: b.response || '',
+        })))
+        const match = pb.system_prompt_template?.match(/Çalışma saatleri[^.]+\./i)
+        setWorkingHours(match ? match[0] : '')
+      }
+      setLoading(false)
     })
   }, [])
 
