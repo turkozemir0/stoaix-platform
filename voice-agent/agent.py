@@ -188,6 +188,12 @@ BİLGİ TABANI (RAG — bu konuşma için ilgili içerik):
 TOPLANMASI GEREKEN BİLGİLER (zorunlu):
 {must_prompts}
 
+VERİ TOPLAMA TARZI (ÇOK ÖNEMLİ):
+- Bu bilgileri SORMADAN ÖNCE kullanıcının sorusunu cevapla.
+- Bilgileri tek seferde sormak YASAK. Konuşma akışına göre, birer birer doğal şekilde sor.
+- Örnek: Kullanıcı ülke sorarsa önce ülkeyi anlat, ardından "Sizi daha iyi yönlendirebilmem için hangi şehirden arıyorsunuz?" şeklinde sadece 1 soru sor.
+- Kullanıcı zaten bir bilgiyi paylaştıysa (yaş, şehir vb.) tekrar sorma.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 YÖNLENDİRME KURALLARI:{routing_text if routing_text else " (tanımlı kural yok)"}
 
@@ -334,8 +340,64 @@ Sadece JSON döndür. Örnek: {{"full_name": "Ali Veli", "phone": null, "budget"
         return {}
 
 
-async def update_lead_data(lead_id: str, intake_fields: list, collected_data: dict):
-    """collected_data, data_completeness, missing_fields güncelle."""
+def calculate_qualification_score(intake_fields: list, collected_data: dict) -> int:
+    """Toplanan veri doluluk oranına göre 0-100 qualification score hesapla."""
+    if not intake_fields or not collected_data:
+        return 0
+
+    must_fields   = [f["key"] for f in intake_fields if f.get("priority") == "must"]
+    should_fields = [f["key"] for f in intake_fields if f.get("priority") == "should"]
+
+    if not must_fields:
+        return 0
+
+    must_collected   = sum(1 for k in must_fields   if collected_data.get(k))
+    should_collected = sum(1 for k in should_fields if collected_data.get(k))
+
+    # Must alanlar %70, should alanlar %30 ağırlık
+    must_score   = (must_collected   / len(must_fields))   * 70 if must_fields   else 0
+    should_score = (should_collected / len(should_fields)) * 30 if should_fields else 0
+
+    return min(100, round(must_score + should_score))
+
+
+async def generate_call_summary(transcript: list, collected_data: dict, org_name: str) -> str:
+    """GPT-4o mini ile konuşmanın kısa AI özetini üret."""
+    if not transcript:
+        return ""
+    try:
+        from openai import OpenAI as OpenAIClient
+        oa = OpenAIClient(api_key=os.environ["OPENAI_API_KEY"])
+
+        transcript_text = "\n".join(
+            f"[{m['role']}] {m['content']}"
+            for m in transcript
+            if m.get("role") in ("user", "assistant")
+        )
+        data_str = ", ".join(f"{k}: {v}" for k, v in collected_data.items() if v)
+
+        prompt = f"""Aşağıdaki sesli görüşmeyi 2-3 cümleyle özetle. Türkçe yaz.
+Müşterinin ilgilendiği konu, temel bilgileri ve sonraki adım varsa belirt.
+Toplanan veriler: {data_str or 'yok'}
+
+Konuşma:
+{transcript_text[:3000]}
+
+Özet:"""
+
+        resp = oa.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        logger.warning(f"summary generation failed: {e}")
+        return ""
+
+
+async def update_lead_data(lead_id: str, intake_fields: list, collected_data: dict, summary: str = ""):
+    """collected_data, data_completeness, missing_fields, score ve özet güncelle."""
     if not lead_id:
         return
     try:
@@ -346,15 +408,21 @@ async def update_lead_data(lead_id: str, intake_fields: list, collected_data: di
             for f in intake_fields
         }
         missing = [k for k in must_keys if not collected_data.get(k)]
+        score   = calculate_qualification_score(intake_fields, collected_data)
+
+        update_payload = {
+            "collected_data":      collected_data,
+            "data_completeness":   completeness,
+            "missing_fields":      missing,
+            "qualification_score": score,
+            "status":              "in_progress" if collected_data else "new",
+        }
+        if summary:
+            update_payload["ai_summary"] = summary
 
         sb = get_supabase()
-        sb.table("leads").update({
-            "collected_data":    collected_data,
-            "data_completeness": completeness,
-            "missing_fields":    missing,
-            "status":            "in_progress" if collected_data else "new",
-        }).eq("id", lead_id).execute()
-        logger.info(f"lead data updated — missing: {missing}")
+        sb.table("leads").update(update_payload).eq("id", lead_id).execute()
+        logger.info(f"lead updated — score: {score}, missing: {missing}")
     except Exception as e:
         logger.warning(f"lead data update failed: {e}")
 
@@ -650,13 +718,15 @@ async def _save_all(
     # 1. Messages
     await save_messages(conv_id, org_id, transcript)
 
-    # 2. Collected data çıkar ve lead güncelle
+    # 2. Collected data çıkar, AI özet üret, lead güncelle
     collected_data = {}
     missing_fields = []
+    summary        = ""
     if lead_id and intake:
         collected_data = await extract_collected_data(transcript, intake)
-        await update_lead_data(lead_id, intake, collected_data)
-        must_keys = {f["key"] for f in intake if f.get("priority") == "must"}
+        summary        = await generate_call_summary(transcript, collected_data, org_id)
+        await update_lead_data(lead_id, intake, collected_data, summary)
+        must_keys      = {f["key"] for f in intake if f.get("priority") == "must"}
         missing_fields = [k for k in must_keys if not collected_data.get(k)]
 
     # 3. Handoff log
