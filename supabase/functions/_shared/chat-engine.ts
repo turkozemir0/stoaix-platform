@@ -1,0 +1,450 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export type Channel = 'whatsapp' | 'instagram'
+
+interface KBMatch {
+  description_for_ai: string
+  data: Record<string, unknown> | null
+}
+
+export interface InboundMessageOptions {
+  supabase:              ReturnType<typeof createClient>
+  orgId:                 string
+  phone:                 string | null   // E.164 — present for WhatsApp, may be null for Instagram
+  providerContactId:     string          // GHL contactId | Meta wa_id | Instagram user id
+  channelIdentifierKey:  string          // key stored inside channel_identifiers JSONB
+  channel:               Channel
+  messageText:           string
+  channelMetadata?:      Record<string, unknown>  // provider-specific extras (location_id, phone_number_id…)
+  sendReply:             (message: string) => Promise<void>
+  onNewLead?:            () => Promise<void>      // e.g. GHL pipeline stage update
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const DEBOUNCE_MS            = 3500
+const MAX_HISTORY            = 10
+const PROCESSING_TIMEOUT_MS  = 120_000  // 2 min — auto-release locks from crashed workers
+
+// ─── Supabase client ──────────────────────────────────────────────────────────
+
+export function getSupabase() {
+  return createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  )
+}
+
+// ─── KB vector search ─────────────────────────────────────────────────────────
+
+async function searchKB(
+  supabase: ReturnType<typeof createClient>,
+  orgId: string,
+  query: string
+): Promise<string> {
+  const embRes = await fetch('https://api.openai.com/v1/embeddings', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')!}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ input: query, model: 'text-embedding-3-small' }),
+  })
+  if (!embRes.ok) return ''
+
+  const { data } = await embRes.json()
+  const { data: matches } = await supabase.rpc('match_knowledge_items', {
+    org_id: orgId,
+    query_vector: data[0].embedding,
+    match_count: 4,
+  })
+
+  if (!matches?.length) return ''
+  return (matches as KBMatch[]).map((m) => {
+    let text = m.description_for_ai || ''
+    const programs = (m.data as any)?.programs
+    if (programs?.length) {
+      text += '\n\nProgram fiyatları:\n' +
+        programs.map((p: any) => `- ${p.name}: ${p.fee} (${p.language})`).join('\n')
+    }
+    return text
+  }).join('\n\n---\n\n')
+}
+
+// ─── Debounce lock ────────────────────────────────────────────────────────────
+
+/**
+ * Atomically claim processing rights.
+ * Succeeds only when:
+ *   - pending_process_id still matches our message (no newer message arrived during debounce)
+ *   - Nobody else is processing (or the lock is older than 2 minutes → auto-released)
+ */
+async function claimProcessing(
+  supabase: ReturnType<typeof createClient>,
+  conversationId: string,
+  messageId: string
+): Promise<boolean> {
+  const timeoutCutoff = new Date(Date.now() - PROCESSING_TIMEOUT_MS).toISOString()
+
+  const { data } = await supabase
+    .from('conversations')
+    .update({
+      is_processing: true,
+      processing_started_at: new Date().toISOString(),
+    })
+    .eq('id', conversationId)
+    .eq('pending_process_id', messageId)
+    .or(`is_processing.eq.false,processing_started_at.lt.${timeoutCutoff}`)
+    .select('id')
+    .maybeSingle()
+
+  return !!data
+}
+
+async function releaseProcessing(
+  supabase: ReturnType<typeof createClient>,
+  conversationId: string
+): Promise<void> {
+  await supabase
+    .from('conversations')
+    .update({ is_processing: false, pending_process_id: null, processing_started_at: null })
+    .eq('id', conversationId)
+}
+
+/**
+ * Returns all user messages since the last assistant reply — i.e. everything
+ * that hasn't been responded to yet, regardless of when they were sent.
+ */
+async function getPendingUserMessages(
+  supabase: ReturnType<typeof createClient>,
+  conversationId: string
+): Promise<string | null> {
+  const { data: lastAssistant } = await supabase
+    .from('messages')
+    .select('created_at')
+    .eq('conversation_id', conversationId)
+    .eq('role', 'assistant')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const since = lastAssistant?.created_at ?? '1970-01-01T00:00:00Z'
+
+  const { data } = await supabase
+    .from('messages')
+    .select('content')
+    .eq('conversation_id', conversationId)
+    .eq('role', 'user')
+    .gt('created_at', since)
+    .order('created_at', { ascending: true })
+
+  if (!data?.length) return null
+  return data.map((m: any) => m.content).join('\n')
+}
+
+// ─── Chat engine ──────────────────────────────────────────────────────────────
+
+async function runChatEngine(
+  supabase: ReturnType<typeof createClient>,
+  orgId: string,
+  conversationId: string,
+  messageText: string,
+  channel: Channel,
+  sendReply: (message: string) => Promise<void>
+): Promise<void> {
+  // Load channel-specific playbook; fall back to 'whatsapp' if no dedicated one exists
+  let { data: playbook } = await supabase
+    .from('agent_playbooks')
+    .select('system_prompt_template, fallback_responses, hard_blocks')
+    .eq('organization_id', orgId)
+    .eq('channel', channel)
+    .order('version', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (!playbook && channel !== 'whatsapp') {
+    const { data: fallback } = await supabase
+      .from('agent_playbooks')
+      .select('system_prompt_template, fallback_responses, hard_blocks')
+      .eq('organization_id', orgId)
+      .eq('channel', 'whatsapp')
+      .order('version', { ascending: false })
+      .limit(1)
+      .single()
+    playbook = fallback
+  }
+
+  if (!playbook) {
+    console.error('No playbook found for org', orgId, 'channel', channel)
+    return
+  }
+
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('name, ai_persona')
+    .eq('id', orgId)
+    .single()
+
+  if (!org) return
+
+  const fallbackResponses = playbook.fallback_responses as Record<string, string>
+
+  // Working hours check (UTC+3)
+  const now   = new Date()
+  const hours = (now.getUTCHours() + 3) % 24
+  const day   = now.getDay()
+  const inHours =
+    (day >= 1 && day <= 5 && hours >= 9 && hours < 18) ||
+    (day === 6 && hours >= 10 && hours < 15)
+
+  if (!inHours) {
+    const reply = fallbackResponses['outside_hours'] ??
+      'Şu an mesai saatlerimiz dışındayız. Sabah sizi arayacağız.'
+    await supabase.from('messages').insert({
+      conversation_id: conversationId, organization_id: orgId,
+      role: 'assistant', content: reply, content_type: 'text',
+    })
+    await sendReply(reply)
+    return
+  }
+
+  // Hard block check
+  const lower      = messageText.toLowerCase()
+  const hardBlocks = (playbook.hard_blocks ?? []) as Array<{ keywords: string[]; response: string }>
+  for (const block of hardBlocks) {
+    if (block.keywords?.some((kw: string) => lower.includes(kw.toLowerCase()))) {
+      await supabase.from('messages').insert({
+        conversation_id: conversationId, organization_id: orgId,
+        role: 'assistant', content: block.response, content_type: 'text',
+      })
+      await sendReply(block.response)
+      return
+    }
+  }
+
+  // KB vector search
+  const kbContext = await searchKB(supabase, orgId, messageText)
+
+  // Conversation history
+  const { data: historyRows } = await supabase
+    .from('messages')
+    .select('role, content')
+    .eq('conversation_id', conversationId)
+    .in('role', ['user', 'assistant'])
+    .order('created_at', { ascending: true })
+    .limit(MAX_HISTORY * 2)
+
+  const history = (historyRows ?? []) as Array<{ role: 'user' | 'assistant'; content: string }>
+
+  // Build system prompt
+  const persona      = org.ai_persona as Record<string, string>
+  const systemPrompt = [
+    playbook.system_prompt_template,
+    kbContext ? `\n\n[BİLGİ TABANI]\n${kbContext}` : '',
+    `\nOrganizasyon: ${org.name}`,
+    persona?.persona_name ? `\nSenin adın: ${persona.persona_name}` : '',
+  ].filter(Boolean).join('')
+
+  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+    ...history.slice(-(MAX_HISTORY * 2 - 1)),
+    { role: 'user', content: messageText },
+  ]
+
+  let reply = ''
+  try {
+    const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')!}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        max_tokens: 400,
+        messages: [{ role: 'system', content: systemPrompt }, ...messages],
+      }),
+    })
+    if (!openaiRes.ok) throw new Error(`OpenAI ${openaiRes.status}`)
+    const openaiData = await openaiRes.json()
+    reply = openaiData.choices?.[0]?.message?.content ?? ''
+  } catch (err) {
+    console.error('OpenAI error:', err)
+    reply = fallbackResponses['error'] ??
+      fallbackResponses['no_kb_match'] ??
+      'Şu an bir sorun yaşıyorum. Lütfen birazdan tekrar yazın.'
+  }
+
+  await supabase.from('messages').insert({
+    conversation_id: conversationId, organization_id: orgId,
+    role: 'assistant', content: reply, content_type: 'text',
+  })
+
+  await sendReply(reply)
+}
+
+// ─── Shared inbound handler ───────────────────────────────────────────────────
+
+/**
+ * Provider-agnostic message handler.
+ * Called by each edge function after normalizing the inbound webhook payload.
+ * Handles contact/lead/conversation upsert, debounce locking, and chat engine.
+ */
+export async function handleInboundMessage(opts: InboundMessageOptions): Promise<void> {
+  const {
+    supabase, orgId, phone, providerContactId, channelIdentifierKey,
+    channel, messageText, channelMetadata, sendReply, onNewLead,
+  } = opts
+
+  // ── Upsert contact ──
+  // Lookup by the provider-specific identifier stored inside channel_identifiers JSONB
+  let contactId: string
+  let isNewContact = false
+
+  const { data: existingContact } = await supabase
+    .from('contacts')
+    .select('id')
+    .eq('organization_id', orgId)
+    .filter(`channel_identifiers->>${channelIdentifierKey}`, 'eq', providerContactId)
+    .maybeSingle()
+
+  if (existingContact?.id) {
+    contactId = existingContact.id
+  } else {
+    const { data: newContact, error } = await supabase
+      .from('contacts')
+      .insert({
+        organization_id: orgId,
+        phone: phone || null,
+        channel_identifiers: {
+          [channelIdentifierKey]: providerContactId,
+          ...(phone ? { phone } : {}),
+        },
+        source_channel: channel,
+        status: 'new',
+      })
+      .select('id')
+      .single()
+
+    if (error || !newContact?.id) {
+      console.error('Contact insert failed:', error)
+      return
+    }
+    contactId  = newContact.id
+    isNewContact = true
+  }
+
+  // ── Upsert lead ──
+  let isNewLead = isNewContact
+  if (!isNewLead) {
+    const { data: existingLead } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('organization_id', orgId)
+      .eq('contact_id', contactId)
+      .maybeSingle()
+    isNewLead = !existingLead?.id
+  }
+
+  if (isNewLead) {
+    await supabase.from('leads').insert({
+      organization_id: orgId,
+      contact_id: contactId,
+      status: 'new',
+      qualification_score: 5,
+      source_channel: channel,
+      collected_data: {},
+    })
+  }
+
+  // ── Find or create active conversation ──
+  let conversationId: string
+
+  const { data: existingConvo } = await supabase
+    .from('conversations')
+    .select('id')
+    .eq('organization_id', orgId)
+    .eq('contact_id', contactId)
+    .eq('channel', channel)
+    .eq('status', 'active')
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (existingConvo?.id) {
+    conversationId = existingConvo.id
+  } else {
+    const { data: newConvo, error } = await supabase
+      .from('conversations')
+      .insert({
+        organization_id: orgId,
+        contact_id: contactId,
+        channel,
+        status: 'active',
+        channel_metadata: channelMetadata ?? {},
+      })
+      .select('id')
+      .single()
+
+    if (error || !newConvo?.id) {
+      console.error('Conversation create failed:', error)
+      return
+    }
+    conversationId = newConvo.id
+  }
+
+  // ── Save user message ──
+  const { data: savedMsg, error: msgErr } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: conversationId,
+      organization_id: orgId,
+      role: 'user',
+      content: messageText,
+      content_type: 'text',
+    })
+    .select('id')
+    .single()
+
+  if (msgErr || !savedMsg?.id) {
+    console.error('Message save failed:', msgErr)
+    return
+  }
+
+  // ── Re-engagement: lead cevap verdi → kalan re_contact task'larını iptal et ──
+  await supabase
+    .from('follow_up_tasks')
+    .update({ status: 'cancelled' })
+    .eq('organization_id', orgId)
+    .eq('contact_id', contactId)
+    .eq('status', 'pending')
+    .like('sequence_stage', 're_contact_%')
+
+  // ── Debounce: mark this message as the pending processor (latest always wins) ──
+  await supabase
+    .from('conversations')
+    .update({ pending_process_id: savedMsg.id })
+    .eq('id', conversationId)
+
+  // Wait for any follow-up messages from the same user
+  await new Promise((resolve) => setTimeout(resolve, DEBOUNCE_MS))
+
+  // Atomically claim exclusive processing rights
+  const claimed = await claimProcessing(supabase, conversationId, savedMsg.id)
+  if (!claimed) return  // a newer message took over, or another worker is already processing
+
+  try {
+    const aggregated = await getPendingUserMessages(supabase, conversationId)
+    if (!aggregated) return
+
+    await runChatEngine(supabase, orgId, conversationId, aggregated, channel, sendReply)
+
+    if (isNewLead && onNewLead) {
+      await onNewLead()
+    }
+  } finally {
+    // Always release the lock — even if an error is thrown above
+    await releaseProcessing(supabase, conversationId)
+  }
+}
