@@ -107,13 +107,20 @@ export default function KBItemModal({ orgId, sector, item, onClose, onSaved }: P
     }
 
     if (field.type === 'tags') {
+      const displayVal = Array.isArray(val) ? val.join(', ') : (val || '')
       return (
         <input
           type="text"
-          value={Array.isArray(val) ? val.join(', ') : val}
+          value={displayVal}
           onChange={e => {
-            const arr = e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-            setField(field.name, arr.length > 0 || e.target.value.endsWith(',') ? arr : e.target.value)
+            const raw = e.target.value
+            // Preserve trailing comma so user can continue typing next tag
+            if (raw.endsWith(',') || raw.endsWith(', ')) {
+              setField(field.name, raw)
+            } else {
+              const arr = raw.split(',').map(s => s.trim()).filter(Boolean)
+              setField(field.name, arr.length > 0 ? arr : raw)
+            }
           }}
           placeholder={field.placeholder || 'Virgülle ayır...'}
           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
@@ -122,12 +129,20 @@ export default function KBItemModal({ orgId, sector, item, onClose, onSaved }: P
     }
 
     if (field.type === 'array') {
-      const arr: string[] = Array.isArray(val) ? val : []
+      const displayVal = Array.isArray(val) ? val.join(', ') : (val || '')
       return (
         <input
           type="text"
-          value={arr.join(', ')}
-          onChange={e => setField(field.name, e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+          value={displayVal}
+          onChange={e => {
+            const raw = e.target.value
+            // Preserve trailing comma so user can continue typing next item
+            if (raw.endsWith(',') || raw.endsWith(', ')) {
+              setField(field.name, raw)
+            } else {
+              setField(field.name, raw.split(',').map(s => s.trim()).filter(Boolean))
+            }
+          }}
           placeholder={field.placeholder || 'Virgülle ayır...'}
           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
         />
