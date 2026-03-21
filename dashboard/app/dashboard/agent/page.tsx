@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare } from 'lucide-react'
 
-type Channel = 'voice' | 'chat'
+type Channel = 'voice' | 'whatsapp'
 
 interface PlaybookState {
   id?: string
@@ -21,16 +21,16 @@ export default function AgentPage() {
   const [activeChannel, setActiveChannel] = useState<Channel>('voice')
 
   const [voice, setVoice] = useState<PlaybookState>(EMPTY)
-  const [chat, setChat] = useState<PlaybookState>(EMPTY)
+  const [whatsapp, setWhatsapp] = useState<PlaybookState>(EMPTY)
 
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedChannel, setSavedChannel] = useState<Channel | null>(null)
   const [error, setError] = useState('')
 
-  const current = activeChannel === 'voice' ? voice : chat
+  const current = activeChannel === 'voice' ? voice : whatsapp
   const setCurrent = (fn: (prev: PlaybookState) => PlaybookState) =>
-    activeChannel === 'voice' ? setVoice(fn) : setChat(fn)
+    activeChannel === 'voice' ? setVoice(fn) : setWhatsapp(fn)
 
   useEffect(() => {
     const supabase = createClient()
@@ -66,7 +66,7 @@ export default function AgentPage() {
         .select('id, channel, system_prompt_template, hard_blocks, features')
         .eq('organization_id', resolvedOrgId)
         .eq('is_active', true)
-        .in('channel', ['voice', 'chat', 'all'])
+        .in('channel', ['voice', 'whatsapp', 'chat', 'all'])
         .order('version', { ascending: false })
 
       const parsePlaybook = (pb: any): PlaybookState => ({
@@ -81,10 +81,11 @@ export default function AgentPage() {
 
       if (playbooks) {
         // channel'a özgün önce, 'all' fallback
+        // chat kanalı için: 'whatsapp' önce (engine canonical), 'chat' legacy fallback
         const voicePb = playbooks.find(p => p.channel === 'voice') || playbooks.find(p => p.channel === 'all')
-        const chatPb = playbooks.find(p => p.channel === 'chat') || playbooks.find(p => p.channel === 'all')
+        const whatsappPb = playbooks.find(p => p.channel === 'whatsapp') || playbooks.find(p => p.channel === 'chat') || playbooks.find(p => p.channel === 'all')
         if (voicePb) setVoice(parsePlaybook(voicePb))
-        if (chatPb) setChat(parsePlaybook(chatPb))
+        if (whatsappPb) setWhatsapp(parsePlaybook(whatsappPb))
       }
 
       setLoading(false)
@@ -143,7 +144,7 @@ export default function AgentPage() {
         .insert({
           organization_id: orgId,
           channel: activeChannel,
-          name: activeChannel === 'voice' ? 'Sesli Asistan' : 'Chat Asistanı',
+          name: activeChannel === 'voice' ? 'Sesli Asistan' : 'WhatsApp/Chat Asistanı',
           system_prompt_template: current.systemPrompt,
           hard_blocks,
           features: current.features,
@@ -226,16 +227,16 @@ export default function AgentPage() {
           )}
         </button>
         <button
-          onClick={() => setActiveChannel('chat')}
+          onClick={() => setActiveChannel('whatsapp')}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            activeChannel === 'chat'
+            activeChannel === 'whatsapp'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-500 hover:text-slate-700'
           }`}
         >
           <MessageSquare size={15} />
           Mesajlaşma
-          {chat.id && (
+          {whatsapp.id && (
             <span className="w-1.5 h-1.5 rounded-full bg-green-500" title="Yapılandırıldı" />
           )}
         </button>

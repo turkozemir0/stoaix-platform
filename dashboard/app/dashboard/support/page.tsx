@@ -50,7 +50,7 @@ export default function SupportPage() {
         .eq('user_id', data.user.id)
         .maybeSingle()
         .then(({ data: ou }) => {
-          if (!ou) return
+          if (!ou) { setLoading(false); return }
           setOrgId(ou.organization_id)
           supabase
             .from('support_tickets')
