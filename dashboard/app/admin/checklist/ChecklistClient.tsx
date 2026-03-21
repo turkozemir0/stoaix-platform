@@ -60,22 +60,7 @@ const PHASES: Phase[] = [
       {
         id: 'g5',
         label: 'crm_config Supabase\'e girildi (location_id, pit_token, pipeline_id, stage_mapping)',
-        note: 'GHL → Settings → Business Profile → Location ID\nGHL → Settings → Integrations → Private Integration Token',
-        code: `UPDATE public.organizations
-SET crm_config = '{
-  "provider":     "ghl",
-  "location_id":  "GHL_LOCATION_ID",
-  "pit_token":    "GHL_PIT_TOKEN",
-  "pipeline_id":  "GHL_PIPELINE_ID",
-  "stage_mapping": {
-    "ai_qualifying":      "STAGE_ID_AI_QUALIFYING",
-    "nurturing":          "STAGE_ID_NURTURING",
-    "appointment_booked": "STAGE_ID_APPOINTMENT",
-    "won":                "STAGE_ID_WON",
-    "lost":               "STAGE_ID_LOST"
-  }
-}'::jsonb
-WHERE id = 'ORG_ID_BURAYA';`,
+        note: 'Admin paneli → /admin → org satırındaki ⚙ butonu → CRM sekmesi\nLocation ID: GHL → Settings → Business Profile\nPIT Token: GHL → Settings → Integrations → Private Integration Token',
       },
       {
         id: 'g6',
@@ -347,11 +332,11 @@ export default function ChecklistClient({ orgs }: { orgs: Org[] }) {
 
       {/* System notes */}
       <div className="bg-amber-50 border border-amber-100 rounded-xl p-5 space-y-2">
-        <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">⚠ Şu an manuel yapılan adımlar</p>
+        <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">⚠ Manuel gerektiren adımlar</p>
         <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
-          <li><strong>crm_config</strong> — Supabase SQL Editor'dan manuel UPDATE ile giriliyor (2. fazın 5. adımı). Admin UI henüz yok.</li>
-          <li><strong>Voice agent org config</strong> — voice-agent/agent.py dosyası manuel güncelleniyor ve LiveKit'e yeniden deploy ediliyor.</li>
-          <li><strong>GHL Snapshot</strong> — GHL tarafında bir kez manuel import edilmesi gerekiyor. Müşteri başına tekrar yapılıyor.</li>
+          <li><strong>crm_config</strong> — Admin paneli → org satırındaki ⚙ butonu → CRM sekmesinden formla doldurulur.</li>
+          <li><strong>Voice agent org config</strong> — Admin paneli → ⚙ → Ses/SIP sekmesinden LiveKit Dispatch Rule ID ve Trunk ID girilir.</li>
+          <li><strong>GHL Snapshot</strong> — GHL tarafında bir kez manuel import gerekiyor (GHL'nin kendi özelliği).</li>
         </ul>
       </div>
 
