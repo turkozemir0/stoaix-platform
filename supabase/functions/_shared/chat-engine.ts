@@ -144,6 +144,110 @@ async function getPendingUserMessages(
   return data.map((m: any) => m.content).join('\n')
 }
 
+// ─── Calendar helpers ─────────────────────────────────────────────────────────
+
+const CALENDAR_INTENT_KEYWORDS = [
+  'randevu', 'toplantı', 'görüşme', 'saat', 'ne zaman', 'müsait',
+  'appointment', 'book', 'rezervasyon', 'buluşma', 'uygun',
+]
+
+function hasCalendarIntent(text: string): boolean {
+  const lower = text.toLowerCase()
+  return CALENDAR_INTENT_KEYWORDS.some(kw => lower.includes(kw))
+}
+
+async function getCalendarId(
+  supabase: ReturnType<typeof createClient>,
+  orgId: string
+): Promise<string | null> {
+  const { data } = await supabase
+    .from('organizations')
+    .select('crm_config')
+    .eq('id', orgId)
+    .single()
+  return (data?.crm_config as Record<string, string>)?.calendar_id || null
+}
+
+async function getPitToken(
+  supabase: ReturnType<typeof createClient>,
+  orgId: string
+): Promise<string | null> {
+  const { data } = await supabase
+    .from('organizations')
+    .select('crm_config')
+    .eq('id', orgId)
+    .single()
+  return (data?.crm_config as Record<string, string>)?.pit_token || null
+}
+
+async function fetchFreeSlots(calendarId: string, pitToken: string): Promise<string> {
+  try {
+    const now      = new Date()
+    const startDate = now.toISOString().split('T')[0]
+    const endDate   = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+
+    const url = `https://services.leadconnectorhq.com/calendars/${calendarId}/free-slots` +
+      `?startDate=${startDate}&endDate=${endDate}&timezone=Europe%2FIstanbul`
+
+    const res = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${pitToken}`,
+        'Version': '2021-04-15',
+        'Accept': 'application/json',
+      },
+    })
+    if (!res.ok) return ''
+
+    const json = await res.json()
+    // GHL free-slots response: { slots: { "2026-03-22": ["10:00","14:00"], ... } }
+    const slots = json.slots as Record<string, string[]> | undefined
+    if (!slots) return ''
+
+    const DAYS = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi']
+    const lines: string[] = []
+    for (const [date, times] of Object.entries(slots)) {
+      if (!times?.length) continue
+      const d = new Date(date + 'T00:00:00')
+      const dayName = DAYS[d.getDay()]
+      lines.push(`${dayName} (${date}): ${times.slice(0, 5).join(', ')}`)
+    }
+    return lines.join('\n')
+  } catch {
+    return ''
+  }
+}
+
+async function createAppointment(
+  calendarId: string,
+  pitToken: string,
+  data: { name: string; phone: string; datetimeStr: string; notes?: string }
+): Promise<boolean> {
+  try {
+    const res = await fetch('https://services.leadconnectorhq.com/calendars/events/appointments', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${pitToken}`,
+        'Version': '2021-04-15',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        calendarId,
+        selectedTimezone: 'Europe/Istanbul',
+        startTime: data.datetimeStr,
+        title: `Randevu — ${data.name}`,
+        appointmentStatus: 'confirmed',
+        address: '',
+        notes: data.notes || '',
+        contactName: data.name,
+        phone: data.phone,
+      }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 // ─── Chat engine ──────────────────────────────────────────────────────────────
 
 async function runChatEngine(
@@ -157,7 +261,7 @@ async function runChatEngine(
   // Load channel-specific playbook; fall back to 'whatsapp' if no dedicated one exists
   let { data: playbook } = await supabase
     .from('agent_playbooks')
-    .select('system_prompt_template, fallback_responses, hard_blocks')
+    .select('system_prompt_template, fallback_responses, hard_blocks, features')
     .eq('organization_id', orgId)
     .eq('channel', channel)
     .order('version', { ascending: false })
@@ -167,7 +271,7 @@ async function runChatEngine(
   if (!playbook && channel !== 'whatsapp') {
     const { data: fallback } = await supabase
       .from('agent_playbooks')
-      .select('system_prompt_template, fallback_responses, hard_blocks')
+      .select('system_prompt_template, fallback_responses, hard_blocks, features')
       .eq('organization_id', orgId)
       .eq('channel', 'whatsapp')
       .order('version', { ascending: false })
@@ -238,11 +342,30 @@ async function runChatEngine(
 
   const history = (historyRows ?? []) as Array<{ role: 'user' | 'assistant'; content: string }>
 
+  // Calendar slot injection (only if feature is enabled and message has booking intent)
+  let calendarSection = ''
+  const features = (playbook as any).features as Record<string, boolean> | null
+  if (features?.calendar_booking && hasCalendarIntent(messageText)) {
+    const [calId, pitTok] = await Promise.all([
+      getCalendarId(supabase, orgId),
+      getPitToken(supabase, orgId),
+    ])
+    if (calId && pitTok) {
+      const slots = await fetchFreeSlots(calId, pitTok)
+      if (slots) {
+        calendarSection = `\n\n━━━ TAKVİM (anlık müsait saatler) ━━━\n${slots}\nRandevu oluşturmak için müşteriden ad, telefon ve tercih edilen saat iste.\nRandevu onaylanınca "RANDEVU_AL:ad=...,telefon=...,saat=YYYY-MM-DDTHH:MM" formatında yaz.`
+      } else {
+        calendarSection = `\n\n━━━ TAKVİM ━━━\nTakvime şu an erişilemiyor. Müşteriye "Ekibimiz en kısa sürede sizi arayıp randevu ayarlayacak" de ve telefon numarasını al.`
+      }
+    }
+  }
+
   // Build system prompt
   const persona      = org.ai_persona as Record<string, string>
   const systemPrompt = [
     playbook.system_prompt_template,
     kbContext ? `\n\n[BİLGİ TABANI]\n${kbContext}` : '',
+    calendarSection,
     `\nOrganizasyon: ${org.name}`,
     persona?.persona_name ? `\nSenin adın: ${persona.persona_name}` : '',
   ].filter(Boolean).join('')
@@ -274,6 +397,33 @@ async function runChatEngine(
     reply = fallbackResponses['error'] ??
       fallbackResponses['no_kb_match'] ??
       'Şu an bir sorun yaşıyorum. Lütfen birazdan tekrar yazın.'
+  }
+
+  // Parse booking intent from AI reply (RANDEVU_AL:ad=...,telefon=...,saat=...)
+  if (features?.calendar_booking && reply.includes('RANDEVU_AL:')) {
+    try {
+      const match = reply.match(/RANDEVU_AL:([^\n]+)/)
+      if (match) {
+        const params = Object.fromEntries(
+          match[1].split(',').map(p => p.split('=').map(s => s.trim()))
+        )
+        const [calId, pitTok] = await Promise.all([
+          getCalendarId(supabase, orgId),
+          getPitToken(supabase, orgId),
+        ])
+        if (calId && pitTok && params.ad && params.saat) {
+          await createAppointment(calId, pitTok, {
+            name: params.ad,
+            phone: params.telefon || '',
+            datetimeStr: params.saat,
+          })
+        }
+        // Strip the booking command from the user-visible reply
+        reply = reply.replace(/RANDEVU_AL:[^\n]*/g, '').trim()
+      }
+    } catch {
+      // Booking parse failed — reply is still sent as-is
+    }
   }
 
   await supabase.from('messages').insert({

@@ -40,6 +40,11 @@ const PHASES: Phase[] = [
         label: 'Agent Playbook kontrol edildi / AI persona güncellendi',
         note: 'Dashboard → AI Asistan → Chat sekmesinden sistem promptu ve persona ayarla',
       },
+      {
+        id: 'p5',
+        label: 'Randevu özelliği açılacaksa: GHL\'de takvim oluşturuldu ve Calendar ID admin paneline girildi',
+        note: 'Admin paneli → org ⚙ → CRM sekmesi → Calendar ID\nGHL → Calendars → Takvim seç → Settings → Calendar ID\nArdından Dashboard → AI Asistan → Özellikler → Randevu Alma toggle\'ını aç',
+      },
     ],
   },
   {
@@ -111,8 +116,8 @@ const PHASES: Phase[] = [
       },
       {
         id: 'v3',
-        label: 'voice-agent/agent.py\'de org konfigürasyonu eklendi ve deploy edildi',
-        note: 'organization_id ile yeni org route\'u tanımlandı',
+        label: 'Admin panelinde org için LiveKit Dispatch Rule ID ve SIP Trunk ID girildi',
+        note: 'Admin paneli → org satırındaki ⚙ → Ses/SIP sekmesi\nDispatch Rule: LiveKit Cloud → SIP → Dispatch Rules → "+ Add Rule" → Inbound Trunk seç → Metadata: {"organization_id": "ORG_UUID"}\nAgent kod değişikliği gerekmez — agent.py org_id\'yi room metadata\'sından otomatik okur',
         voiceOnly: true,
       },
       {

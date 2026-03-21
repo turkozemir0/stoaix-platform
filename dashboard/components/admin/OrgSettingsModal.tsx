@@ -50,6 +50,7 @@ interface CrmConfig {
   location_id?: string
   pit_token?: string
   pipeline_id?: string
+  calendar_id?: string
   stage_mapping?: Record<string, string>
   access_token?: string
   hubspot_pipeline_id?: string
@@ -202,6 +203,7 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
   const [ghlLocationId, setGhlLocationId]   = useState('')
   const [ghlPitToken, setGhlPitToken]       = useState('')
   const [ghlPipelineId, setGhlPipelineId]   = useState('')
+  const [ghlCalendarId, setGhlCalendarId]   = useState('')
   const [ghlStages, setGhlStages]           = useState<Record<string, string>>(
     Object.fromEntries(CRM_STAGES.map(s => [s, '']))
   )
@@ -251,6 +253,7 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
       setGhlLocationId(crm.location_id ?? '')
       setGhlPitToken(crm.pit_token ?? '')
       setGhlPipelineId(crm.pipeline_id ?? '')
+      setGhlCalendarId(crm.calendar_id ?? '')
       setGhlStages(Object.fromEntries(CRM_STAGES.map(s => [s, crm.stage_mapping?.[s] ?? ''])))
       setHsToken(crm.access_token ?? '')
       setHsPipeline(crm.hubspot_pipeline_id ?? '')
@@ -315,6 +318,7 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
         location_id: ghlLocationId.trim(),
         pit_token: ghlPitToken.trim(),
         pipeline_id: ghlPipelineId.trim(),
+        ...(ghlCalendarId.trim() && { calendar_id: ghlCalendarId.trim() }),
         stage_mapping: Object.fromEntries(
           CRM_STAGES.map(s => [s, ghlStages[s]?.trim()]).filter(([, v]) => v)
         ),
@@ -570,6 +574,7 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
                       <Field label="Location ID"  value={ghlLocationId}  onChange={setGhlLocationId}  placeholder="X3qwbLZZb54GjqpOplS2" />
                       <Field label="PIT Token"    value={ghlPitToken}    onChange={setGhlPitToken}    placeholder="pit-xxxxxxxx-..." />
                       <Field label="Pipeline ID"  value={ghlPipelineId}  onChange={setGhlPipelineId}  placeholder="9DI3LIUinUSExbsELlhY" />
+                      <Field label="Calendar ID (opsiyonel)" value={ghlCalendarId} onChange={setGhlCalendarId} placeholder="xxxxxxxxxxxxxxxx" hint="GHL → Calendars → takvim → Settings → Calendar ID — Randevu özelliği için gerekli" />
                     </div>
                   )}
 

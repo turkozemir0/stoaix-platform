@@ -10,9 +10,10 @@ interface PlaybookState {
   id?: string
   systemPrompt: string
   blocks: { keywords: string; response: string }[]
+  features: { calendar_booking: boolean }
 }
 
-const EMPTY: PlaybookState = { systemPrompt: '', blocks: [] }
+const EMPTY: PlaybookState = { systemPrompt: '', blocks: [], features: { calendar_booking: false } }
 
 export default function AgentPage() {
   const [orgId, setOrgId] = useState('')
@@ -62,7 +63,7 @@ export default function AgentPage() {
       // Her iki kanalı da yükle
       const { data: playbooks } = await supabase
         .from('agent_playbooks')
-        .select('id, channel, system_prompt_template, hard_blocks')
+        .select('id, channel, system_prompt_template, hard_blocks, features')
         .eq('organization_id', resolvedOrgId)
         .eq('is_active', true)
         .in('channel', ['voice', 'chat', 'all'])
@@ -75,6 +76,7 @@ export default function AgentPage() {
           keywords: Array.isArray(b.keywords) ? b.keywords.join(', ') : '',
           response: b.response || '',
         })),
+        features: pb.features ?? { calendar_booking: false },
       })
 
       if (playbooks) {
@@ -130,6 +132,7 @@ export default function AgentPage() {
         .update({
           system_prompt_template: current.systemPrompt,
           hard_blocks,
+          features: current.features,
           updated_at: new Date().toISOString(),
         })
         .eq('id', current.id)
@@ -143,6 +146,7 @@ export default function AgentPage() {
           name: activeChannel === 'voice' ? 'Sesli Asistan' : 'Chat Asistanı',
           system_prompt_template: current.systemPrompt,
           hard_blocks,
+          features: current.features,
           version: 1,
           is_active: true,
         })
@@ -290,6 +294,40 @@ export default function AgentPage() {
             💡 Sayı okuma kuralları, bilgi bankası ve veri toplama talimatları runtime'da otomatik eklenir — buraya yazmanıza gerek yok.
           </p>
         )}
+      </div>
+
+      {/* Özellikler */}
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-800">Özellikler</h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Kanalı için açmak istediğiniz ek özellikleri etkinleştirin.
+          </p>
+        </div>
+        <div className="flex items-center justify-between p-4 border border-slate-100 rounded-xl">
+          <div>
+            <p className="text-sm font-medium text-slate-800">Randevu Alma</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Müşteri randevu talep edince GHL takviminizden uygun saatleri gösterir ve randevu oluşturur.
+              <br />
+              <span className="text-slate-300">Gerekli: Admin → CRM → Calendar ID doldurulmuş olmalı.</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCurrent(prev => ({
+              ...prev,
+              features: { ...prev.features, calendar_booking: !prev.features.calendar_booking },
+            }))}
+            className={`relative inline-flex h-6 w-11 rounded-full transition-colors flex-shrink-0 ${
+              current.features.calendar_booking ? 'bg-brand-500' : 'bg-slate-200'
+            }`}
+          >
+            <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+              current.features.calendar_booking ? 'translate-x-5' : ''
+            }`} />
+          </button>
+        </div>
       </div>
 
       {/* Hard Blocks */}

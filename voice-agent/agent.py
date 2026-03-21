@@ -14,6 +14,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from typing import Annotated
 
 from dotenv import load_dotenv
 from livekit.agents import (
@@ -24,6 +25,7 @@ from livekit.agents import (
     RoomInputOptions,
     WorkerOptions,
     cli,
+    llm,
 )
 from livekit.plugins import cartesia, deepgram, openai, silero
 
@@ -136,6 +138,84 @@ async def vector_search_kb(org_id: str, query: str, limit: int = 5) -> str:
         return ""
 
 
+# ── Calendar API helpers ───────────────────────────────────────────────────────
+
+async def fetch_free_slots_ghl(calendar_id: str, pit_token: str) -> str:
+    """GHL free-slots API'sinden sonraki 3 günün müsait saatlerini çek."""
+    import urllib.request
+    try:
+        from datetime import timedelta
+        now = datetime.now(timezone.utc)
+        start_date = now.strftime("%Y-%m-%d")
+        end_date = (now + timedelta(days=3)).strftime("%Y-%m-%d")
+
+        url = (
+            f"https://services.leadconnectorhq.com/calendars/{calendar_id}/free-slots"
+            f"?startDate={start_date}&endDate={end_date}&timezone=Europe%2FIstanbul"
+        )
+        req = urllib.request.Request(url, headers={
+            "Authorization": f"Bearer {pit_token}",
+            "Version": "2021-04-15",
+            "Accept": "application/json",
+        })
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+
+        slots = data.get("slots", {})
+        if not slots:
+            return ""
+
+        DAYS = ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"]
+        lines = []
+        for date, times in slots.items():
+            if not times:
+                continue
+            d = datetime.strptime(date, "%Y-%m-%d")
+            lines.append(f"{DAYS[d.weekday() + 1 if d.weekday() < 6 else 0]} ({date}): {', '.join(times[:5])}")
+        return "\n".join(lines)
+    except Exception as e:
+        logger.warning(f"fetch_free_slots failed: {e}")
+        return ""
+
+
+async def create_appointment_ghl(
+    calendar_id: str,
+    pit_token: str,
+    name: str,
+    phone: str,
+    datetime_str: str,
+    notes: str = "",
+) -> bool:
+    """GHL'de randevu oluştur."""
+    import urllib.request
+    try:
+        payload = json.dumps({
+            "calendarId": calendar_id,
+            "selectedTimezone": "Europe/Istanbul",
+            "startTime": datetime_str,
+            "title": f"Randevu — {name}",
+            "appointmentStatus": "confirmed",
+            "notes": notes,
+            "contactName": name,
+            "phone": phone,
+        }).encode()
+        req = urllib.request.Request(
+            "https://services.leadconnectorhq.com/calendars/events/appointments",
+            data=payload,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {pit_token}",
+                "Version": "2021-04-15",
+                "Content-Type": "application/json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status in (200, 201)
+    except Exception as e:
+        logger.warning(f"create_appointment failed: {e}")
+        return False
+
+
 # ── Prompt builder ─────────────────────────────────────────────────────────────
 
 def build_system_prompt(
@@ -143,6 +223,7 @@ def build_system_prompt(
     playbook: dict,
     intake_fields: list,
     kb_context: str,
+    calendar_enabled: bool = False,
 ) -> str:
     persona      = org.get("ai_persona", {})
     persona_name = persona.get("persona_name", "Asistan")
@@ -207,7 +288,12 @@ HANDOFF TETİKLEYİCİLER:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 HALÜSİNASYON KURALI:
 {fallback_no_kb}
-"""
+{"" if not calendar_enabled else """
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RANDEVU ALMA:
+Kullanıcı randevu, görüşme veya uygun saat talep ederse check_availability tool'unu çağır.
+Kullanıcı uygun bir saati seçince ad ve telefon al, ardından book_appointment tool'unu çağır.
+"""}"""
 
 
 # ── Agent sınıfı ───────────────────────────────────────────────────────────────
@@ -590,6 +676,15 @@ async def entrypoint(ctx: JobContext):
     lang         = meta.get("lang") or persona.get("language", "tr")
     room_name    = ctx.room.name
 
+    # Calendar feature
+    features         = (playbook or {}).get("features", {}) if playbook else {}
+    calendar_enabled = features.get("calendar_booking", False)
+    crm_config       = org.get("crm_config", {})
+    calendar_id      = crm_config.get("calendar_id", "")
+    pit_token        = crm_config.get("pit_token", "")
+    if not (calendar_id and pit_token):
+        calendar_enabled = False
+
     logger.info(f"{'Outbound' if scenario else 'Inbound'} — org: {org['name']} | lang: {lang} | scenario: {scenario}")
 
     # Handoff keyword listesi (runtime'da kontrol için)
@@ -600,7 +695,7 @@ async def entrypoint(ctx: JobContext):
     # ── İnbound ───────────────────────────────────────────────────────────────
     if not scenario:
         initial_kb = await vector_search_kb(org_id, "genel bilgi hizmetler")
-        system_prompt = build_system_prompt(org, playbook, intake, initial_kb)
+        system_prompt = build_system_prompt(org, playbook, intake, initial_kb, calendar_enabled)
         opening    = f"Merhaba, {org['name']}, ben {persona_name} — buyurun, sizi dinliyorum."
         direction  = "inbound"
         phone_from = meta.get("phone_from", "")
@@ -640,6 +735,32 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
     # ── Conversation aç ───────────────────────────────────────────────────────
     conv_id = await create_conversation(org_id, contact_id, lead_id, room_name)
 
+    # ── Calendar tools (only if feature enabled) ───────────────────────────────
+    fnc_ctx = None
+    if calendar_enabled:
+        fnc_ctx = llm.FunctionContext()
+
+        @fnc_ctx.ai_callable(description="Müsait randevu saatlerini listeler. Kullanıcı randevu/görüşme istediğinde çağır.")
+        async def check_availability(
+            date: Annotated[str, llm.TypeInfo(description="Kontrol edilecek tarih, YYYY-MM-DD formatında. Belirtilmezse yakın 3 günü döndür.")] = ""
+        ) -> str:
+            slots = await fetch_free_slots_ghl(calendar_id, pit_token)
+            if not slots:
+                return "TAKVİM_HATA: Takvime şu an erişemiyorum. Kullanıcıya ekibimizin en kısa sürede kendisini arayacağını söyle ve görüşmeyi nazikçe sonlandır."
+            return f"Müsait saatler:\n{slots}"
+
+        @fnc_ctx.ai_callable(description="Randevu oluşturur. Kullanıcı ad, telefon ve saat bilgisini verdikten sonra çağır.")
+        async def book_appointment(
+            name: Annotated[str, llm.TypeInfo(description="Randevu sahibinin adı soyadı")],
+            phone: Annotated[str, llm.TypeInfo(description="Telefon numarası, +90 ile başlayan format")],
+            datetime_str: Annotated[str, llm.TypeInfo(description="Randevu tarihi ve saati, YYYY-MM-DDTHH:MM formatında")],
+            notes: Annotated[str, llm.TypeInfo(description="Ek notlar veya özel istekler")] = "",
+        ) -> str:
+            ok = await create_appointment_ghl(calendar_id, pit_token, name, phone, datetime_str, notes)
+            if ok:
+                return f"Randevunuz oluşturuldu: {name}, {datetime_str}. Onay bilgisi size iletilecektir."
+            return "Randevu oluşturulurken bir sorun oluştu. Lütfen tekrar deneyin veya bizi arayın."
+
     # ── Session ───────────────────────────────────────────────────────────────
     VOICE_IDS = {
         "tr": os.environ.get("CARTESIA_VOICE_ID_TR", "c1cfee3d-532d-47f8-8dd2-8e5b2b66bf1d"),
@@ -656,6 +777,7 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
             language=tts_lang,
         ),
         vad=silero.VAD.load(),
+        **({"fnc_ctx": fnc_ctx} if fnc_ctx else {}),
     )
 
     call_start     = datetime.utcnow()
