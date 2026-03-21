@@ -2,35 +2,40 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Save, Loader2, Plus, Trash2, Bot } from 'lucide-react'
+import { Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare } from 'lucide-react'
 
-interface Playbook {
-  id: string
-  name: string
-  system_prompt_template: string
-  hard_blocks: { trigger_id: string; keywords: string[]; response: string }[]
-  working_hours?: string
+type Channel = 'voice' | 'chat'
+
+interface PlaybookState {
+  id?: string
+  systemPrompt: string
+  blocks: { keywords: string; response: string }[]
 }
 
+const EMPTY: PlaybookState = { systemPrompt: '', blocks: [] }
+
 export default function AgentPage() {
-  const [playbook, setPlaybook] = useState<Playbook | null>(null)
   const [orgId, setOrgId] = useState('')
   const [loading, setLoading] = useState(true)
+  const [activeChannel, setActiveChannel] = useState<Channel>('voice')
+
+  const [voice, setVoice] = useState<PlaybookState>(EMPTY)
+  const [chat, setChat] = useState<PlaybookState>(EMPTY)
+
+  const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [savedChannel, setSavedChannel] = useState<Channel | null>(null)
   const [error, setError] = useState('')
 
-  // Form state
-  const [systemPrompt, setSystemPrompt] = useState('')
-  const [blocks, setBlocks] = useState<{ keywords: string; response: string }[]>([])
-  const [workingHours, setWorkingHours] = useState('')
+  const current = activeChannel === 'voice' ? voice : chat
+  const setCurrent = (fn: (prev: PlaybookState) => PlaybookState) =>
+    activeChannel === 'voice' ? setVoice(fn) : setChat(fn)
 
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data }) => {
       if (!data.user) return
 
-      // Org bul: önce org_users, yoksa super_admin → ilk aktif org
       let resolvedOrgId = ''
       const { data: ou } = await supabase
         .from('org_users')
@@ -41,7 +46,6 @@ export default function AgentPage() {
       if (ou) {
         resolvedOrgId = ou.organization_id
       } else {
-        // Super admin: ilk aktif org'u göster
         const { data: firstOrg } = await supabase
           .from('organizations')
           .select('id')
@@ -55,48 +59,61 @@ export default function AgentPage() {
       if (!resolvedOrgId) { setLoading(false); return }
       setOrgId(resolvedOrgId)
 
-      const { data: pb } = await supabase
+      // Her iki kanalı da yükle
+      const { data: playbooks } = await supabase
         .from('agent_playbooks')
-        .select('id, name, system_prompt_template, hard_blocks')
+        .select('id, channel, system_prompt_template, hard_blocks')
         .eq('organization_id', resolvedOrgId)
         .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+        .in('channel', ['voice', 'chat', 'all'])
+        .order('version', { ascending: false })
 
-      if (pb) {
-        setPlaybook(pb)
-        setSystemPrompt(pb.system_prompt_template || '')
-        const hb = Array.isArray(pb.hard_blocks) ? pb.hard_blocks : []
-        setBlocks(hb.map((b: any) => ({
+      const parsePlaybook = (pb: any): PlaybookState => ({
+        id: pb.id,
+        systemPrompt: pb.system_prompt_template || '',
+        blocks: (Array.isArray(pb.hard_blocks) ? pb.hard_blocks : []).map((b: any) => ({
           keywords: Array.isArray(b.keywords) ? b.keywords.join(', ') : '',
           response: b.response || '',
-        })))
-        const match = pb.system_prompt_template?.match(/Çalışma saatleri[^.]+\./i)
-        setWorkingHours(match ? match[0] : '')
+        })),
+      })
+
+      if (playbooks) {
+        // channel'a özgün önce, 'all' fallback
+        const voicePb = playbooks.find(p => p.channel === 'voice') || playbooks.find(p => p.channel === 'all')
+        const chatPb = playbooks.find(p => p.channel === 'chat') || playbooks.find(p => p.channel === 'all')
+        if (voicePb) setVoice(parsePlaybook(voicePb))
+        if (chatPb) setChat(parsePlaybook(chatPb))
       }
+
       setLoading(false)
     })
   }, [])
 
-  function addBlock() {
-    setBlocks(prev => [...prev, { keywords: '', response: '' }])
-  }
-
-  function removeBlock(i: number) {
-    setBlocks(prev => prev.filter((_, idx) => idx !== i))
-  }
-
-  function updateBlock(i: number, field: 'keywords' | 'response', val: string) {
-    setBlocks(prev => prev.map((b, idx) => idx === i ? { ...b, [field]: val } : b))
+  async function handleGenerate() {
+    setGenerating(true)
+    setError('')
+    try {
+      const res = await fetch('/api/agent/generate-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: activeChannel }),
+      })
+      if (!res.ok) throw new Error('Üretim başarısız')
+      const { system_prompt } = await res.json()
+      setCurrent(prev => ({ ...prev, systemPrompt: system_prompt }))
+    } catch {
+      setError('Prompt üretilemedi. Lütfen tekrar deneyin.')
+    } finally {
+      setGenerating(false)
+    }
   }
 
   async function handleSave() {
-    if (!playbook) return
+    if (!orgId) return
     setSaving(true)
     setError('')
 
-    const hard_blocks = blocks
+    const hard_blocks = current.blocks
       .filter(b => b.keywords.trim())
       .map((b, i) => ({
         trigger_id: `block_${i}`,
@@ -106,22 +123,53 @@ export default function AgentPage() {
       }))
 
     const supabase = createClient()
-    const { error: err } = await supabase
-      .from('agent_playbooks')
-      .update({
-        system_prompt_template: systemPrompt,
-        hard_blocks,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', playbook.id)
+
+    if (current.id) {
+      const { error: err } = await supabase
+        .from('agent_playbooks')
+        .update({
+          system_prompt_template: current.systemPrompt,
+          hard_blocks,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', current.id)
+      if (err) { setError('Kaydedilemedi.'); setSaving(false); return }
+    } else {
+      const { data: inserted, error: err } = await supabase
+        .from('agent_playbooks')
+        .insert({
+          organization_id: orgId,
+          channel: activeChannel,
+          name: activeChannel === 'voice' ? 'Sesli Asistan' : 'Chat Asistanı',
+          system_prompt_template: current.systemPrompt,
+          hard_blocks,
+          version: 1,
+          is_active: true,
+        })
+        .select('id')
+        .single()
+      if (err) { setError('Kaydedilemedi.'); setSaving(false); return }
+      if (inserted) setCurrent(prev => ({ ...prev, id: inserted.id }))
+    }
 
     setSaving(false)
-    if (err) {
-      setError('Kaydedilemedi. Lütfen tekrar deneyin.')
-    } else {
-      setSaved(true)
-      setTimeout(() => setSaved(false), 3000)
-    }
+    setSavedChannel(activeChannel)
+    setTimeout(() => setSavedChannel(null), 3000)
+  }
+
+  function addBlock() {
+    setCurrent(prev => ({ ...prev, blocks: [...prev.blocks, { keywords: '', response: '' }] }))
+  }
+
+  function removeBlock(i: number) {
+    setCurrent(prev => ({ ...prev, blocks: prev.blocks.filter((_, idx) => idx !== i) }))
+  }
+
+  function updateBlock(i: number, field: 'keywords' | 'response', val: string) {
+    setCurrent(prev => ({
+      ...prev,
+      blocks: prev.blocks.map((b, idx) => idx === i ? { ...b, [field]: val } : b),
+    }))
   }
 
   if (loading) {
@@ -132,14 +180,11 @@ export default function AgentPage() {
     )
   }
 
-  if (!playbook) {
-    return (
-      <div className="p-6 text-slate-400 text-sm">AI asistan henüz yapılandırılmamış.</div>
-    )
-  }
+  const isSaved = savedChannel === activeChannel
 
   return (
     <div className="p-6 max-w-3xl space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
@@ -147,7 +192,7 @@ export default function AgentPage() {
             AI Asistan Ayarları
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Asistanınızın nasıl konuşacağını ve neleri konuşmayacağını buradan yönetin.
+            Sesli ve yazışma kanalları için asistan davranışını ayrı ayrı yönetin.
           </p>
         </div>
         <button
@@ -156,25 +201,95 @@ export default function AgentPage() {
           className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
         >
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          {saved ? 'Kaydedildi ✓' : 'Kaydet'}
+          {isSaved ? 'Kaydedildi ✓' : 'Kaydet'}
         </button>
       </div>
 
+      {/* Channel Tabs */}
+      <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-fit">
+        <button
+          onClick={() => setActiveChannel('voice')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeChannel === 'voice'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <Mic size={15} />
+          Sesli Görüşme
+          {voice.id && (
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500" title="Yapılandırıldı" />
+          )}
+        </button>
+        <button
+          onClick={() => setActiveChannel('chat')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeChannel === 'chat'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <MessageSquare size={15} />
+          Mesajlaşma
+          {chat.id && (
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500" title="Yapılandırıldı" />
+          )}
+        </button>
+      </div>
+
+      {/* Henüz yapılandırılmamış uyarısı */}
+      {!current.id && !current.systemPrompt && (
+        <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex items-start gap-3">
+          <Sparkles size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-amber-800">
+              {activeChannel === 'voice' ? 'Sesli görüşme' : 'Mesajlaşma'} asistanı henüz yapılandırılmamış.
+            </p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              Bilgi bankasındaki verilerden otomatik prompt oluşturmak için "AI ile Oluştur" butonuna basın.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Sistem Prompt */}
       <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-3">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-800">Asistan Talimatları</h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Asistanınızın kimliğini, görevini ve genel davranış kurallarını buraya yazın.
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-800">Asistan Talimatları</h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {activeChannel === 'voice'
+                ? 'Asistanın kimliğini, görevini ve sesli konuşma davranışını tanımlar.'
+                : 'Asistanın kimliğini, görevini ve mesajlaşma davranışını tanımlar.'}
+            </p>
+          </div>
+          <button
+            onClick={handleGenerate}
+            disabled={generating}
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-600 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+          >
+            {generating
+              ? <Loader2 size={13} className="animate-spin" />
+              : <Sparkles size={13} />}
+            {generating ? 'Üretiliyor...' : 'AI ile Oluştur'}
+          </button>
         </div>
         <textarea
-          value={systemPrompt}
-          onChange={e => setSystemPrompt(e.target.value)}
-          rows={12}
+          value={current.systemPrompt}
+          onChange={e => setCurrent(prev => ({ ...prev, systemPrompt: e.target.value }))}
+          rows={14}
           className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none font-mono leading-relaxed"
-          placeholder="Asistanın kim olduğunu, ne yapacağını ve nasıl konuşacağını yazın..."
+          placeholder={
+            activeChannel === 'voice'
+              ? 'Asistanın kim olduğunu, ne yapacağını ve sesli konuşma kurallarını yazın...'
+              : 'Asistanın kim olduğunu, ne yapacağını ve mesajlaşma davranışını yazın...'
+          }
         />
+        {activeChannel === 'voice' && (
+          <p className="text-xs text-slate-400">
+            💡 Sayı okuma kuralları, bilgi bankası ve veri toplama talimatları runtime'da otomatik eklenir — buraya yazmanıza gerek yok.
+          </p>
+        )}
       </div>
 
       {/* Hard Blocks */}
@@ -186,12 +301,12 @@ export default function AgentPage() {
           </p>
         </div>
 
-        {blocks.length === 0 && (
+        {current.blocks.length === 0 && (
           <p className="text-sm text-slate-400 py-2">Henüz kural eklenmemiş.</p>
         )}
 
         <div className="space-y-3">
-          {blocks.map((b, i) => (
+          {current.blocks.map((b, i) => (
             <div key={i} className="border border-slate-100 rounded-xl p-4 space-y-3 bg-slate-50">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 space-y-2">
