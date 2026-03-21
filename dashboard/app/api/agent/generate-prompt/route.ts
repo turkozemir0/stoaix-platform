@@ -35,8 +35,8 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { channel } = await request.json()
-  if (!channel || !['voice', 'chat'].includes(channel)) {
-    return NextResponse.json({ error: 'channel must be voice or chat' }, { status: 400 })
+  if (!channel || !['voice', 'chat', 'whatsapp'].includes(channel)) {
+    return NextResponse.json({ error: 'channel must be voice, chat or whatsapp' }, { status: 400 })
   }
 
   const service = createServiceClient()
