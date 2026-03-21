@@ -58,13 +58,13 @@ export default function KBItemModal({ orgId, sector, item, onClose, onSaved }: P
       const { tags: suggested } = await res.json()
       if (fieldName === '__tags__') {
         const existing = tags.split(',').map((s: string) => s.trim()).filter(Boolean)
-        const merged = [...new Set([...existing, ...suggested])]
+        const merged = Array.from(new Set([...existing, ...suggested]))
         setTags(merged.join(', '))
       } else {
         const cur = Array.isArray(formData[fieldName]) ? formData[fieldName]
           : typeof formData[fieldName] === 'string' ? formData[fieldName].split(',').map((s: string) => s.trim()).filter(Boolean)
           : []
-        setField(fieldName, [...new Set([...cur, ...suggested])])
+        setField(fieldName, Array.from(new Set([...cur, ...suggested])))
       }
     } finally {
       setSuggestingField(null)
