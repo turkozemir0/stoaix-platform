@@ -25,7 +25,7 @@ export interface InboundMessageOptions {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEBOUNCE_MS            = 3500
-const MAX_HISTORY            = 10
+const MAX_HISTORY            = 8
 const PROCESSING_TIMEOUT_MS  = 120_000  // 2 min — auto-release locks from crashed workers
 
 // ─── Supabase client ──────────────────────────────────────────────────────────
@@ -253,6 +253,7 @@ async function createAppointment(
 async function runChatEngine(
   supabase: ReturnType<typeof createClient>,
   orgId: string,
+  contactId: string,
   conversationId: string,
   messageText: string,
   channel: Channel,
@@ -341,11 +342,28 @@ async function runChatEngine(
     }
   }
 
+  // Müşteri profili — lead'den toplanan yapılandırılmış veri
+  let profileSection = ''
+  const { data: leadRow } = await supabase
+    .from('leads')
+    .select('collected_data')
+    .eq('organization_id', orgId)
+    .eq('contact_id', contactId)
+    .maybeSingle()
+
+  const collectedData = (leadRow?.collected_data ?? {}) as Record<string, unknown>
+  const profileEntries = Object.entries(collectedData).filter(([, v]) => v !== null && v !== undefined && v !== '')
+  if (profileEntries.length > 0) {
+    const lines = profileEntries.map(([k, v]) => `- ${k}: ${v}`).join('\n')
+    profileSection = `\n\n━━━ MÜŞTERİ PROFİLİ (önceki mesajlardan toplanan bilgiler) ━━━\n${lines}\nBu bilgileri bağlam olarak kullanabilirsin, tekrar sormak zorunda değilsin. Kullanıcı düzeltirse güncellediğini kabul et.`
+  }
+
   // Build system prompt
   const persona      = org.ai_persona as Record<string, string>
   const systemPrompt = [
     playbook.system_prompt_template,
     kbContext ? `\n\n[BİLGİ TABANI]\n${kbContext}` : '',
+    profileSection,
     calendarSection,
     `\nOrganizasyon: ${org.name}`,
     persona?.persona_name ? `\nSenin adın: ${persona.persona_name}` : '',
@@ -713,7 +731,7 @@ export async function handleInboundMessage(opts: InboundMessageOptions): Promise
     const aggregated = await getPendingUserMessages(supabase, conversationId)
     if (!aggregated) return
 
-    await runChatEngine(supabase, orgId, conversationId, aggregated, channel, sendReply)
+    await runChatEngine(supabase, orgId, contactId, conversationId, aggregated, channel, sendReply)
 
     // Lead'i güncel konuşmadan çıkarılan yapılandırılmış veriyle güncelle
     await updateLeadFromChat(supabase, orgId, contactId, conversationId, channel)
