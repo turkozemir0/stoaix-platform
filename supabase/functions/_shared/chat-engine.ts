@@ -415,6 +415,150 @@ async function runChatEngine(
   await sendReply(reply)
 }
 
+// ─── Lead data extraction (chat) ─────────────────────────────────────────────
+
+/**
+ * Sohbet geçmişinden intake schema alanlarını GPT-4o-mini ile çıkarır.
+ */
+async function extractCollectedData(
+  history: Array<{ role: string; content: string }>,
+  intakeFields: Array<{ key: string; label: string; type?: string }>
+): Promise<Record<string, string | null>> {
+  if (!history.length || !intakeFields.length) return {}
+
+  const fieldDefs  = intakeFields.map(f => `- ${f.key} (${f.label}): ${f.type ?? 'text'}`).join('\n')
+  const transcript = history.map(m => `[${m.role}] ${m.content}`).join('\n')
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')!}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        max_tokens: 500,
+        response_format: { type: 'json_object' },
+        messages: [{
+          role: 'user',
+          content: `Aşağıdaki sohbetten şu bilgileri çıkar ve JSON formatında döndür.\nHer field için kullanıcının verdiği değeri yaz, vermemişse null koy.\n\nToplanacak bilgiler:\n${fieldDefs}\n\nSohbet:\n${transcript.slice(-3000)}\n\nSadece JSON döndür. Örnek: {"full_name": "Ali Veli", "phone": null}`,
+        }],
+      }),
+    })
+    if (!res.ok) return {}
+    const data = await res.json()
+    return JSON.parse(data.choices?.[0]?.message?.content ?? '{}')
+  } catch {
+    return {}
+  }
+}
+
+function calculateLeadScore(
+  intakeFields: Array<{ key: string; priority?: string }>,
+  collectedData: Record<string, unknown>
+): number {
+  const mustFields   = intakeFields.filter(f => f.priority === 'must').map(f => f.key)
+  const shouldFields = intakeFields.filter(f => f.priority === 'should').map(f => f.key)
+  if (!mustFields.length) return 0
+
+  const mustDone   = mustFields.filter(k => collectedData[k]).length
+  const shouldDone = shouldFields.filter(k => collectedData[k]).length
+
+  const mustScore   = (mustDone / mustFields.length) * 70
+  const shouldScore = shouldFields.length ? (shouldDone / shouldFields.length) * 30 : 0
+  return Math.min(100, Math.round(mustScore + shouldScore))
+}
+
+/**
+ * Her AI yanıtından sonra lead'i günceller:
+ * collected_data, data_completeness, missing_fields, qualification_score, status
+ */
+async function updateLeadFromChat(
+  supabase: ReturnType<typeof createClient>,
+  orgId: string,
+  contactId: string,
+  conversationId: string,
+  channel: Channel
+): Promise<void> {
+  try {
+    const { data: lead } = await supabase
+      .from('leads')
+      .select('id, collected_data, status')
+      .eq('organization_id', orgId)
+      .eq('contact_id', contactId)
+      .maybeSingle()
+    if (!lead?.id) return
+
+    // Intake schema: önce kanalın kendi şeması, yoksa voice fallback
+    let { data: schema } = await supabase
+      .from('intake_schemas')
+      .select('fields')
+      .eq('organization_id', orgId)
+      .eq('channel', channel)
+      .maybeSingle()
+    if (!schema) {
+      const { data: fallback } = await supabase
+        .from('intake_schemas')
+        .select('fields')
+        .eq('organization_id', orgId)
+        .eq('channel', 'voice')
+        .maybeSingle()
+      schema = fallback
+    }
+
+    const intakeFields = (schema?.fields ?? []) as Array<{ key: string; label: string; type?: string; priority?: string }>
+    if (!intakeFields.length) return
+
+    // Konuşma geçmişi
+    const { data: historyRows } = await supabase
+      .from('messages')
+      .select('role, content')
+      .eq('conversation_id', conversationId)
+      .in('role', ['user', 'assistant'])
+      .order('created_at', { ascending: true })
+    if (!historyRows?.length) return
+
+    // Yapılandırılmış veri çıkar
+    const newData  = await extractCollectedData(historyRows, intakeFields)
+    const existing = (lead.collected_data ?? {}) as Record<string, unknown>
+
+    // Mevcut dolu alanları koruyarak birleştir
+    const merged: Record<string, unknown> = { ...existing }
+    for (const [k, v] of Object.entries(newData)) {
+      if (v !== null && v !== undefined && v !== '') merged[k] = v
+    }
+
+    // data_completeness ve missing_fields
+    const dataCompleteness: Record<string, string> = {}
+    for (const f of intakeFields) {
+      dataCompleteness[f.key] = merged[f.key] ? 'collected' : 'not_collected'
+    }
+    const missingFields = intakeFields
+      .filter(f => f.priority === 'must' && !merged[f.key])
+      .map(f => f.key)
+
+    const score     = calculateLeadScore(intakeFields, merged)
+    const newStatus = lead.status === 'new' && Object.values(merged).some(v => v)
+      ? 'in_progress'
+      : lead.status
+
+    await supabase
+      .from('leads')
+      .update({
+        collected_data:      merged,
+        data_completeness:   dataCompleteness,
+        missing_fields:      missingFields,
+        qualification_score: score,
+        status:              newStatus,
+        updated_at:          new Date().toISOString(),
+      })
+      .eq('id', lead.id)
+  } catch (err) {
+    console.error('updateLeadFromChat failed:', err)
+  }
+}
+
 // ─── Shared inbound handler ───────────────────────────────────────────────────
 
 /**
@@ -570,6 +714,9 @@ export async function handleInboundMessage(opts: InboundMessageOptions): Promise
     if (!aggregated) return
 
     await runChatEngine(supabase, orgId, conversationId, aggregated, channel, sendReply)
+
+    // Lead'i güncel konuşmadan çıkarılan yapılandırılmış veriyle güncelle
+    await updateLeadFromChat(supabase, orgId, contactId, conversationId, channel)
 
     if (isNewLead && onNewLead) {
       await onNewLead()
