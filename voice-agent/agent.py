@@ -704,7 +704,7 @@ async def entrypoint(ctx: JobContext):
     lang         = meta.get("lang") or persona.get("language", "tr")
     room_name    = ctx.room.name
 
-    # Calendar feature
+    # Features (playbook) + channel config (admin) — her ikisinden de oku
     features         = (playbook or {}).get("features", {}) if playbook else {}
     calendar_enabled = features.get("calendar_booking", False)
     crm_config       = org.get("crm_config", {})
@@ -712,6 +712,13 @@ async def entrypoint(ctx: JobContext):
     pit_token        = crm_config.get("pit_token", "")
     if not (calendar_id and pit_token):
         calendar_enabled = False
+
+    # Voice dil + ses ID: playbook features > channel_config.voice_inbound > ai_persona.language
+    vi_cfg           = org.get("channel_config", {}).get("voice_inbound", {})
+    voice_lang_cfg   = features.get("voice_language") or vi_cfg.get("voice_language")
+    tts_voice_id_cfg = features.get("tts_voice_id")  or vi_cfg.get("tts_voice_id")
+    if voice_lang_cfg:
+        lang = voice_lang_cfg
 
     logger.info(f"{'Outbound' if scenario else 'Inbound'} — org: {org['name']} | lang: {lang} | scenario: {scenario}")
 
@@ -801,15 +808,34 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
     VOICE_IDS = {
         "tr": os.environ.get("CARTESIA_VOICE_ID_TR", "c1cfee3d-532d-47f8-8dd2-8e5b2b66bf1d"),
         "en": os.environ.get("CARTESIA_VOICE_ID_EN", "b7d50908-b17c-442d-ad8d-810c63997ed9"),
+        "de": os.environ.get("CARTESIA_VOICE_ID_DE", ""),
+        "fr": os.environ.get("CARTESIA_VOICE_ID_FR", ""),
+        "es": os.environ.get("CARTESIA_VOICE_ID_ES", ""),
+        "ar": os.environ.get("CARTESIA_VOICE_ID_AR", ""),
+        "nl": os.environ.get("CARTESIA_VOICE_ID_NL", ""),
+        "it": os.environ.get("CARTESIA_VOICE_ID_IT", ""),
+        "pt": os.environ.get("CARTESIA_VOICE_ID_PT", ""),
+        "pl": os.environ.get("CARTESIA_VOICE_ID_PL", ""),
     }
-    tts_lang = lang if lang in VOICE_IDS else "tr"
+    # Dil kodu normalize: "de-DE" → "de"
+    lang_code = lang.split("-")[0].lower() if lang else "tr"
+    tts_lang  = lang_code if lang_code in VOICE_IDS else "tr"
+
+    # Ses ID: önce config'den gelen override, yoksa VOICE_IDS dict, yoksa TR default
+    effective_voice_id = (
+        tts_voice_id_cfg
+        or VOICE_IDS.get(tts_lang)
+        or VOICE_IDS["tr"]
+    )
+
+    logger.info(f"Voice config — lang: {tts_lang} | voice_id: {effective_voice_id[:12] if effective_voice_id else 'default'}...")
 
     session = AgentSession(
         stt=deepgram.STT(model="nova-2", language=tts_lang),
         llm=openai.LLM(model="gpt-4o-mini"),
         tts=cartesia.TTS(
             model="sonic-3",
-            voice=VOICE_IDS[tts_lang],
+            voice=effective_voice_id,
             language=tts_lang,
         ),
         vad=silero.VAD.load(),

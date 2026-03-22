@@ -12,7 +12,7 @@ interface PlaybookState {
   id?: string
   systemPrompt: string
   blocks: { keywords: string; response: string }[]
-  features: { calendar_booking: boolean }
+  features: { calendar_booking: boolean; voice_language?: string; tts_voice_id?: string }
 }
 
 interface IntakeField {
@@ -23,7 +23,21 @@ interface IntakeField {
   voice_prompt?: string
 }
 
-const EMPTY: PlaybookState = { systemPrompt: '', blocks: [], features: { calendar_booking: false } }
+const EMPTY: PlaybookState = { systemPrompt: '', blocks: [], features: { calendar_booking: false, voice_language: '', tts_voice_id: '' } }
+
+const VOICE_LANGUAGES = [
+  { value: '',   label: 'Varsayılan (ai_persona dilinden alınır)' },
+  { value: 'tr', label: '🇹🇷 Türkçe' },
+  { value: 'en', label: '🇬🇧 English' },
+  { value: 'de', label: '🇩🇪 Deutsch' },
+  { value: 'fr', label: '🇫🇷 Français' },
+  { value: 'es', label: '🇪🇸 Español' },
+  { value: 'ar', label: '🇸🇦 العربية' },
+  { value: 'nl', label: '🇳🇱 Nederlands' },
+  { value: 'it', label: '🇮🇹 Italiano' },
+  { value: 'pt', label: '🇵🇹 Português' },
+  { value: 'pl', label: '🇵🇱 Polski' },
+]
 
 export default function AgentPage() {
   const [orgId, setOrgId] = useState('')
@@ -523,6 +537,43 @@ export default function AgentPage() {
             }`} />
           </button>
         </div>
+
+        {/* Sesli Asistan Dil & Ses Ayarları — sadece voice kanalında */}
+        {activeChannel === 'voice' && (
+          <div className="space-y-3 pt-1 border-t border-slate-100 mt-1">
+            <p className="text-xs font-semibold text-slate-500 pt-2">Sesli Asistan — Dil & Ses</p>
+
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Konuşma Dili (STT + TTS)</label>
+              <select
+                value={current.features.voice_language ?? ''}
+                onChange={e => setCurrent(prev => ({ ...prev, features: { ...prev.features, voice_language: e.target.value } }))}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                {VOICE_LANGUAGES.map(l => (
+                  <option key={l.value} value={l.value}>{l.label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-400 mt-1">Deepgram STT ve Cartesia TTS bu dili kullanır.</p>
+            </div>
+
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Cartesia TTS Ses ID</label>
+              <input
+                value={current.features.tts_voice_id ?? ''}
+                onChange={e => setCurrent(prev => ({ ...prev, features: { ...prev.features, tts_voice_id: e.target.value } }))}
+                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                Cartesia Voice Library'den kopyalayın:{' '}
+                <a href="https://play.cartesia.ai" target="_blank" rel="noreferrer" className="text-brand-500 hover:underline">
+                  play.cartesia.ai
+                </a>
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Veri Toplama Alanları */}
