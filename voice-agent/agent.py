@@ -6,6 +6,7 @@ Her işletme aynı agent kodu — davranış DB config'inden gelir.
 
 Room metadata:
   Inbound : {"organization_id": "uuid"}
+            phone_from → SIP participant attribute 'sip.callFrom' ile okunur (room metadata'da değil)
   Outbound: {"organization_id": "uuid", "scenario": "followup", "contact_id": "...", "lead_id": "..."}
 """
 
@@ -232,6 +233,13 @@ def build_system_prompt(
         "Bu konuda elimde net bir bilgi yok. Danışmanımıza not alıyorum."
     )
 
+    calendar_section = (
+        "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "RANDEVU ALMA:\n"
+        "Kullanıcı randevu, görüşme veya uygun saat talep ederse check_availability tool'unu çağır.\n"
+        "Kullanıcı uygun bir saati seçince ad ve telefon al, ardından book_appointment tool'unu çağır.\n"
+    ) if calendar_enabled else ""
+
     must_fields  = [f for f in intake_fields if f.get("priority") == "must"]
     must_prompts = "\n".join(
         f"- {f['label']}: \"{f.get('voice_prompt', f['label'])}\"" for f in must_fields
@@ -288,12 +296,7 @@ HANDOFF TETİKLEYİCİLER:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 HALÜSİNASYON KURALI:
 {fallback_no_kb}
-{"" if not calendar_enabled else """
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RANDEVU ALMA:
-Kullanıcı randevu, görüşme veya uygun saat talep ederse check_availability tool'unu çağır.
-Kullanıcı uygun bir saati seçince ad ve telefon al, ardından book_appointment tool'unu çağır.
-"""}"""
+{calendar_section}"""
 
 
 # ── Agent sınıfı ───────────────────────────────────────────────────────────────
@@ -619,6 +622,15 @@ async def upsert_contact_and_lead(
                 }).execute()
                 if res.data:
                     contact_id = res.data[0]["id"]
+        else:
+            # Caller number unavailable — create anonymous contact so conversation insert doesn't fail
+            res = sb.table("contacts").insert({
+                "organization_id": org_id,
+                "status":          "anonymous",
+                "source_channel":  source,
+            }).execute()
+            if res.data:
+                contact_id = res.data[0]["id"]
 
         if contact_id:
             open_lead = sb.table("leads") \
@@ -649,6 +661,22 @@ async def upsert_contact_and_lead(
     except Exception as e:
         logger.warning(f"contact/lead upsert failed: {e}")
         return None, None
+
+
+# ── SIP yardımcıları ───────────────────────────────────────────────────────────
+
+def _get_sip_caller_number(ctx: JobContext) -> str:
+    """
+    Inbound SIP aramasında arayan numarasını LiveKit participant attribute'larından okur.
+    LiveKit, SIP katılımcısına otomatik olarak 'sip.callFrom' attribute'u set eder.
+    Room metadata'daki 'phone_from' (dispatch rule'da statik) yerine bu kullanılmalı.
+    """
+    for participant in ctx.room.remote_participants.values():
+        attrs = participant.attributes or {}
+        call_from = attrs.get("sip.callFrom", "")
+        if call_from:
+            return call_from if call_from.startswith("+") else "+" + call_from
+    return ""
 
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
@@ -698,7 +726,7 @@ async def entrypoint(ctx: JobContext):
         system_prompt = build_system_prompt(org, playbook, intake, initial_kb, calendar_enabled)
         opening    = f"Merhaba, {org['name']}, ben {persona_name} — buyurun, sizi dinliyorum."
         direction  = "inbound"
-        phone_from = meta.get("phone_from", "")
+        phone_from = _get_sip_caller_number(ctx) or meta.get("phone_from", "")
         phone_to   = os.environ.get("PLATFORM_INBOUND_NUMBER", "")
 
         contact_id, lead_id = await upsert_contact_and_lead(
@@ -712,6 +740,14 @@ async def entrypoint(ctx: JobContext):
         lead_id      = meta.get("lead_id") or None
         contact_id   = meta.get("contact_id") or None
         context_note = meta.get("context_note", "")
+
+        # If contact_id wasn't passed in metadata, upsert from phone_to so conversation insert never fails
+        if not contact_id:
+            contact_id, fallback_lead_id = await upsert_contact_and_lead(
+                org_id, phone_to, org["name"], source="voice_outbound"
+            )
+            if not lead_id:
+                lead_id = fallback_lead_id
 
         outbound_playbook_text = playbook.get("system_prompt_template", "") if playbook else ""
         system_prompt = f"""{outbound_playbook_text}

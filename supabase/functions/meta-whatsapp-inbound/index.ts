@@ -76,15 +76,20 @@ async function handleInbound(
   const phone       = '+' + waId               // E.164: "+905551234567"
   const messageText = message.text.body.trim()
 
-  // Find org by Meta phone_number_id stored in crm_config
+  // Find org by Meta phone_number_id.
+  // Supports two storage paths:
+  //   1. Legacy:  crm_config.provider === 'meta'      + crm_config.phone_number_id
+  //   2. Current: channel_config.whatsapp.provider === 'whatsapp_cloud' + channel_config.whatsapp.credentials.phone_number_id
   const { data: orgs } = await supabase
     .from('organizations')
-    .select('id, crm_config')
+    .select('id, crm_config, channel_config')
     .eq('status', 'active')
 
   const org = orgs?.find((o: any) => {
     const crm = o.crm_config as Record<string, string>
-    return crm?.provider === 'meta' && crm?.phone_number_id === phoneNumberId
+    if (crm?.provider === 'meta' && crm?.phone_number_id === phoneNumberId) return true
+    const wa = (o.channel_config as any)?.whatsapp
+    return wa?.provider === 'whatsapp_cloud' && wa?.credentials?.phone_number_id === phoneNumberId
   })
 
   if (!org) {
@@ -92,7 +97,10 @@ async function handleInbound(
     return
   }
 
-  const crm = org.crm_config as Record<string, string>
+  // Resolve access token — prefer channel_config.whatsapp.credentials, fall back to crm_config
+  const waCreds   = (org.channel_config as any)?.whatsapp?.credentials ?? {}
+  const crm       = org.crm_config as Record<string, string>
+  const accessToken = waCreds.access_token ?? crm.access_token
 
   await handleInboundMessage({
     supabase,
@@ -107,7 +115,7 @@ async function handleInbound(
       phone_number_id: phoneNumberId,
     },
     // Meta Graph API — send reply back to the same wa_id
-    sendReply: (msg) => sendMetaMessage(crm.access_token, phoneNumberId, waId, msg),
+    sendReply: (msg) => sendMetaMessage(accessToken, phoneNumberId, waId, msg),
     // Meta doesn't have a built-in CRM pipeline — onNewLead is omitted.
     // If the customer also uses a CRM, add integration here.
   })

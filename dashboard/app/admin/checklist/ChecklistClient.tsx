@@ -65,7 +65,7 @@ const PHASES: Phase[] = [
       {
         id: 'g5',
         label: 'crm_config Supabase\'e girildi (location_id, pit_token, pipeline_id, stage_mapping)',
-        note: 'Admin paneli → /admin → org satırındaki ⚙ butonu → CRM sekmesi\nLocation ID: GHL → Settings → Business Profile\nPIT Token: GHL → Settings → Integrations → Private Integration Token',
+        note: 'Admin paneli → /admin → org satırındaki ⚙ butonu → CRM sekmesi\nLocation ID: GHL → Settings → Business Profile\nPIT Token: GHL → Settings → Integrations → Private Integration Token\n\nStage Mapping — GHL\'deki karşılık gelen Stage ID\'leri gir:\n• new → ilk gelen lead aşaması\n• in_progress → görüşme başladı\n• qualified → bilgiler toplandı\n• handed_off → insan danışmana devredildi\n• converted → satış kapandı\n• lost → ilgilenmedi / kaybedildi\nGHL Stage ID: GHL → Pipelines → Aşama üzerine gel → ID\'yi kopyala',
       },
       {
         id: 'g6',
@@ -105,24 +105,32 @@ const PHASES: Phase[] = [
     items: [
       {
         id: 'v1',
-        label: 'Twilio\'dan yeni telefon numarası alındı (veya müşterinin numarası aktarıldı)',
+        label: 'Türk telefon numarası alındı (Netgsm / Verimor / Twilio)',
+        note: 'Seçenekler:\n• Netgsm — panel.netgsm.com.tr → Sanal Santral → Yeni Hat\n• Verimor — verimor.com.tr → IP Santral → Hat Ekle\n• Twilio — console.twilio.com → Phone Numbers → Buy (+90 numara)\n\nNot: Müşterinin mevcut numarası taşınacaksa sağlayıcının numara taşıma sürecini başlat.',
         voiceOnly: true,
       },
       {
         id: 'v2',
-        label: 'LiveKit SIP Trunk\'a telefon numarası eklendi',
-        note: 'LiveKit Cloud → SIP → Inbound Trunk → Number ekle',
+        label: 'LiveKit Cloud\'da Inbound SIP Trunk oluşturuldu',
+        note: 'LiveKit Cloud → SIP → Inbound Trunks → "+ Add Trunk"\n• Name: müşteri adı (örn. "Eurostar Inbound")\n• Allowed Addresses: sağlayıcının SIP sunucu IP\'leri (güvenlik için önerilir)\n  - Netgsm:  212.252.xxx.xxx  (panel → SIP sunucu IP\'si)\n  - Verimor: sip.verimor.com.tr → nslookup ile IP al\n  - Twilio:  54.172.60.0/30 ve 54.244.51.0/30\n• Auth (opsiyonel): Username/Password ile kimlik doğrulama\n\nKaydedince Trunk ID (ST_xxx) oluşur — not al.',
+        voiceOnly: true,
+      },
+      {
+        id: 'v2b',
+        label: 'Sanal santral → LiveKit SIP yönlendirmesi yapıldı',
+        note: 'LiveKit Cloud → Settings → SIP → SIP URI kısmını not al.\nFormat: sip:<numara>@<livekit-sip-endpoint>\n\n── Netgsm ──\nPanel → Sanal Santral → SIP Trunk → Yönlendirme\nHedef SIP Sunucu: <livekit-sip-endpoint>\nPort: 5060   Protokol: UDP\n\n── Verimor ──\nPanel → IP Santral → Trunk Ayarları → Outbound Route\nSIP Server: <livekit-sip-endpoint>:5060\n\n── Twilio ──\nConsole → Elastic SIP Trunking → Trunk → Origination\n"+ Add new Origination URI"\nSIP URI: sip:<livekit-sip-endpoint>;transport=udp\nPriority: 10, Weight: 10\n\n── Genel kural ──\nSağlayıcı numaraya gelen aramayı LiveKit SIP endpoint\'ine INVITE gönderir.\nLiveKit From header\'ından arayan numarayı otomatik okur (+90xxx formatında).',
         voiceOnly: true,
       },
       {
         id: 'v3',
-        label: 'Admin panelinde org için LiveKit Dispatch Rule ID ve SIP Trunk ID girildi',
-        note: 'Admin paneli → org satırındaki ⚙ → Ses/SIP sekmesi\nDispatch Rule: LiveKit Cloud → SIP → Dispatch Rules → "+ Add Rule" → Inbound Trunk seç → Metadata: {"organization_id": "ORG_UUID"}\nAgent kod değişikliği gerekmez — agent.py org_id\'yi room metadata\'sından otomatik okur',
+        label: 'LiveKit Dispatch Rule oluşturuldu ve admin paneline girildi',
+        note: 'LiveKit Cloud → SIP → Dispatch Rules → "+ Add Rule"\n• Trunk: bir önceki adımda oluşturulan Inbound Trunk\'ı seç\n• Room: Agent Dispatch\n• Metadata: {"organization_id": "ORG_UUID"}   ← org\'un gerçek UUID\'si\nKaydedince Rule ID (SDR_xxx) oluşur.\n\nAdmin paneli → org satırındaki ⚙ → Ses/SIP sekmesi\n• Dispatch Rule ID (SDR_xxx): zorunlu\n• SIP Trunk ID (ST_xxx): opsiyonel — platform geneli shared trunk ise boş bırakılabilir',
         voiceOnly: true,
       },
       {
         id: 'v4',
         label: '✓ Test: Telefon numarasını ara → LiveKit agent yanıtladı, AI konuştu',
+        note: 'Konuşma sonrası Dashboard → Çağrılar\'da kayıt görünmeli.\nContact, arayan numarayla eşleşmeli (anonymous DEĞİL).',
         voiceOnly: true,
       },
     ],
