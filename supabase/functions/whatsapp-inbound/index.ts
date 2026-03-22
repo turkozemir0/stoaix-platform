@@ -133,9 +133,10 @@ async function handleInbound(payload: GHLWebhookPayload): Promise<void> {
     messageText,
     channelMetadata: { ghl_contact_id: ghlContactId, ghl_location_id: locationId },
     sendReply: (message) => sendGHLMessage(pitToken, ghlContactId, message, replyType),
-    onNewLead: stageMapping?.['in_progress']
+    onNewLead: (stageMapping?.['ai_qualifying'] ?? stageMapping?.['in_progress'])
       ? () => updateGHLPipelineStage(
-          pitToken, pipelineId, stageMapping['in_progress'],
+          pitToken, pipelineId,
+          stageMapping['ai_qualifying'] ?? stageMapping['in_progress'],
           locationId, ghlContactId, replyType
         )
       : undefined,

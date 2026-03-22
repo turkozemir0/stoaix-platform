@@ -88,7 +88,15 @@ const CRM_PROVIDERS = [
   { value: 'custom_webhook', label: 'Custom Webhook',           desc: 'Kendi CRM\'ine webhook' },
 ]
 
-const CRM_STAGES = ['new', 'in_progress', 'qualified', 'handed_off', 'converted', 'lost'] as const
+const CRM_STAGES = [
+  { key: 'new_lead',           label: 'New Lead' },
+  { key: 'ai_qualifying',      label: 'AI Qualifying' },
+  { key: 'hot_lead',           label: '🔥 Hot Lead / Handoff' },
+  { key: 'nurturing',          label: '⏳ Nurturing' },
+  { key: 'appointment_booked', label: '📅 Appointment Booked' },
+  { key: 'won',                label: '✅ Won' },
+  { key: 'lost',               label: '❌ Lost / Archive' },
+] as const
 
 const INBOUND_CONNECTION_TYPES = [
   { value: 'direct_sip',    label: 'Direkt SIP',         desc: 'NETGSM/Verimor/başka Sanal Santral → LiveKit doğrudan' },
@@ -205,7 +213,7 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
   const [ghlPipelineId, setGhlPipelineId]   = useState('')
   const [ghlCalendarId, setGhlCalendarId]   = useState('')
   const [ghlStages, setGhlStages]           = useState<Record<string, string>>(
-    Object.fromEntries(CRM_STAGES.map(s => [s, '']))
+    Object.fromEntries(CRM_STAGES.map(s => [s.key, '']))
   )
   const [hsToken, setHsToken]               = useState('')
   const [hsPipeline, setHsPipeline]         = useState('')
@@ -254,7 +262,7 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
       setGhlPitToken(crm.pit_token ?? '')
       setGhlPipelineId(crm.pipeline_id ?? '')
       setGhlCalendarId(crm.calendar_id ?? '')
-      setGhlStages(Object.fromEntries(CRM_STAGES.map(s => [s, crm.stage_mapping?.[s] ?? ''])))
+      setGhlStages(Object.fromEntries(CRM_STAGES.map(s => [s.key, crm.stage_mapping?.[s.key] ?? ''])))
       setHsToken(crm.access_token ?? '')
       setHsPipeline(crm.hubspot_pipeline_id ?? '')
       setCwUrl(crm.webhook_url ?? '')
@@ -320,7 +328,7 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
         pipeline_id: ghlPipelineId.trim(),
         ...(ghlCalendarId.trim() && { calendar_id: ghlCalendarId.trim() }),
         stage_mapping: Object.fromEntries(
-          CRM_STAGES.map(s => [s, ghlStages[s]?.trim()]).filter(([, v]) => v)
+          CRM_STAGES.map(s => [s.key, ghlStages[s.key]?.trim()]).filter(([, v]) => v)
         ),
       }
     } else if (crmProvider === 'hubspot') {
@@ -559,9 +567,9 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
                       <SectionLabel>Pipeline Stage Eşleştirme</SectionLabel>
                       <p className="text-xs text-slate-400 -mt-2">Stoaix iç aşamalarını CRM'inizdeki ID/değerle eşleştirin.</p>
                       {CRM_STAGES.map(stage => (
-                        <Field key={stage}
-                          label={stage.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                          value={ghlStages[stage] ?? ''} onChange={v => setGhlStages(s => ({ ...s, [stage]: v }))}
+                        <Field key={stage.key}
+                          label={stage.label}
+                          value={ghlStages[stage.key] ?? ''} onChange={v => setGhlStages(s => ({ ...s, [stage.key]: v }))}
                           placeholder={crmProvider === 'ghl' ? 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' : 'stage_id veya değer'}
                         />
                       ))}
