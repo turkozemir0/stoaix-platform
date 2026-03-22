@@ -312,16 +312,16 @@ async function runChatEngine(
   // KB vector search
   const kbContext = await searchKB(supabase, orgId, messageText)
 
-  // Conversation history
+  // Conversation history — descending ile en yeni MAX_HISTORY*2 mesajı al, sonra kronolojik sıraya çevir
   const { data: historyRows } = await supabase
     .from('messages')
     .select('role, content')
     .eq('conversation_id', conversationId)
     .in('role', ['user', 'assistant'])
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(MAX_HISTORY * 2)
 
-  const history = (historyRows ?? []) as Array<{ role: 'user' | 'assistant'; content: string }>
+  const history = ((historyRows ?? []) as Array<{ role: 'user' | 'assistant'; content: string }>).reverse()
 
   // Calendar slot injection (only if feature is enabled and message has booking intent)
   let calendarSection = ''
