@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare, ListChecks } from 'lucide-react'
+import { Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare, ListChecks, FlaskConical } from 'lucide-react'
+import AgentTestPanel from '@/components/agent/AgentTestPanel'
 
 type Channel = 'voice' | 'whatsapp'
+type PageTab = 'settings' | 'test'
 
 interface PlaybookState {
   id?: string
@@ -42,10 +44,12 @@ export default function AgentPage() {
   const [savingIntake, setSavingIntake]           = useState<boolean>(false)
   const [intakeSaved, setIntakeSaved]             = useState(false)
 
+  const [kbCount, setKbCount] = useState(0)
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedChannel, setSavedChannel] = useState<Channel | null>(null)
   const [error, setError] = useState('')
+  const [pageTab, setPageTab] = useState<PageTab>('settings')
 
   const current = activeChannel === 'voice' ? voice : whatsapp
   const setCurrent = (fn: (prev: PlaybookState) => PlaybookState) =>
@@ -124,6 +128,14 @@ export default function AgentPage() {
         if (vs) { setVoiceIntake(vs.fields ?? []); setVoiceIntakeId(vs.id) }
         if (ws) { setWhatsappIntake(ws.fields ?? []); setWaIntakeId(ws.id) }
       }
+
+      // KB item sayısını çek
+      const { count } = await supabase
+        .from('knowledge_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', resolvedOrgId)
+        .eq('is_active', true)
+      setKbCount(count ?? 0)
 
       setLoading(false)
     })
@@ -296,22 +308,102 @@ export default function AgentPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
             <Bot size={20} className="text-brand-500" />
-            AI Asistan Ayarları
+            AI Asistan
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Sesli ve yazışma kanalları için asistan davranışını ayrı ayrı yönetin.
+            Asistanınızı yapılandırın ve doğrudan tarayıcıdan test edin.
           </p>
         </div>
+        {pageTab === 'settings' && (
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+          >
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            {isSaved ? 'Kaydedildi ✓' : 'Kaydet'}
+          </button>
+        )}
+      </div>
+
+      {/* Page Tabs: Ayarlar / Test */}
+      <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-fit">
         <button
-          onClick={handleSave}
-          disabled={saving}
-          className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+          onClick={() => setPageTab('settings')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            pageTab === 'settings'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
         >
-          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          {isSaved ? 'Kaydedildi ✓' : 'Kaydet'}
+          <Bot size={15} />
+          Ayarlar
+        </button>
+        <button
+          onClick={() => setPageTab('test')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            pageTab === 'test'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <FlaskConical size={15} />
+          Test Et
         </button>
       </div>
 
+      {/* Test Panel */}
+      {pageTab === 'test' && orgId && (
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+          <div className="mb-4">
+            <h2 className="text-sm font-semibold text-slate-800">Asistan Playground</h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Mevcut bilgi bankası ve promptunuzla gerçek zamanlı test yapın. Hiçbir veri kaydedilmez.
+            </p>
+          </div>
+          {/* Channel seçimi test modunda da */}
+          <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-fit mb-4">
+            <button
+              onClick={() => setActiveChannel('voice')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                activeChannel === 'voice'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Mic size={13} />
+              Sesli
+            </button>
+            <button
+              onClick={() => setActiveChannel('whatsapp')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                activeChannel === 'whatsapp'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <MessageSquare size={13} />
+              Chat
+            </button>
+          </div>
+          <AgentTestPanel
+            orgId={orgId}
+            activeChannel={activeChannel}
+            hasVoice={!!voice.id || !!voice.systemPrompt}
+            hasChat={!!whatsapp.id || !!whatsapp.systemPrompt}
+            kbCount={kbCount}
+            promptLength={
+              activeChannel === 'voice'
+                ? voice.systemPrompt.length
+                : whatsapp.systemPrompt.length
+            }
+          />
+        </div>
+      )}
+
+      {/* Settings Panel */}
+      {pageTab === 'settings' && (
+        <>
       {/* Channel Tabs */}
       <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-fit">
         <button
@@ -606,6 +698,8 @@ export default function AgentPage() {
 
       {error && (
         <p className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-lg">{error}</p>
+      )}
+        </>
       )}
     </div>
   )
