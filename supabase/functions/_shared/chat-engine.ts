@@ -295,25 +295,6 @@ async function runChatEngine(
 
   const fallbackResponses = playbook.fallback_responses as Record<string, string>
 
-  // Working hours check (UTC+3)
-  const now   = new Date()
-  const hours = (now.getUTCHours() + 3) % 24
-  const day   = now.getDay()
-  const inHours =
-    (day >= 1 && day <= 5 && hours >= 9 && hours < 18) ||
-    (day === 6 && hours >= 10 && hours < 15)
-
-  if (!inHours) {
-    const reply = fallbackResponses['outside_hours'] ??
-      'Şu an mesai saatlerimiz dışındayız. Sabah sizi arayacağız.'
-    await supabase.from('messages').insert({
-      conversation_id: conversationId, organization_id: orgId,
-      role: 'assistant', content: reply, content_type: 'text',
-    })
-    await sendReply(reply)
-    return
-  }
-
   // Hard block check
   const lower      = messageText.toLowerCase()
   const hardBlocks = (playbook.hard_blocks ?? []) as Array<{ keywords: string[]; response: string }>
