@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare } from 'lucide-react'
+import { Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare, ListChecks } from 'lucide-react'
 
 type Channel = 'voice' | 'whatsapp'
 
@@ -11,6 +11,14 @@ interface PlaybookState {
   systemPrompt: string
   blocks: { keywords: string; response: string }[]
   features: { calendar_booking: boolean }
+}
+
+interface IntakeField {
+  key: string
+  label: string
+  type: string
+  priority: 'must' | 'should'
+  voice_prompt?: string
 }
 
 const EMPTY: PlaybookState = { systemPrompt: '', blocks: [], features: { calendar_booking: false } }
@@ -23,6 +31,17 @@ export default function AgentPage() {
   const [voice, setVoice] = useState<PlaybookState>(EMPTY)
   const [whatsapp, setWhatsapp] = useState<PlaybookState>(EMPTY)
 
+  const [voiceIntake, setVoiceIntake]       = useState<IntakeField[]>([])
+  const [whatsappIntake, setWhatsappIntake] = useState<IntakeField[]>([])
+  const [voiceIntakeId, setVoiceIntakeId]   = useState<string | null>(null)
+  const [waIntakeId, setWaIntakeId]         = useState<string | null>(null)
+
+  const [suggestions, setSuggestions]             = useState<IntakeField[]>([])
+  const [selectedSuggestions, setSelectedSuggestions] = useState<Set<string>>(new Set())
+  const [suggesting, setSuggesting]               = useState(false)
+  const [savingIntake, setSavingIntake]           = useState<boolean>(false)
+  const [intakeSaved, setIntakeSaved]             = useState(false)
+
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedChannel, setSavedChannel] = useState<Channel | null>(null)
@@ -31,6 +50,10 @@ export default function AgentPage() {
   const current = activeChannel === 'voice' ? voice : whatsapp
   const setCurrent = (fn: (prev: PlaybookState) => PlaybookState) =>
     activeChannel === 'voice' ? setVoice(fn) : setWhatsapp(fn)
+
+  const currentIntake    = activeChannel === 'voice' ? voiceIntake : whatsappIntake
+  const setCurrentIntake = activeChannel === 'voice' ? setVoiceIntake : setWhatsappIntake
+  const currentIntakeId  = activeChannel === 'voice' ? voiceIntakeId : waIntakeId
 
   useEffect(() => {
     const supabase = createClient()
@@ -86,6 +109,20 @@ export default function AgentPage() {
         const whatsappPb = playbooks.find(p => p.channel === 'whatsapp') || playbooks.find(p => p.channel === 'chat') || playbooks.find(p => p.channel === 'all')
         if (voicePb) setVoice(parsePlaybook(voicePb))
         if (whatsappPb) setWhatsapp(parsePlaybook(whatsappPb))
+      }
+
+      // Intake schema yükle
+      const { data: schemas } = await supabase
+        .from('intake_schemas')
+        .select('id, channel, fields')
+        .eq('organization_id', resolvedOrgId)
+        .in('channel', ['voice', 'whatsapp'])
+
+      if (schemas) {
+        const vs = schemas.find(s => s.channel === 'voice')
+        const ws = schemas.find(s => s.channel === 'whatsapp')
+        if (vs) { setVoiceIntake(vs.fields ?? []); setVoiceIntakeId(vs.id) }
+        if (ws) { setWhatsappIntake(ws.fields ?? []); setWaIntakeId(ws.id) }
       }
 
       setLoading(false)
@@ -160,6 +197,71 @@ export default function AgentPage() {
     setSaving(false)
     setSavedChannel(activeChannel)
     setTimeout(() => setSavedChannel(null), 3000)
+  }
+
+  async function handleSuggestIntake() {
+    setSuggesting(true)
+    setSuggestions([])
+    setSelectedSuggestions(new Set())
+    try {
+      const res = await fetch('/api/agent/suggest-intake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: activeChannel }),
+      })
+      if (!res.ok) throw new Error()
+      const { fields } = await res.json()
+      setSuggestions(fields ?? [])
+      setSelectedSuggestions(new Set((fields ?? []).map((f: IntakeField) => f.key)))
+    } catch {
+      setError('Öneri üretilemedi. Lütfen tekrar deneyin.')
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  function addSelectedSuggestions() {
+    const existingKeys = new Set(currentIntake.map(f => f.key))
+    const toAdd = suggestions.filter(f => selectedSuggestions.has(f.key) && !existingKeys.has(f.key))
+    setCurrentIntake(prev => [...prev, ...toAdd])
+    setSuggestions([])
+    setSelectedSuggestions(new Set())
+  }
+
+  function removeIntakeField(i: number) {
+    setCurrentIntake(prev => prev.filter((_, idx) => idx !== i))
+  }
+
+  async function handleSaveIntake() {
+    if (!orgId) return
+    setSavingIntake(true)
+    const supabase = createClient()
+    const ch      = activeChannel
+    const fields  = currentIntake
+
+    if (currentIntakeId) {
+      await supabase
+        .from('intake_schemas')
+        .update({ fields, updated_at: new Date().toISOString() })
+        .eq('id', currentIntakeId)
+    } else {
+      const { data: inserted } = await supabase
+        .from('intake_schemas')
+        .insert({
+          organization_id: orgId,
+          channel: ch,
+          name: `${ch === 'voice' ? 'Sesli' : 'WhatsApp'} Başvuru Formu`,
+          fields,
+        })
+        .select('id')
+        .single()
+      if (inserted) {
+        ch === 'voice' ? setVoiceIntakeId(inserted.id) : setWaIntakeId(inserted.id)
+      }
+    }
+    setSavingIntake(false)
+    setIntakeSaved(true)
+    setTimeout(() => setIntakeSaved(false), 3000)
   }
 
   function addBlock() {
@@ -329,6 +431,118 @@ export default function AgentPage() {
             }`} />
           </button>
         </div>
+      </div>
+
+      {/* Veri Toplama Alanları */}
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+              <ListChecks size={15} className="text-brand-500" />
+              Veri Toplama Alanları
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Asistanın konuşma sırasında müşteriden topladığı bilgiler.
+              {activeChannel === 'whatsapp' && ' Telefon numarası WhatsApp\'tan otomatik alınır.'}
+            </p>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <button
+              onClick={handleSuggestIntake}
+              disabled={suggesting}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-600 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+            >
+              {suggesting ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+              {suggesting ? 'Üretiliyor...' : 'AI Öner'}
+            </button>
+            <button
+              onClick={handleSaveIntake}
+              disabled={savingIntake}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+            >
+              {savingIntake ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+              {intakeSaved ? 'Kaydedildi ✓' : 'Kaydet'}
+            </button>
+          </div>
+        </div>
+
+        {/* Mevcut alanlar */}
+        {currentIntake.length === 0 ? (
+          <p className="text-sm text-slate-400 py-1">Henüz alan eklenmemiş. AI Öner butonunu kullanın.</p>
+        ) : (
+          <div className="space-y-2">
+            {currentIntake.map((field, i) => (
+              <div key={field.key} className="flex items-center gap-3 px-3 py-2.5 border border-slate-100 rounded-lg bg-slate-50">
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm text-slate-700">{field.label}</span>
+                  <span className="ml-2 text-xs text-slate-400">{field.key}</span>
+                </div>
+                <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${
+                  field.priority === 'must'
+                    ? 'bg-red-50 text-red-600'
+                    : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {field.priority === 'must' ? 'Zorunlu' : 'Opsiyonel'}
+                </span>
+                <button
+                  onClick={() => removeIntakeField(i)}
+                  className="text-slate-300 hover:text-red-400 transition-colors flex-shrink-0"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* AI Önerileri */}
+        {suggestions.length > 0 && (
+          <div className="border border-brand-100 rounded-xl p-4 bg-brand-50 space-y-3">
+            <p className="text-xs font-semibold text-brand-700">
+              AI Önerileri — eklemek istediklerini seç:
+            </p>
+            <div className="space-y-2">
+              {suggestions.map(f => (
+                <label key={f.key} className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedSuggestions.has(f.key)}
+                    onChange={e => {
+                      const next = new Set(selectedSuggestions)
+                      e.target.checked ? next.add(f.key) : next.delete(f.key)
+                      setSelectedSuggestions(next)
+                    }}
+                    className="rounded border-brand-300 text-brand-600"
+                  />
+                  <span className="text-sm text-slate-700 flex-1">{f.label}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                    f.priority === 'must'
+                      ? 'bg-red-50 text-red-600'
+                      : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    {f.priority === 'must' ? 'Zorunlu' : 'Opsiyonel'}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={addSelectedSuggestions}
+                disabled={selectedSuggestions.size === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors"
+              >
+                <Plus size={13} />
+                Seçilenleri Ekle ({selectedSuggestions.size})
+              </button>
+              <button
+                onClick={() => { setSuggestions([]); setSelectedSuggestions(new Set()) }}
+                className="px-3 py-1.5 text-slate-500 hover:text-slate-700 text-xs font-medium"
+              >
+                İptal
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Hard Blocks */}
