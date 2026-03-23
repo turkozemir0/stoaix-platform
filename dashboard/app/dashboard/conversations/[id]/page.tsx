@@ -14,7 +14,7 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
     .from('leads')
     .select(`
       id, qualification_score, status, source_channel, collected_data,
-      data_completeness, missing_required_fields, notes, created_at, updated_at,
+      data_completeness, missing_fields, notes, created_at, updated_at,
       contact:contacts(id, full_name, phone, email, status, source_channel, created_at)
     `)
     .eq('id', params.id)
