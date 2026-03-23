@@ -731,7 +731,11 @@ async def entrypoint(ctx: JobContext):
     if not scenario:
         initial_kb = await vector_search_kb(org_id, "genel bilgi hizmetler")
         system_prompt = build_system_prompt(org, playbook, intake, initial_kb, calendar_enabled)
-        opening    = f"Merhaba, {org['name']}, ben {persona_name} — buyurun, sizi dinliyorum."
+        opening    = (
+            playbook.get("opening_message")
+            if playbook and playbook.get("opening_message")
+            else f"Merhaba! {org['name']}'ı aradınız, ben {persona_name}. Hangi ilden arıyorsunuz?"
+        )
         direction  = "inbound"
         phone_from = _get_sip_caller_number(ctx) or meta.get("phone_from", "")
         phone_to   = os.environ.get("PLATFORM_INBOUND_NUMBER", "")

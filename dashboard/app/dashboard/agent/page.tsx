@@ -11,6 +11,7 @@ type PageTab = 'settings' | 'test'
 interface PlaybookState {
   id?: string
   systemPrompt: string
+  openingMessage: string
   blocks: { keywords: string; response: string }[]
   features: { calendar_booking: boolean; voice_language?: string; tts_voice_id?: string }
 }
@@ -23,7 +24,7 @@ interface IntakeField {
   voice_prompt?: string
 }
 
-const EMPTY: PlaybookState = { systemPrompt: '', blocks: [], features: { calendar_booking: false, voice_language: '', tts_voice_id: '' } }
+const EMPTY: PlaybookState = { systemPrompt: '', openingMessage: '', blocks: [], features: { calendar_booking: false, voice_language: '', tts_voice_id: '' } }
 
 const VOICE_LANGUAGES = [
   { value: '',   label: 'Varsayılan (ai_persona dilinden alınır)' },
@@ -104,7 +105,7 @@ export default function AgentPage() {
       // Her iki kanalı da yükle
       const { data: playbooks } = await supabase
         .from('agent_playbooks')
-        .select('id, channel, system_prompt_template, hard_blocks, features')
+        .select('id, channel, system_prompt_template, opening_message, hard_blocks, features')
         .eq('organization_id', resolvedOrgId)
         .eq('is_active', true)
         .in('channel', ['voice', 'whatsapp', 'chat', 'all'])
@@ -113,6 +114,7 @@ export default function AgentPage() {
       const parsePlaybook = (pb: any): PlaybookState => ({
         id: pb.id,
         systemPrompt: pb.system_prompt_template || '',
+        openingMessage: pb.opening_message || '',
         blocks: (Array.isArray(pb.hard_blocks) ? pb.hard_blocks : []).map((b: any) => ({
           keywords: Array.isArray(b.keywords) ? b.keywords.join(', ') : '',
           response: b.response || '',
@@ -195,6 +197,7 @@ export default function AgentPage() {
         .from('agent_playbooks')
         .update({
           system_prompt_template: current.systemPrompt,
+          opening_message: current.openingMessage || null,
           hard_blocks,
           features: current.features,
           updated_at: new Date().toISOString(),
@@ -209,6 +212,7 @@ export default function AgentPage() {
           channel: activeChannel,
           name: activeChannel === 'voice' ? 'Sesli Asistan' : 'WhatsApp/Chat Asistanı',
           system_prompt_template: current.systemPrompt,
+          opening_message: current.openingMessage || null,
           hard_blocks,
           features: current.features,
           version: 1,
@@ -462,6 +466,25 @@ export default function AgentPage() {
               Bilgi bankasındaki verilerden otomatik prompt oluşturmak için "AI ile Oluştur" butonuna basın.
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Karşılama Mesajı — sadece voice */}
+      {activeChannel === 'voice' && (
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-800">İlk Karşılama Mesajı</h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Çağrı bağlandığında asistanın söyleyeceği ilk cümle. Boş bırakılırsa varsayılan mesaj kullanılır.
+            </p>
+          </div>
+          <input
+            type="text"
+            value={current.openingMessage}
+            onChange={e => setCurrent(prev => ({ ...prev, openingMessage: e.target.value }))}
+            className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            placeholder="Merhaba! Şirketinizi aradınız, ben Asistan. Nasıl yardımcı olabilirim?"
+          />
         </div>
       )}
 
