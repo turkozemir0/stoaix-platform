@@ -729,7 +729,9 @@ async def entrypoint(ctx: JobContext):
 
     # ── İnbound ───────────────────────────────────────────────────────────────
     if not scenario:
-        initial_kb = await vector_search_kb(org_id, "genel bilgi hizmetler")
+        kb_genel   = await vector_search_kb(org_id, "genel bilgi hizmetler ülkeler programlar")
+        kb_ofisler = await vector_search_kb(org_id, "temsilcilik ofis şube iletişim telefon")
+        initial_kb = kb_genel + "\n\n" + kb_ofisler if kb_ofisler else kb_genel
         system_prompt = build_system_prompt(org, playbook, intake, initial_kb, calendar_enabled)
         opening    = (
             playbook.get("opening_message")
