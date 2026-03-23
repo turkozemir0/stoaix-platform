@@ -31,7 +31,7 @@ export default async function CallsPage() {
 
   const { data: calls } = await supabase
     .from('voice_calls')
-    .select('id, phone_from, phone_to, direction, duration_seconds, status, started_at, transcript')
+    .select('id, phone_from, phone_to, direction, duration_seconds, status, started_at, transcript, lead_id, lead:leads(ai_summary, collected_data, qualification_score)')
     .eq('organization_id', orgId)
     .order('started_at', { ascending: false })
     .limit(100)
@@ -48,6 +48,7 @@ export default async function CallsPage() {
               <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.direction}</th>
               <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.duration}</th>
               <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.status}</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Skor</th>
               <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.date}</th>
               <th className="w-8 px-5 py-3"></th>
             </tr>
@@ -56,7 +57,7 @@ export default async function CallsPage() {
             {(calls ?? []).length === 0 ? (
               <tr><td colSpan={6} className="px-5 py-10 text-center text-slate-400">{t.noData}</td></tr>
             ) : (calls ?? []).map((call: any) => (
-              <CallRow key={call.id} call={call} />
+              <CallRow key={call.id} call={{ ...call, lead: Array.isArray(call.lead) ? call.lead[0] : call.lead }} />
             ))}
           </tbody>
         </table>
