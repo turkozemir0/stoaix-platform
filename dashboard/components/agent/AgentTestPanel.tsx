@@ -166,8 +166,9 @@ function VoiceTest({ orgId }: { orgId: string }) {
   const [error, setError]     = useState('')
   const [roomName, setRoomName] = useState('')
   const [remaining, setRemaining] = useState(VOICE_MAX_SECS)
-  const roomRef    = useRef<any>(null)
-  const timerRef   = useRef<ReturnType<typeof setInterval> | null>(null)
+  const roomRef        = useRef<any>(null)
+  const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null)
+  const audioElemsRef  = useRef<HTMLAudioElement[]>([])
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
@@ -175,6 +176,8 @@ function VoiceTest({ orgId }: { orgId: string }) {
 
   const endCall = useCallback(async () => {
     stopTimer()
+    audioElemsRef.current.forEach(el => { el.pause(); el.remove() })
+    audioElemsRef.current = []
     if (roomRef.current) {
       await roomRef.current.disconnect()
       roomRef.current = null
@@ -199,7 +202,7 @@ function VoiceTest({ orgId }: { orgId: string }) {
       const { token, url, roomName: rn } = await res.json()
       setRoomName(rn)
 
-      const { Room, RoomEvent } = await import('livekit-client')
+      const { Room, RoomEvent, Track } = await import('livekit-client')
 
       const room = new Room({
         audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true },
@@ -207,6 +210,15 @@ function VoiceTest({ orgId }: { orgId: string }) {
         dynacast: true,
       })
       roomRef.current = room
+
+      room.on(RoomEvent.TrackSubscribed, (track: any) => {
+        if (track.kind === Track.Kind.Audio) {
+          const el: HTMLAudioElement = track.attach()
+          document.body.appendChild(el)
+          audioElemsRef.current.push(el)
+          el.play().catch(() => {})
+        }
+      })
 
       room.on(RoomEvent.Connected, () => {
         setStatus('connected')
