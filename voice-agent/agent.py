@@ -230,7 +230,7 @@ def build_system_prompt(
     persona_name = persona.get("persona_name", "Asistan")
     fallback_no_kb = persona.get("fallback_responses", {}).get(
         "no_kb_match",
-        "Bu konuda elimde net bir bilgi yok. Danışmanımıza not alıyorum."
+        "Bu konuyu not aldım, danışmanımız sizi en kısa sürede arayacak."
     )
 
     calendar_section = (
