@@ -21,7 +21,10 @@ from dotenv import load_dotenv
 from livekit.agents import (
     Agent,
     AgentSession,
+    AudioConfig,
     AutoSubscribe,
+    BackgroundAudioPlayer,
+    BuiltinAudioClip,
     JobContext,
     RoomInputOptions,
     WorkerOptions,
@@ -871,11 +874,18 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
                         logger.info(f"Handoff triggered by keyword: {kw}")
                         break
 
+    background_audio = BackgroundAudioPlayer(
+        ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.15),
+        thinking_sound=AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.5),
+    )
+
     await session.start(
         agent=PlatformAgent(instructions=system_prompt, org_id=org_id, lang=tts_lang),
         room=ctx.room,
         room_input_options=RoomInputOptions(noise_cancellation=True),
     )
+
+    await background_audio.start(room=ctx.room, agent_session=session)
 
     await session.generate_reply(instructions=opening)
 
