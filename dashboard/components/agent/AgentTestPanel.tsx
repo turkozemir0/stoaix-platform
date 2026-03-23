@@ -429,7 +429,6 @@ function ReadinessGate({
 export default function AgentTestPanel({
   orgId, activeChannel, hasVoice, hasChat, kbCount, promptLength,
 }: AgentTestPanelProps) {
-  const [voiceTestMode, setVoiceTestMode] = useState<'voice' | 'text'>('voice')
   const showVoice = activeChannel === 'voice' && hasVoice
   const showChat  = activeChannel === 'whatsapp' && hasChat
 
@@ -447,32 +446,8 @@ export default function AgentTestPanel({
 
   return (
     <ReadinessGate kbCount={kbCount} promptLength={promptLength}>
-      {showChat && <ChatTest orgId={orgId} channel="whatsapp" />}
-      {showVoice && (
-        <div className="space-y-4">
-          <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-fit">
-            <button
-              onClick={() => setVoiceTestMode('voice')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                voiceTestMode === 'voice' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <Mic size={13} />
-              Sesli
-            </button>
-            <button
-              onClick={() => setVoiceTestMode('text')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                voiceTestMode === 'text' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <MessageSquare size={13} />
-              Yazılı
-            </button>
-          </div>
-          {voiceTestMode === 'voice' ? <VoiceTest orgId={orgId} /> : <ChatTest orgId={orgId} channel="voice" />}
-        </div>
-      )}
+      {showChat  && <ChatTest  orgId={orgId} channel="whatsapp" />}
+      {showVoice && <VoiceTest orgId={orgId} />}
     </ReadinessGate>
   )
 }
