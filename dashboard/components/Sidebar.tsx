@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, MessageSquare, Phone, BookOpen, Settings, LogOut, ShieldCheck, LifeBuoy, Bot, RefreshCw, ClipboardList, Menu, X } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Phone, BookOpen, Settings, LogOut, ShieldCheck, LifeBuoy, Bot, RefreshCw, ClipboardList, Menu, X, Target } from 'lucide-react'
 import { t } from '@/lib/i18n'
 import { createClient } from '@/lib/supabase/client'
 
@@ -17,6 +17,7 @@ const navItems = [
   { href: '/dashboard/conversations', label: t.conversations, icon: MessageSquare },
   { href: '/dashboard/calls', label: t.calls, icon: Phone },
   { href: '/dashboard/knowledge', label: t.knowledge, icon: BookOpen },
+  { href: '/dashboard/leads',     label: 'Leads',        icon: Target },
   { href: '/dashboard/agent',    label: 'AI Asistan',   icon: Bot },
   { href: '/dashboard/followup', label: 'Follow-up',    icon: RefreshCw },
   { href: '/dashboard/support',  label: t.tickets,      icon: LifeBuoy },
