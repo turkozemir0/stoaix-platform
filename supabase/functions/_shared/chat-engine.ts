@@ -19,7 +19,10 @@ export interface InboundMessageOptions {
   messageText:           string
   channelMetadata?:      Record<string, unknown>  // provider-specific extras (location_id, phone_number_id…)
   sendReply:             (message: string) => Promise<void>
-  onNewLead?:            () => Promise<void>      // e.g. GHL pipeline stage update
+  onNewLead?:            () => Promise<void>
+  onHandoff?:            (info: { collectedData: Record<string, unknown>; lastMessage: string }) => Promise<void>
+  onOptOut?:             (info: { lastMessage: string }) => Promise<void>
+  onScoreThreshold?:     (info: { score: number; collectedData: Record<string, unknown> }) => Promise<void>
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -258,7 +261,7 @@ async function runChatEngine(
   messageText: string,
   channel: Channel,
   sendReply: (message: string) => Promise<void>
-): Promise<void> {
+): Promise<{ handoff: boolean; optOut: boolean }> {
   // Load channel-specific playbook; fall back to 'whatsapp' if no dedicated one exists
   let { data: playbook } = await supabase
     .from('agent_playbooks')
@@ -283,7 +286,7 @@ async function runChatEngine(
 
   if (!playbook) {
     console.error('No playbook found for org', orgId, 'channel', channel)
-    return
+    return { handoff: false, optOut: false }
   }
 
   const { data: org } = await supabase
@@ -292,7 +295,7 @@ async function runChatEngine(
     .eq('id', orgId)
     .single()
 
-  if (!org) return
+  if (!org) return { handoff: false, optOut: false }
 
   const fallbackResponses = playbook.fallback_responses as Record<string, string>
 
@@ -306,7 +309,7 @@ async function runChatEngine(
         role: 'assistant', content: block.response, content_type: 'text',
       })
       await sendReply(block.response)
-      return
+      return { handoff: false, optOut: false }
     }
   }
 
@@ -367,7 +370,7 @@ async function runChatEngine(
     calendarSection,
     `\nOrganizasyon: ${org.name}`,
     persona?.persona_name ? `\nSenin adın: ${persona.persona_name}` : '',
-    `\n\nEğer müşteri açıkça bir insan temsilci/müdür/yetkili talep ediyorsa veya şikayet bildiriyorsa: Normal yanıtını ver ve yanıtının EN SONUNA ayrı bir satırda sadece [HANDOFF] yaz. Başka hiçbir durumda [HANDOFF] yazma.`,
+    `\n\nEtiket kuralları (yanıtının EN SONUNA, ayrı satıra ekle):\n- Müşteri insan temsilci/müdür/yetkili talep ediyorsa veya şikayet bildiriyorsa → [HANDOFF]\n- Müşteri iletişimi açıkça durdurmak istiyorsa ("bana yazma", "istemiyorum", "kaldır" vb.) → [OPT_OUT]\nBaşka hiçbir durumda bu etiketleri kullanma.`,
   ].filter(Boolean).join('')
 
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
@@ -399,26 +402,27 @@ async function runChatEngine(
       'Şu an bir sorun yaşıyorum. Lütfen birazdan tekrar yazın.'
   }
 
-  // Detect [HANDOFF] tag — update lead status and log handoff
+  // Detect action tags
+  let handoffTriggered = false
+  let optOutTriggered  = false
+
   if (reply.includes('[HANDOFF]')) {
     reply = reply.replace(/\[HANDOFF\]/g, '').trim()
-    // Fire-and-forget — don't block the reply
+    handoffTriggered = true
     Promise.all([
-      supabase
-        .from('leads')
-        .update({ status: 'handed_off' })
-        .eq('organization_id', orgId)
-        .eq('contact_id', contactId),
+      supabase.from('leads').update({ status: 'handed_off' }).eq('organization_id', orgId).eq('contact_id', contactId),
       leadRow?.id
         ? supabase.from('handoff_logs').insert({
-            organization_id: orgId,
-            lead_id: leadRow.id,
-            conversation_id: conversationId,
-            trigger_reason: 'user_requested',
-            status: 'pending',
+            organization_id: orgId, lead_id: leadRow.id,
+            conversation_id: conversationId, trigger_reason: 'user_requested', status: 'pending',
           })
         : Promise.resolve(),
     ]).catch((err) => console.error('Handoff logging failed:', err))
+  } else if (reply.includes('[OPT_OUT]')) {
+    reply = reply.replace(/\[OPT_OUT\]/g, '').trim()
+    optOutTriggered = true
+    supabase.from('leads').update({ status: 'lost' }).eq('organization_id', orgId).eq('contact_id', contactId)
+      .then(() => {}).catch((err) => console.error('OptOut status update failed:', err))
   }
 
   // Parse booking intent from AI reply (RANDEVU_AL:ad=...,telefon=...,saat=...)
@@ -454,6 +458,7 @@ async function runChatEngine(
   })
 
   await sendReply(reply)
+  return { handoff: handoffTriggered, optOut: optOutTriggered }
 }
 
 // ─── Lead data extraction (chat) ─────────────────────────────────────────────
@@ -546,15 +551,15 @@ async function updateLeadFromChat(
   contactId: string,
   conversationId: string,
   channel: Channel
-): Promise<void> {
+): Promise<{ prevScore: number; newScore: number; collectedData: Record<string, unknown> } | null> {
   try {
     const { data: lead } = await supabase
       .from('leads')
-      .select('id, collected_data, status')
+      .select('id, collected_data, status, qualification_score')
       .eq('organization_id', orgId)
       .eq('contact_id', contactId)
       .maybeSingle()
-    if (!lead?.id) return
+    if (!lead?.id) return null
 
     // Intake schema fallback zinciri:
     // exact channel → whatsapp (instagram gibi chat kanalları için) → voice (son çare)
@@ -584,7 +589,7 @@ async function updateLeadFromChat(
     }
 
     const intakeFields = (schema?.fields ?? []) as Array<{ key: string; label: string; type?: string; priority?: string }>
-    if (!intakeFields.length) return
+    if (!intakeFields.length) return null
 
     // Konuşma geçmişi
     const { data: historyRows } = await supabase
@@ -593,7 +598,7 @@ async function updateLeadFromChat(
       .eq('conversation_id', conversationId)
       .in('role', ['user', 'assistant'])
       .order('created_at', { ascending: true })
-    if (!historyRows?.length) return
+    if (!historyRows?.length) return null
 
     // Yapılandırılmış veri çıkar
     const newData  = await extractCollectedData(historyRows, intakeFields)
@@ -630,8 +635,11 @@ async function updateLeadFromChat(
         updated_at:          new Date().toISOString(),
       })
       .eq('id', lead.id)
+
+    return { prevScore: lead.qualification_score ?? 0, newScore: score, collectedData: merged }
   } catch (err) {
     console.error('updateLeadFromChat failed:', err)
+    return null
   }
 }
 
@@ -645,7 +653,8 @@ async function updateLeadFromChat(
 export async function handleInboundMessage(opts: InboundMessageOptions): Promise<void> {
   const {
     supabase, orgId, phone, providerContactId, channelIdentifierKey,
-    channel, messageText, channelMetadata, sendReply, onNewLead,
+    channel, messageText, channelMetadata, sendReply,
+    onNewLead, onHandoff, onOptOut, onScoreThreshold,
   } = opts
 
   // ── Upsert contact ──
@@ -789,10 +798,22 @@ export async function handleInboundMessage(opts: InboundMessageOptions): Promise
     const aggregated = await getPendingUserMessages(supabase, conversationId)
     if (!aggregated) return
 
-    await runChatEngine(supabase, orgId, contactId, conversationId, aggregated, channel, sendReply)
+    const { handoff, optOut } = await runChatEngine(supabase, orgId, contactId, conversationId, aggregated, channel, sendReply)
+    const scoreResult = await updateLeadFromChat(supabase, orgId, contactId, conversationId, channel)
 
-    // Lead'i güncel konuşmadan çıkarılan yapılandırılmış veriyle güncelle
-    await updateLeadFromChat(supabase, orgId, contactId, conversationId, channel)
+    // GHL stage + note callbacks (fire-and-forget, yanıt zaten gönderildi)
+    if (handoff && onHandoff) {
+      onHandoff({ collectedData: scoreResult?.collectedData ?? {}, lastMessage: aggregated }).catch(() => {})
+    } else if (optOut && onOptOut) {
+      onOptOut({ lastMessage: aggregated }).catch(() => {})
+    } else if (
+      scoreResult &&
+      scoreResult.prevScore < 70 &&
+      scoreResult.newScore >= 70 &&
+      onScoreThreshold
+    ) {
+      onScoreThreshold({ score: scoreResult.newScore, collectedData: scoreResult.collectedData }).catch(() => {})
+    }
 
     if (isNewLead && onNewLead) {
       await onNewLead()
