@@ -556,21 +556,31 @@ async function updateLeadFromChat(
       .maybeSingle()
     if (!lead?.id) return
 
-    // Intake schema: önce kanalın kendi şeması, yoksa voice fallback
+    // Intake schema fallback zinciri:
+    // exact channel → whatsapp (instagram gibi chat kanalları için) → voice (son çare)
     let { data: schema } = await supabase
       .from('intake_schemas')
       .select('fields')
       .eq('organization_id', orgId)
       .eq('channel', channel)
       .maybeSingle()
+    if (!schema && channel !== 'whatsapp' && channel !== 'voice') {
+      const { data: chatFallback } = await supabase
+        .from('intake_schemas')
+        .select('fields')
+        .eq('organization_id', orgId)
+        .eq('channel', 'whatsapp')
+        .maybeSingle()
+      schema = chatFallback
+    }
     if (!schema) {
-      const { data: fallback } = await supabase
+      const { data: voiceFallback } = await supabase
         .from('intake_schemas')
         .select('fields')
         .eq('organization_id', orgId)
         .eq('channel', 'voice')
         .maybeSingle()
-      schema = fallback
+      schema = voiceFallback
     }
 
     const intakeFields = (schema?.fields ?? []) as Array<{ key: string; label: string; type?: string; priority?: string }>
