@@ -112,7 +112,7 @@ export default function LeadsPage() {
         .order('updated_at', { ascending: false })
 
       const { data } = await query
-      setLeads((data as Lead[]) ?? [])
+      setLeads((data as unknown as Lead[]) ?? [])
       setLoading(false)
     }
     load()
