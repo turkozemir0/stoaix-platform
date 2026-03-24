@@ -90,6 +90,21 @@ async function updateGHLPipelineStage(
   }
 }
 
+// ─── Phone normalization ──────────────────────────────────────────────────────
+
+/**
+ * Normalize a phone number to digits-only format for comparison.
+ * Only strips non-digit characters (including leading +).
+ * No country-specific logic — enter with full country code.
+ * Examples:
+ *   +4915123456789  → 4915123456789
+ *   +905555555555   → 905555555555
+ *   49 151 234 567  → 49151234567
+ */
+function normalizePhone(raw: string): string {
+  return raw.replace(/\D/g, '')
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 async function handleInbound(payload: GHLWebhookPayload): Promise<void> {
@@ -104,7 +119,7 @@ async function handleInbound(payload: GHLWebhookPayload): Promise<void> {
   // Find org by GHL location_id
   const { data: orgs } = await supabase
     .from('organizations')
-    .select('id, crm_config')
+    .select('id, crm_config, excluded_phones')
     .eq('status', 'active')
 
   const org = orgs?.find((o: any) => {
@@ -115,6 +130,16 @@ async function handleInbound(payload: GHLWebhookPayload): Promise<void> {
   if (!org) {
     console.error(`No active org for GHL location_id: ${locationId}`)
     return
+  }
+
+  // Excluded phones check — skip message entirely if sender is on the list
+  const excludedPhones = (org.excluded_phones ?? []) as string[]
+  if (excludedPhones.length > 0 && payload.phone) {
+    const normalizedIncoming = normalizePhone(payload.phone)
+    if (excludedPhones.includes(normalizedIncoming)) {
+      console.log(`Excluded phone ${normalizedIncoming} — skipping`)
+      return
+    }
   }
 
   const crm                        = org.crm_config as Record<string, string>

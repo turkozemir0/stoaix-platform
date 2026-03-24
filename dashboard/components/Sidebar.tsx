@@ -20,6 +20,7 @@ const navItems = [
   { href: '/dashboard/agent',    label: 'AI Asistan',   icon: Bot },
   { href: '/dashboard/followup', label: 'Follow-up',    icon: RefreshCw },
   { href: '/dashboard/support',  label: t.tickets,      icon: LifeBuoy },
+  { href: '/dashboard/settings', label: 'Ayarlar',      icon: Settings },
 ]
 
 export default function Sidebar({ orgName, isSuperAdmin }: Props) {

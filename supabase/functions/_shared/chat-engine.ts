@@ -346,7 +346,7 @@ async function runChatEngine(
   let profileSection = ''
   const { data: leadRow } = await supabase
     .from('leads')
-    .select('collected_data')
+    .select('id, collected_data')
     .eq('organization_id', orgId)
     .eq('contact_id', contactId)
     .maybeSingle()
@@ -367,6 +367,7 @@ async function runChatEngine(
     calendarSection,
     `\nOrganizasyon: ${org.name}`,
     persona?.persona_name ? `\nSenin adın: ${persona.persona_name}` : '',
+    `\n\nEğer müşteri açıkça bir insan temsilci/müdür/yetkili talep ediyorsa veya şikayet bildiriyorsa: Normal yanıtını ver ve yanıtının EN SONUNA ayrı bir satırda sadece [HANDOFF] yaz. Başka hiçbir durumda [HANDOFF] yazma.`,
   ].filter(Boolean).join('')
 
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
@@ -396,6 +397,28 @@ async function runChatEngine(
     reply = fallbackResponses['error'] ??
       fallbackResponses['no_kb_match'] ??
       'Şu an bir sorun yaşıyorum. Lütfen birazdan tekrar yazın.'
+  }
+
+  // Detect [HANDOFF] tag — update lead status and log handoff
+  if (reply.includes('[HANDOFF]')) {
+    reply = reply.replace(/\[HANDOFF\]/g, '').trim()
+    // Fire-and-forget — don't block the reply
+    Promise.all([
+      supabase
+        .from('leads')
+        .update({ status: 'handed_off' })
+        .eq('organization_id', orgId)
+        .eq('contact_id', contactId),
+      leadRow?.id
+        ? supabase.from('handoff_logs').insert({
+            organization_id: orgId,
+            lead_id: leadRow.id,
+            conversation_id: conversationId,
+            trigger_reason: 'user_requested',
+            status: 'pending',
+          })
+        : Promise.resolve(),
+    ]).catch((err) => console.error('Handoff logging failed:', err))
   }
 
   // Parse booking intent from AI reply (RANDEVU_AL:ad=...,telefon=...,saat=...)
@@ -472,9 +495,18 @@ async function extractCollectedData(
   }
 }
 
+const INTENT_KEYWORDS = [
+  'randevu', 'ne zaman gelebilirim', 'ne zaman başlayabiliriz', 'ne zaman gelsem',
+  'fiyat alabilir miyim', 'teklif alabilir miyim', 'teklif ver', 'sipariş',
+  'başlamak istiyorum', 'almak istiyorum', 'satın almak', 'satın almak istiyorum',
+  'görüşmek istiyorum', 'geri arayın', 'geri arar mısınız', 'ara beni', 'beni arayın',
+  'rezervasyon', 'ayarlayabilir misiniz', 'müsait misiniz', 'ne zaman başlar',
+]
+
 function calculateLeadScore(
   intakeFields: Array<{ key: string; priority?: string }>,
-  collectedData: Record<string, unknown>
+  collectedData: Record<string, unknown>,
+  history: Array<{ role: string; content: string }> = []
 ): number {
   const mustFields   = intakeFields.filter(f => f.priority === 'must').map(f => f.key)
   const shouldFields = intakeFields.filter(f => f.priority === 'should').map(f => f.key)
@@ -485,7 +517,23 @@ function calculateLeadScore(
 
   const mustScore   = (mustDone / mustFields.length) * 70
   const shouldScore = shouldFields.length ? (shouldDone / shouldFields.length) * 30 : 0
-  return Math.min(100, Math.round(mustScore + shouldScore))
+  let base = Math.round(mustScore + shouldScore)
+
+  if (history.length) {
+    const userTexts = history
+      .filter(m => m.role === 'user')
+      .map(m => m.content.toLowerCase())
+      .join(' ')
+
+    // Niyet bonusu +12: satın alma / randevu niyeti sinyali
+    if (INTENT_KEYWORDS.some(kw => userTexts.includes(kw))) base += 12
+
+    // Etkileşim bonusu +5: 3+ mesaj gönderen aktif kullanıcı
+    const userMsgCount = history.filter(m => m.role === 'user').length
+    if (userMsgCount >= 3) base += 5
+  }
+
+  return Math.min(100, base)
 }
 
 /**
@@ -556,7 +604,7 @@ async function updateLeadFromChat(
       .filter(f => f.priority === 'must' && !merged[f.key])
       .map(f => f.key)
 
-    const score     = calculateLeadScore(intakeFields, merged)
+    const score     = calculateLeadScore(intakeFields, merged, historyRows)
     const newStatus = lead.status === 'new' && Object.values(merged).some(v => v)
       ? 'in_progress'
       : lead.status
