@@ -249,10 +249,8 @@ def build_system_prompt(
         f"- {f['label']}: \"{f.get('voice_prompt', f['label'])}\"" for f in must_fields
     )
 
-    routing = playbook.get("routing_rules", []) if playbook else []
+    # routing_rules artık programatik olarak işleniyor — sistem promptuna gerek yok
     routing_text = ""
-    for r in routing:
-        routing_text += f"\n- {r.get('description','')}: {r.get('response_template','')}"
 
     blocks = playbook.get("hard_blocks", []) if playbook else []
     blocks_text = ""
