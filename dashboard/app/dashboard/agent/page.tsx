@@ -87,6 +87,7 @@ export default function AgentPage() {
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedChannel, setSavedChannel] = useState<Channel | null>(null)
+  const [voiceActive, setVoiceActive] = useState(false)
   const [error, setError] = useState('')
   const [pageTab, setPageTab] = useState<PageTab>('settings')
 
@@ -182,6 +183,15 @@ export default function AgentPage() {
         .eq('organization_id', resolvedOrgId)
         .eq('is_active', true)
       setKbCount(count ?? 0)
+
+      // Voice aktif mi?
+      const { data: orgData } = await supabase
+        .from('organizations')
+        .select('channel_config')
+        .eq('id', resolvedOrgId)
+        .single()
+      const cc = (orgData?.channel_config ?? {}) as Record<string, any>
+      setVoiceActive(cc?.voice_inbound?.active === true || cc?.voice_outbound?.active === true)
 
       // Routing config yükle
       try {
@@ -433,9 +443,12 @@ export default function AgentPage() {
           Ayarlar
         </button>
         <button
-          onClick={() => setPageTab('routing')}
+          onClick={() => voiceActive && setPageTab('routing')}
+          title={!voiceActive ? 'Voice hizmeti aktif değil' : undefined}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            pageTab === 'routing'
+            !voiceActive
+              ? 'text-slate-300 cursor-not-allowed'
+              : pageTab === 'routing'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-500 hover:text-slate-700'
           }`}
@@ -562,7 +575,7 @@ export default function AgentPage() {
             </div>
 
             {routingConfig.rules.length === 0 && (
-              <p className="text-sm text-slate-400 py-2">Kural tanımlanmamış. SQL migration'ı çalıştırın.</p>
+              <p className="text-sm text-slate-400 py-2">Henüz yönlendirme kuralı eklenmemiş.</p>
             )}
 
             <div className="space-y-3">
