@@ -306,10 +306,11 @@ HALÜSİNASYON KURALI:
 class PlatformAgent(Agent):
     def __init__(self, instructions: str, org_id: str, lang: str = "tr", on_kb_empty=None):
         super().__init__(instructions=instructions)
-        self.org_id       = org_id
-        self.lang         = lang
-        self._kb_queried  = set()
-        self._on_kb_empty = on_kb_empty  # async callable(user_text) — routing için
+        self.org_id        = org_id
+        self.lang          = lang
+        self._kb_queried   = set()
+        self._on_kb_empty  = on_kb_empty  # async callable(user_text) — routing için
+        self._kb_empty_count = 0  # ardışık KB boş sonuç sayacı
 
     async def on_user_turn_completed(self, turn_ctx, new_message):
         # KB injection — hata olsa bile super() mutlaka çağrılmalı
@@ -331,8 +332,13 @@ class PlatformAgent(Agent):
                     except (AttributeError, TypeError):
                         turn_ctx.add_message(role="system", content=msg_content)
                 elif self._on_kb_empty and user_text:
-                    # KB boş geldi — kb_fallback routing kontrol et
-                    asyncio.create_task(self._on_kb_empty(user_text))
+                    # KB boş geldi — 2. ardışık boşta kb_fallback tetikle (ilk boşta değil)
+                    self._kb_empty_count += 1
+                    if self._kb_empty_count >= 2:
+                        asyncio.create_task(self._on_kb_empty(user_text))
+                else:
+                    # KB sonuç geldi — sayacı sıfırla
+                    self._kb_empty_count = 0
         except Exception as e:
             logger.warning(f"on_user_turn_completed KB injection error (non-fatal): {e}")
 
