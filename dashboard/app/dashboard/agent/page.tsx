@@ -2,11 +2,35 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare, ListChecks, FlaskConical } from 'lucide-react'
+import { Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare, ListChecks, FlaskConical, PhoneForwarded, Clock, ToggleLeft, ToggleRight } from 'lucide-react'
 import AgentTestPanel from '@/components/agent/AgentTestPanel'
 
 type Channel = 'voice' | 'whatsapp'
-type PageTab = 'settings' | 'test'
+type PageTab = 'settings' | 'routing' | 'test'
+
+interface RoutingRule {
+  id: string
+  type: 'kb_fallback' | 'intent' | 'topic_note' | 'sentiment_note'
+  tier: 1 | 2
+  active: boolean
+  priority: number
+  keywords?: string[]
+  transition_message?: string
+  after_hours_message?: string
+  note_message?: string
+}
+
+interface RoutingConfig {
+  transfer_numbers: { primary?: string; voice_agent?: string }
+  rules: RoutingRule[]
+}
+
+interface WorkingHours {
+  weekdays?: string
+  saturday?: string
+  sunday?: string | null
+  timezone?: string
+}
 
 interface PlaybookState {
   id?: string
@@ -65,6 +89,12 @@ export default function AgentPage() {
   const [savedChannel, setSavedChannel] = useState<Channel | null>(null)
   const [error, setError] = useState('')
   const [pageTab, setPageTab] = useState<PageTab>('settings')
+
+  // Routing state
+  const [routingConfig, setRoutingConfig] = useState<RoutingConfig>({ transfer_numbers: {}, rules: [] })
+  const [workingHours, setWorkingHours] = useState<WorkingHours>({ weekdays: '09:30-19:00', saturday: '10:00-17:00', sunday: null, timezone: 'Europe/Istanbul' })
+  const [savingRouting, setSavingRouting] = useState(false)
+  const [routingSaved, setRoutingSaved] = useState(false)
 
   const current = activeChannel === 'voice' ? voice : whatsapp
   const setCurrent = (fn: (prev: PlaybookState) => PlaybookState) =>
@@ -152,6 +182,16 @@ export default function AgentPage() {
         .eq('organization_id', resolvedOrgId)
         .eq('is_active', true)
       setKbCount(count ?? 0)
+
+      // Routing config yükle
+      try {
+        const rRes = await fetch('/api/agent/routing-rules')
+        if (rRes.ok) {
+          const rData = await rRes.json()
+          if (rData.routing_rules) setRoutingConfig(rData.routing_rules)
+          if (rData.working_hours && Object.keys(rData.working_hours).length) setWorkingHours(rData.working_hours)
+        }
+      } catch {}
 
       setLoading(false)
     })
@@ -294,6 +334,31 @@ export default function AgentPage() {
     setTimeout(() => setIntakeSaved(false), 3000)
   }
 
+  async function handleSaveRouting() {
+    setSavingRouting(true)
+    try {
+      const res = await fetch('/api/agent/routing-rules', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ routing_rules: routingConfig, working_hours: workingHours }),
+      })
+      if (!res.ok) throw new Error()
+      setRoutingSaved(true)
+      setTimeout(() => setRoutingSaved(false), 3000)
+    } catch {
+      setError('Kaydedilemedi.')
+    } finally {
+      setSavingRouting(false)
+    }
+  }
+
+  function updateRule(idx: number, patch: Partial<RoutingRule>) {
+    setRoutingConfig(prev => ({
+      ...prev,
+      rules: prev.rules.map((r, i) => i === idx ? { ...r, ...patch } : r),
+    }))
+  }
+
   function addBlock() {
     setCurrent(prev => ({ ...prev, blocks: [...prev.blocks, { keywords: '', response: '' }] }))
   }
@@ -342,9 +407,19 @@ export default function AgentPage() {
             {isSaved ? 'Kaydedildi ✓' : 'Kaydet'}
           </button>
         )}
+        {pageTab === 'routing' && (
+          <button
+            onClick={handleSaveRouting}
+            disabled={savingRouting}
+            className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+          >
+            {savingRouting ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            {routingSaved ? 'Kaydedildi ✓' : 'Kaydet'}
+          </button>
+        )}
       </div>
 
-      {/* Page Tabs: Ayarlar / Test */}
+      {/* Page Tabs: Ayarlar / Arama Kuralları / Test */}
       <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-fit">
         <button
           onClick={() => setPageTab('settings')}
@@ -358,6 +433,17 @@ export default function AgentPage() {
           Ayarlar
         </button>
         <button
+          onClick={() => setPageTab('routing')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            pageTab === 'routing'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <PhoneForwarded size={15} />
+          Arama Kuralları
+        </button>
+        <button
           onClick={() => setPageTab('test')}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
             pageTab === 'test'
@@ -369,6 +455,204 @@ export default function AgentPage() {
           Test Et
         </button>
       </div>
+
+      {/* Routing Panel */}
+      {pageTab === 'routing' && (
+        <div className="space-y-5">
+
+          {/* Transfer Numaraları */}
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                <PhoneForwarded size={15} className="text-brand-500" />
+                Transfer Numaraları
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Tier 1 kurallar tetiklendiğinde arama bu numaraya aktarılır.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Call Center (Transfer)</label>
+                <input
+                  value={routingConfig.transfer_numbers.primary ?? ''}
+                  onChange={e => setRoutingConfig(prev => ({
+                    ...prev,
+                    transfer_numbers: { ...prev.transfer_numbers, primary: e.target.value },
+                  }))}
+                  placeholder="02122446600"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Voice Agent Hattı</label>
+                <input
+                  value={routingConfig.transfer_numbers.voice_agent ?? ''}
+                  onChange={e => setRoutingConfig(prev => ({
+                    ...prev,
+                    transfer_numbers: { ...prev.transfer_numbers, voice_agent: e.target.value },
+                  }))}
+                  placeholder="02127098709"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Mesai Saatleri */}
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                <Clock size={15} className="text-brand-500" />
+                Mesai Saatleri
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Mesai içinde Tier 1 kurallar transfere, mesai dışında callback vaadiyle notlara yönlenir.
+              </p>
+            </div>
+            <div className="space-y-3">
+              {[
+                { key: 'weekdays',  label: 'Hafta içi (Pzt–Cum)' },
+                { key: 'saturday', label: 'Cumartesi' },
+              ].map(({ key, label }) => (
+                <div key={key} className="flex items-center gap-4">
+                  <label className="text-xs text-slate-600 w-40 flex-shrink-0">{label}</label>
+                  <input
+                    type="text"
+                    value={(workingHours as any)[key] ?? ''}
+                    onChange={e => setWorkingHours(prev => ({ ...prev, [key]: e.target.value || null }))}
+                    placeholder="09:30-19:00"
+                    className="w-36 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <span className="text-xs text-slate-400">format: SS:DD-SS:DD</span>
+                </div>
+              ))}
+              <div className="flex items-center gap-4">
+                <label className="text-xs text-slate-600 w-40 flex-shrink-0">Pazar</label>
+                <button
+                  onClick={() => setWorkingHours(prev => ({ ...prev, sunday: prev.sunday ? null : '10:00-16:00' }))}
+                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                    workingHours.sunday
+                      ? 'border-brand-200 bg-brand-50 text-brand-600'
+                      : 'border-slate-200 bg-slate-50 text-slate-400'
+                  }`}
+                >
+                  {workingHours.sunday ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                  {workingHours.sunday ? workingHours.sunday : 'Kapalı'}
+                </button>
+                {workingHours.sunday && (
+                  <input
+                    type="text"
+                    value={workingHours.sunday}
+                    onChange={e => setWorkingHours(prev => ({ ...prev, sunday: e.target.value }))}
+                    className="w-36 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Kural Listesi */}
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">Yönlendirme Kuralları</h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Tier 1 kurallar çağrıyı aktarır, Tier 2 kurallar not alıp geri arama yapar.
+              </p>
+            </div>
+
+            {routingConfig.rules.length === 0 && (
+              <p className="text-sm text-slate-400 py-2">Kural tanımlanmamış. SQL migration'ı çalıştırın.</p>
+            )}
+
+            <div className="space-y-3">
+              {routingConfig.rules.map((rule, idx) => {
+                const tierLabel  = rule.tier === 1 ? 'Transfer' : 'Not Al'
+                const tierColor  = rule.tier === 1 ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'
+                const typeLabels: Record<string, string> = {
+                  kb_fallback:       'KB Fallback',
+                  intent:            'Niyet',
+                  topic_note:        'Konu',
+                  sentiment_note:    'Duygu',
+                }
+                const isTier1 = rule.tier === 1
+
+                return (
+                  <div key={rule.id} className={`border rounded-xl p-4 space-y-3 transition-colors ${rule.active ? 'border-slate-100 bg-slate-50' : 'border-slate-100 bg-white opacity-50'}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => updateRule(idx, { active: !rule.active })}
+                          className={`relative inline-flex h-5 w-9 rounded-full transition-colors flex-shrink-0 ${rule.active ? 'bg-brand-500' : 'bg-slate-200'}`}
+                        >
+                          <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${rule.active ? 'translate-x-4' : ''}`} />
+                        </button>
+                        <span className="text-sm font-medium text-slate-800">
+                          {typeLabels[rule.type] ?? rule.type}
+                        </span>
+                        <span className="text-xs text-slate-400 font-mono">{rule.id}</span>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${tierColor}`}>
+                        Tier {rule.tier} — {tierLabel}
+                      </span>
+                    </div>
+
+                    {rule.keywords && rule.keywords.length > 0 && (
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1">Anahtar kelimeler <span className="text-slate-400">(virgülle ayır)</span></label>
+                        <input
+                          value={rule.keywords.join(', ')}
+                          onChange={e => updateRule(idx, {
+                            keywords: e.target.value.split(',').map(k => k.trim()).filter(Boolean),
+                          })}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                        />
+                      </div>
+                    )}
+
+                    {isTier1 ? (
+                      <>
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">Mesai içi mesajı</label>
+                          <textarea
+                            value={rule.transition_message ?? ''}
+                            onChange={e => updateRule(idx, { transition_message: e.target.value })}
+                            rows={2}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">Mesai dışı mesajı</label>
+                          <textarea
+                            value={rule.after_hours_message ?? ''}
+                            onChange={e => updateRule(idx, { after_hours_message: e.target.value })}
+                            rows={2}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1">Geri arama mesajı</label>
+                        <textarea
+                          value={rule.note_message ?? ''}
+                          onChange={e => updateRule(idx, { note_message: e.target.value })}
+                          rows={2}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-lg">{error}</p>
+          )}
+        </div>
+      )}
 
       {/* Test Panel */}
       {pageTab === 'test' && orgId && (

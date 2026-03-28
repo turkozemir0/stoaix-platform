@@ -16,6 +16,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from livekit.agents import (
@@ -305,28 +306,40 @@ HALÜSİNASYON KURALI:
 # ── Agent sınıfı ───────────────────────────────────────────────────────────────
 
 class PlatformAgent(Agent):
-    def __init__(self, instructions: str, org_id: str, lang: str = "tr"):
+    def __init__(self, instructions: str, org_id: str, lang: str = "tr", on_kb_empty=None):
         super().__init__(instructions=instructions)
-        self.org_id      = org_id
-        self.lang        = lang
-        self._kb_queried = set()
+        self.org_id       = org_id
+        self.lang         = lang
+        self._kb_queried  = set()
+        self._on_kb_empty = on_kb_empty  # async callable(user_text) — routing için
 
     async def on_user_turn_completed(self, turn_ctx, new_message):
-        user_text = ""
-        if hasattr(new_message, "content"):
-            c = new_message.content
-            user_text = c if isinstance(c, str) else str(c)
+        # KB injection — hata olsa bile super() mutlaka çağrılmalı
+        try:
+            user_text = ""
+            if hasattr(new_message, "content"):
+                c = new_message.content
+                user_text = c if isinstance(c, str) else str(c)
 
-        if not user_text or user_text in self._kb_queried:
-            return
+            if user_text and user_text not in self._kb_queried:
+                self._kb_queried.add(user_text)
+                kb_result = await vector_search_kb(self.org_id, user_text)
+                if kb_result:
+                    msg_content = f"[KB Bağlamı — Bu soruyla ilgili bilgi tabanı içeriği:]\n{kb_result}"
+                    try:
+                        turn_ctx.messages.append(
+                            llm.ChatMessage(role="system", content=msg_content)
+                        )
+                    except (AttributeError, TypeError):
+                        turn_ctx.add_message(role="system", content=msg_content)
+                elif self._on_kb_empty and user_text:
+                    # KB boş geldi — kb_fallback routing kontrol et
+                    asyncio.create_task(self._on_kb_empty(user_text))
+        except Exception as e:
+            logger.warning(f"on_user_turn_completed KB injection error (non-fatal): {e}")
 
-        self._kb_queried.add(user_text)
-        kb_result = await vector_search_kb(self.org_id, user_text)
-        if kb_result:
-            turn_ctx.add_message(
-                role="system",
-                content=f"[KB Bağlamı — Bu soruyla ilgili bilgi tabanı içeriği:]\n{kb_result}"
-            )
+        # Base class — LLM response'u tetikler (1.5.x'te zorunlu)
+        await super().on_user_turn_completed(turn_ctx, new_message)
 
 
 # ── DB yazıcılar ───────────────────────────────────────────────────────────────
@@ -432,8 +445,16 @@ Sadece JSON döndür. Örnek: {{"full_name": "Ali Veli", "phone": null, "budget"
         return {}
 
 
-def calculate_qualification_score(intake_fields: list, collected_data: dict) -> int:
-    """Toplanan veri doluluk oranına göre 0-100 qualification score hesapla."""
+INTENT_KEYWORDS = [
+    "randevu", "ne zaman gelebilirim", "ne zaman başlayabiliriz", "ne zaman gelsem",
+    "fiyat alabilir miyim", "teklif alabilir miyim", "teklif ver", "sipariş",
+    "başlamak istiyorum", "almak istiyorum", "satın almak", "satın almak istiyorum",
+    "görüşmek istiyorum", "geri arayın", "geri arar mısınız", "ara beni", "beni arayın",
+    "rezervasyon", "ayarlayabilir misiniz", "müsait misiniz", "ne zaman başlar",
+]
+
+def calculate_qualification_score(intake_fields: list, collected_data: dict, transcript: list = None) -> int:
+    """Toplanan veri doluluk oranına + niyet/etkileşim sinyallerine göre 0-100 skor hesapla."""
     if not intake_fields or not collected_data:
         return 0
 
@@ -446,11 +467,25 @@ def calculate_qualification_score(intake_fields: list, collected_data: dict) -> 
     must_collected   = sum(1 for k in must_fields   if collected_data.get(k))
     should_collected = sum(1 for k in should_fields if collected_data.get(k))
 
-    # Must alanlar %70, should alanlar %30 ağırlık
     must_score   = (must_collected   / len(must_fields))   * 70 if must_fields   else 0
     should_score = (should_collected / len(should_fields)) * 30 if should_fields else 0
+    base = round(must_score + should_score)
 
-    return min(100, round(must_score + should_score))
+    if transcript:
+        user_texts = " ".join(
+            t.get("content", "") for t in transcript if t.get("role") == "user"
+        ).lower()
+
+        # Niyet bonusu +12: satın alma / randevu niyeti sinyali
+        if any(kw in user_texts for kw in INTENT_KEYWORDS):
+            base += 12
+
+        # Etkileşim bonusu +5: 3+ kullanıcı turu olan aktif konuşma
+        user_turns = sum(1 for t in transcript if t.get("role") == "user")
+        if user_turns >= 3:
+            base += 5
+
+    return min(100, base)
 
 
 async def generate_call_summary(transcript: list, collected_data: dict, org_name: str) -> str:
@@ -488,7 +523,7 @@ Konuşma:
         return ""
 
 
-async def update_lead_data(lead_id: str, intake_fields: list, collected_data: dict, summary: str = ""):
+async def update_lead_data(lead_id: str, intake_fields: list, collected_data: dict, summary: str = "", transcript: list = None):
     """collected_data, data_completeness, missing_fields, score ve özet güncelle."""
     if not lead_id:
         return
@@ -500,7 +535,7 @@ async def update_lead_data(lead_id: str, intake_fields: list, collected_data: di
             for f in intake_fields
         }
         missing = [k for k in must_keys if not collected_data.get(k)]
-        score   = calculate_qualification_score(intake_fields, collected_data)
+        score   = calculate_qualification_score(intake_fields, collected_data, transcript)
 
         update_payload = {
             "collected_data":      collected_data,
@@ -666,6 +701,135 @@ async def upsert_contact_and_lead(
         return None, None
 
 
+# ── Routing yardımcıları ───────────────────────────────────────────────────────
+
+def is_business_hours(working_hours: dict) -> bool:
+    """Şu anki zamanın mesai saatlerinde olup olmadığını kontrol eder."""
+    tz = ZoneInfo(working_hours.get("timezone", "Europe/Istanbul"))
+    now = datetime.now(tz)
+    weekday = now.weekday()  # 0=Pzt, 5=Cmt, 6=Paz
+
+    if weekday < 5:
+        hours_str = working_hours.get("weekdays")
+    elif weekday == 5:
+        hours_str = working_hours.get("saturday")
+    else:
+        hours_str = working_hours.get("sunday")
+
+    if not hours_str:
+        return False
+    start, end = hours_str.split("-")
+    sh, sm = map(int, start.split(":"))
+    eh, em = map(int, end.split(":"))
+    start_dt = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
+    end_dt   = now.replace(hour=eh, minute=em, second=0, microsecond=0)
+    return start_dt <= now <= end_dt
+
+
+async def do_sip_transfer(room_name: str, participant_identity: str, to_number: str):
+    """02122446600 formatındaki numarayı tel:+902122446600 olarak SIP transfer et."""
+    from livekit import api as lk_api
+    digits    = to_number.lstrip("0")
+    transfer_to = f"tel:+90{digits}"
+    lk = lk_api.LiveKitAPI(
+        os.environ.get("LIVEKIT_URL"),
+        os.environ.get("LIVEKIT_API_KEY"),
+        os.environ.get("LIVEKIT_API_SECRET"),
+    )
+    try:
+        await lk.sip.transfer_sip_participant(
+            lk_api.TransferSIPParticipantRequest(
+                room_name=room_name,
+                participant_identity=participant_identity,
+                transfer_to=transfer_to,
+                play_dialtone=True,
+            )
+        )
+        logger.info(f"SIP transfer → {transfer_to}")
+    finally:
+        await lk.aclose()
+
+
+async def evaluate_routing(user_text: str, kb_was_empty: bool, rules: list) -> dict | None:
+    """
+    Eşleşen ilk routing kuralını döner (priority sırasına göre sıralı bekler).
+    kb_was_empty=True ise kb_fallback kuralı da değerlendirilir.
+    Eşleşme yoksa None döner.
+    """
+    text_lower = user_text.lower()
+    for rule in rules:
+        if not rule.get("active"):
+            continue
+        rule_type = rule.get("type", "")
+
+        if rule_type == "kb_fallback" and kb_was_empty:
+            return rule
+
+        if rule_type in ("intent", "topic_note", "sentiment_note"):
+            for kw in rule.get("keywords", []):
+                if kw.lower() in text_lower:
+                    return rule
+    return None
+
+
+async def create_follow_up_task(
+    org_id: str,
+    lead_id: str | None,
+    contact_id: str | None,
+    rule_id: str,
+    note_text: str,
+):
+    """Geri arama görevi oluştur (voice_callback)."""
+    from datetime import timedelta
+    try:
+        scheduled = datetime.now(ZoneInfo("Europe/Istanbul")) + timedelta(hours=1)
+        sb = get_supabase()
+        sb.table("follow_up_tasks").insert({
+            "organization_id": org_id,
+            "lead_id":         lead_id,
+            "contact_id":      contact_id,
+            "task_type":       "voice_callback",
+            "scheduled_at":    scheduled.isoformat(),
+            "status":          "pending",
+            "variables":       {"rule_triggered": rule_id, "caller_note": note_text},
+        }).execute()
+        logger.info(f"follow_up_task created — rule: {rule_id}")
+    except Exception as e:
+        logger.warning(f"follow_up_task create failed: {e}")
+
+
+async def handle_routing(
+    rule: dict,
+    working_hours: dict,
+    transfer_numbers: dict,
+    room_name: str,
+    participant_identity: str,
+    org_id: str,
+    lead_id: str | None,
+    contact_id: str | None,
+    user_text: str,
+    agent_session,
+):
+    """Routing kuralını işle: Tier 1 → transfer veya callback vaadi; Tier 2 → not al."""
+    within_hours = is_business_hours(working_hours)
+    tier = rule.get("tier", 2)
+
+    if tier == 1 and within_hours:
+        msg = rule.get("transition_message", "Sizi aktarıyorum, lütfen bekleyin.")
+        await agent_session.say(msg, allow_interruptions=False)
+        primary_number = transfer_numbers.get("primary", "")
+        if primary_number and participant_identity:
+            await do_sip_transfer(room_name, participant_identity, primary_number)
+        await save_handoff(org_id, lead_id, None, "routing", f"Rule: {rule['id']}", {}, [])
+    else:
+        if tier == 1:
+            msg = rule.get("after_hours_message", "Mesai saatlerimiz dışındayız, sizi arayacağız.")
+        else:
+            msg = rule.get("note_message", "Notunuzu aldım, danışmanımız sizi arayacak.")
+        await agent_session.say(msg, allow_interruptions=False)
+        await create_follow_up_task(org_id, lead_id, contact_id, rule["id"], user_text)
+
+
 # ── SIP yardımcıları ───────────────────────────────────────────────────────────
 
 def _get_sip_caller_number(ctx: JobContext) -> str:
@@ -682,6 +846,15 @@ def _get_sip_caller_number(ctx: JobContext) -> str:
     return ""
 
 
+def _get_sip_participant_identity(ctx: JobContext) -> str:
+    """SIP katılımcısının LiveKit identity'sini döndür (transfer için gerekli)."""
+    for participant in ctx.room.remote_participants.values():
+        attrs = participant.attributes or {}
+        if attrs.get("sip.callFrom") or attrs.get("sip.callTo"):
+            return participant.identity
+    return ""
+
+
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 
 async def entrypoint(ctx: JobContext):
@@ -691,6 +864,14 @@ async def entrypoint(ctx: JobContext):
         meta = json.loads(ctx.room.metadata or "{}")
     except json.JSONDecodeError:
         meta = {}
+
+    # Dispatch (job) metadata'sına da bak — test token'larında room metadata boş gelir
+    if not meta.get("organization_id"):
+        try:
+            job_meta = json.loads(ctx.job.metadata or "{}")
+            meta = {**job_meta, **meta}
+        except (json.JSONDecodeError, AttributeError):
+            pass
 
     org_id   = meta.get("organization_id") or os.environ.get("PLATFORM_ORG_ID")
     scenario = meta.get("scenario")
@@ -706,6 +887,15 @@ async def entrypoint(ctx: JobContext):
     persona_name = persona.get("persona_name", "Asistan")
     lang         = meta.get("lang") or persona.get("language", "tr")
     room_name    = ctx.room.name
+
+    # Routing config yükle
+    routing_cfg        = (playbook or {}).get("routing_rules", {}) if playbook else {}
+    transfer_numbers   = routing_cfg.get("transfer_numbers", {})
+    routing_rules_list = sorted(
+        routing_cfg.get("rules", []),
+        key=lambda r: r.get("priority", 99),
+    )
+    working_hours_cfg  = org.get("working_hours", {})
 
     # Features (playbook) + channel config (admin) — her ikisinden de oku
     features         = (playbook or {}).get("features", {}) if playbook else {}
@@ -851,9 +1041,32 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
         **({"fnc_ctx": fnc_ctx} if fnc_ctx else {}),
     )
 
-    call_start     = datetime.utcnow()
-    transcript     = []
-    handoff_reason = None   # handoff tetiklendiyse sebebi
+    call_start        = datetime.utcnow()
+    transcript        = []
+    handoff_reason    = None   # handoff tetiklendiyse sebebi
+    routing_triggered = False  # routing kuralı tetiklendiyse True
+
+    async def _check_and_route(user_text: str, kb_was_empty: bool = False):
+        nonlocal routing_triggered
+        if routing_triggered or not routing_rules_list:
+            return
+        rule = await evaluate_routing(user_text, kb_was_empty, routing_rules_list)
+        if rule:
+            routing_triggered = True
+            logger.info(f"Routing rule triggered: {rule['id']} (kb_empty={kb_was_empty})")
+            participant_identity = _get_sip_participant_identity(ctx)
+            await handle_routing(
+                rule=rule,
+                working_hours=working_hours_cfg,
+                transfer_numbers=transfer_numbers,
+                room_name=room_name,
+                participant_identity=participant_identity,
+                org_id=org_id,
+                lead_id=lead_id,
+                contact_id=contact_id,
+                user_text=user_text,
+                agent_session=session,
+            )
 
     @session.on("conversation_item_added")
     def on_item(ev):
@@ -865,22 +1078,38 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
             text = content if isinstance(content, str) else str(content)
             transcript.append({"role": role, "content": text})
 
-            # Handoff keyword kontrolü (user mesajlarında)
-            if role == "user" and handoff_keywords and handoff_reason is None:
-                text_lower = text.lower()
-                for kw in handoff_keywords:
-                    if kw.lower() in text_lower:
-                        handoff_reason = "user_requested"
-                        logger.info(f"Handoff triggered by keyword: {kw}")
-                        break
+            if role == "user":
+                # Handoff keyword kontrolü
+                if handoff_keywords and handoff_reason is None:
+                    text_lower = text.lower()
+                    for kw in handoff_keywords:
+                        if kw.lower() in text_lower:
+                            handoff_reason = "user_requested"
+                            logger.info(f"Handoff triggered by keyword: {kw}")
+                            break
+
+                # Intent/topic/sentiment routing kuralları
+                if routing_rules_list and not routing_triggered:
+                    asyncio.create_task(_check_and_route(text, kb_was_empty=False))
 
     background_audio = BackgroundAudioPlayer(
         ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.15),
         thinking_sound=AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.5),
     )
 
+    # KB fallback callback — sadece routing_rules varsa aktar
+    kb_empty_cb = (
+        (lambda text: _check_and_route(text, kb_was_empty=True))
+        if routing_rules_list else None
+    )
+
     await session.start(
-        agent=PlatformAgent(instructions=system_prompt, org_id=org_id, lang=tts_lang),
+        agent=PlatformAgent(
+            instructions=system_prompt,
+            org_id=org_id,
+            lang=tts_lang,
+            on_kb_empty=kb_empty_cb,
+        ),
         room=ctx.room,
         room_input_options=RoomInputOptions(noise_cancellation=True),
     )
@@ -889,9 +1118,19 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
 
     await session.generate_reply(instructions=opening)
 
-    @ctx.room.on("disconnected")
-    def on_disconnected():
-        asyncio.create_task(_save_all(
+    MAX_CALL_SECONDS = 1800  # 30 dakika hard limit
+
+    # Room "disconnected" event'ini bekle — CancelledError sorunu olmaz
+    room_disconnected = asyncio.Event()
+    ctx.room.on("disconnected", lambda: room_disconnected.set())
+
+    try:
+        await asyncio.wait_for(room_disconnected.wait(), timeout=MAX_CALL_SECONDS)
+    except asyncio.TimeoutError:
+        logger.warning(f"Max call duration ({MAX_CALL_SECONDS}s) reached — ending session")
+        await session.aclose()
+    finally:
+        await _save_all(
             org_id=org_id,
             direction=direction,
             call_start=call_start,
@@ -904,7 +1143,7 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
             intake=intake,
             handoff_reason=handoff_reason,
             room_name=room_name,
-        ))
+        )
 
 
 async def _save_all(
@@ -925,7 +1164,7 @@ async def _save_all(
     if lead_id and intake:
         collected_data = await extract_collected_data(transcript, intake)
         summary        = await generate_call_summary(transcript, collected_data, org_id)
-        await update_lead_data(lead_id, intake, collected_data, summary)
+        await update_lead_data(lead_id, intake, collected_data, summary, transcript)
         must_keys      = {f["key"] for f in intake if f.get("priority") == "must"}
         missing_fields = [k for k in must_keys if not collected_data.get(k)]
 
