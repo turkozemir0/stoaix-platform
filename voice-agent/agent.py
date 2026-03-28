@@ -105,8 +105,35 @@ async def load_intake_schema(org_id: str, channel: str = "voice") -> list:
     return res2.data[0].get("fields", []) if res2.data else []
 
 
-async def vector_search_kb(org_id: str, query: str, limit: int = 5) -> str:
-    """Kullanıcının sorusuna en yakın KB itemlarını döndür."""
+# Ülke adı → KB tag eşlemesi (ülke ismi sorguda geçince tag filter uygula)
+_COUNTRY_TAG_MAP = {
+    "azerbaycan": "azerbaycan",
+    "bosna":      "bosna_hersek",
+    "kosova":     "kosova",
+    "bulgaristan":"bulgaristan",
+    "moldova":    "moldova",
+    "romanya":    "romanya",
+    "gürcistan":  "gurcistan",
+    "sırbistan":  "sirbistan",
+    "polonya":    "polonya",
+    "iran":       "iran",
+    "rusya":      "rusya",
+    "makedonya":  "kuzey_makedonya",
+}
+
+def _detect_country_tag(text: str) -> str | None:
+    """Metinde ülke ismi geçiyorsa ilgili KB tag'ini döner, yoksa None."""
+    text_lower = text.lower()
+    for keyword, tag in _COUNTRY_TAG_MAP.items():
+        if keyword in text_lower:
+            return tag
+    return None
+
+
+async def vector_search_kb(org_id: str, query: str, limit: int = 7) -> str:
+    """Kullanıcının sorusuna en yakın KB itemlarını döndür.
+    Sorguda ülke ismi varsa yalnızca o ülkenin item'larında arama yapar.
+    """
     try:
         from openai import OpenAI as OpenAIClient
         oa = OpenAIClient(api_key=os.environ["OPENAI_API_KEY"])
@@ -119,20 +146,38 @@ async def vector_search_kb(org_id: str, query: str, limit: int = 5) -> str:
         query_vector = embed_resp.data[0].embedding
         vec_str = "[" + ",".join(str(x) for x in query_vector) + "]"
 
+        country_tag = _detect_country_tag(query)
         sb = get_supabase()
-        res = sb.rpc("match_knowledge_items", {
-            "org_id": org_id,
-            "query_vector": vec_str,
-            "match_count": limit
-        }).execute()
+
+        if country_tag:
+            # Önce ülke filtreliyle dene
+            res = sb.rpc("match_knowledge_items", {
+                "org_id":       org_id,
+                "query_vector": vec_str,
+                "match_count":  limit * 3,
+                "filter_tags":  [country_tag],
+            }).execute()
+            # Sonuç boşsa (bu org'da country tag yok) filtresiz tekrar dene
+            if not res.data:
+                res = sb.rpc("match_knowledge_items", {
+                    "org_id":       org_id,
+                    "query_vector": vec_str,
+                    "match_count":  limit,
+                }).execute()
+        else:
+            res = sb.rpc("match_knowledge_items", {
+                "org_id":       org_id,
+                "query_vector": vec_str,
+                "match_count":  limit,
+            }).execute()
 
         if not res.data:
             return ""
 
         chunks = []
-        for item in res.data:
+        for item in res.data[:limit]:
             sim = item.get("similarity", 0)
-            if sim < 0.3:
+            if sim < 0.25:
                 continue
             chunks.append(f"[{item['title']}]\n{item['description_for_ai']}")
 
@@ -263,8 +308,8 @@ def build_system_prompt(
 
     base_prompt = playbook.get("system_prompt_template", "") if playbook else ""
 
-    return f"""{base_prompt}
-
+    # TTS format kuralı + RAG — her zaman eklenir
+    tts_and_rag = f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KONUŞMA KURALLARI:
 - Sayıları HER ZAMAN yazıyla söyle: "1500" yerine "bin beş yüz", "05321234567" yerine "sıfır beş üç iki bir iki üç dört beş altı yedi"
@@ -273,27 +318,28 @@ KONUŞMA KURALLARI:
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BİLGİ TABANI (RAG — bu konuşma için ilgili içerik):
-{kb_context if kb_context else "(Henüz sorgu yapılmadı — kullanıcı soru sorunca KB'den çekilecek)"}
+{kb_context if kb_context else "(Henüz sorgu yapılmadı — kullanıcı soru sorunca KB'den çekilecek)"}"""
+
+    if base_prompt:
+        # Custom prompt var — sadece TTS kuralı + RAG ekle, geri kalanlar template'de
+        return f"{base_prompt}{tts_and_rag}{calendar_section}"
+
+    # Custom prompt YOK — generic org için tüm bölümleri ekle
+    return f"""Sen {persona_name} adlı bir AI asistansın.
+
+{tts_and_rag}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TOPLANMASI GEREKEN BİLGİLER (zorunlu):
 {must_prompts}
 
-VERİ TOPLAMA TARZI (ÇOK ÖNEMLİ):
+VERİ TOPLAMA TARZI:
 - Bu bilgileri SORMADAN ÖNCE kullanıcının sorusunu cevapla.
-- Bilgileri tek seferde sormak YASAK. Konuşma akışına göre, birer birer doğal şekilde sor.
-- Örnek: Kullanıcı ülke sorarsa önce ülkeyi anlat, ardından "Sizi daha iyi yönlendirebilmem için hangi şehirden arıyorsunuz?" şeklinde sadece 1 soru sor.
-- Kullanıcı zaten bir bilgiyi paylaştıysa (yaş, şehir vb.) tekrar sorma.
+- Bilgileri tek seferde sormak YASAK. Birer birer, doğal şekilde sor.
+- Kullanıcı zaten paylaştıysa tekrar sorma.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-YÖNLENDİRME KURALLARI:{routing_text if routing_text else " (tanımlı kural yok)"}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-KAPSAM DIŞI KONULAR (bu tetiklenince aşağıdaki yanıtı ver):{blocks_text if blocks_text else " (tanımlı blok yok)"}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-HANDOFF TETİKLEYİCİLER:
-Şu kelimeler duyulursa HEMEN danışmana aktar: {handoff_keywords}
+KAPSAM DIŞI KONULAR:{blocks_text if blocks_text else " (tanımlı blok yok)"}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 HALÜSİNASYON KURALI:
@@ -304,43 +350,68 @@ HALÜSİNASYON KURALI:
 # ── Agent sınıfı ───────────────────────────────────────────────────────────────
 
 class PlatformAgent(Agent):
-    def __init__(self, instructions: str, org_id: str, lang: str = "tr", on_kb_empty=None):
+    def __init__(self, instructions: str, org_id: str, lang: str = "tr", on_route_check=None):
         super().__init__(instructions=instructions)
-        self.org_id        = org_id
-        self.lang          = lang
-        self._kb_queried   = set()
-        self._on_kb_empty  = on_kb_empty  # async callable(user_text) — routing için
-        self._kb_empty_count = 0  # ardışık KB boş sonuç sayacı
+        self.org_id               = org_id
+        self.lang                 = lang
+        self._kb_queried          = set()
+        self._kb_empty_count      = 0
+        self._ctx_country         = None   # konuşmada en son geçen ülke (query zenginleştirme için)
+        # async callable(user_text, kb_was_empty) -> bool
+        # True döndürürse routing gerçekleşti demek, LLM cevabı atlanır
+        self._on_route_check = on_route_check
 
     async def on_user_turn_completed(self, turn_ctx, new_message):
-        # KB injection — hata olsa bile super() mutlaka çağrılmalı
+        # Routing + KB injection — hata olsa bile super() mutlaka çağrılmalı
         try:
             user_text = ""
             if hasattr(new_message, "content"):
                 c = new_message.content
                 user_text = c if isinstance(c, str) else str(c)
 
-            if user_text and user_text not in self._kb_queried:
-                self._kb_queried.add(user_text)
-                kb_result = await vector_search_kb(self.org_id, user_text)
-                if kb_result:
-                    msg_content = f"[KB Bağlamı — Bu soruyla ilgili bilgi tabanı içeriği:]\n{kb_result}"
-                    try:
-                        turn_ctx.messages.append(
-                            llm.ChatMessage(role="system", content=msg_content)
-                        )
-                    except (AttributeError, TypeError):
-                        turn_ctx.add_message(role="system", content=msg_content)
-                elif self._on_kb_empty and user_text:
-                    # KB boş geldi — 2. ardışık boşta kb_fallback tetikle (ilk boşta değil)
-                    self._kb_empty_count += 1
-                    if self._kb_empty_count >= 2:
-                        asyncio.create_task(self._on_kb_empty(user_text))
-                else:
-                    # KB sonuç geldi — sayacı sıfırla
-                    self._kb_empty_count = 0
+            if user_text:
+                # Konuşmada geçen ülkeyi takip et (bağlam zenginleştirme için)
+                detected = _detect_country_tag(user_text)
+                if detected:
+                    self._ctx_country = detected
+
+                # 1. Keyword/intent routing kontrolü — routing tetiklendiyse LLM atla
+                if self._on_route_check:
+                    was_routed = await self._on_route_check(user_text, False)
+                    if was_routed:
+                        return  # LLM cevabı üretme — routing kendi mesajını söyledi
+
+                # 2. KB injection
+                if user_text not in self._kb_queried:
+                    self._kb_queried.add(user_text)
+                    # Sorguda ülke geçmiyorsa ama daha önce bahsedilmişse query'ye ekle
+                    # Örnek: "ne kadar?" → "ne kadar? kosova" → çok daha iyi similarity
+                    kb_query = user_text
+                    if self._ctx_country and self._ctx_country not in user_text.lower():
+                        kb_query = f"{user_text} {self._ctx_country}"
+                    kb_result = await vector_search_kb(self.org_id, kb_query)
+                    if kb_result:
+                        self._kb_empty_count = 0
+                        # Kullanıcı fiyat sormadıysa KB içeriğindeki fiyat bilgilerini kullanma
+                        _price_kws = ["fiyat", "ücret", "kaç para", "ne kadar", "maliyet", "para", "euro", "dolar", "tl ", "tutar"]
+                        _user_asks_price = any(kw in user_text.lower() for kw in _price_kws)
+                        _price_note = "" if _user_asks_price else "\nÖNEMLİ: Kullanıcı fiyat/ücret sormadı — aşağıdaki içerikteki FİYAT ve ÜCRET bilgilerini KULLANMA."
+                        msg_content = f"[KB Bağlamı — Bu soruyla ilgili bilgi tabanı içeriği:]{_price_note}\n{kb_result}"
+                        try:
+                            turn_ctx.messages.append(
+                                llm.ChatMessage(role="system", content=msg_content)
+                            )
+                        except (AttributeError, TypeError):
+                            turn_ctx.add_message(role="system", content=msg_content)
+                    elif self._on_route_check:
+                        # KB boş geldi — 2. ardışık boşta kb_fallback tetikle
+                        self._kb_empty_count += 1
+                        if self._kb_empty_count >= 2:
+                            was_routed = await self._on_route_check(user_text, True)
+                            if was_routed:
+                                return  # LLM cevabı üretme
         except Exception as e:
-            logger.warning(f"on_user_turn_completed KB injection error (non-fatal): {e}")
+            logger.warning(f"on_user_turn_completed error (non-fatal): {e}")
 
         # Base class — LLM response'u tetikler (1.5.x'te zorunlu)
         await super().on_user_turn_completed(turn_ctx, new_message)
@@ -427,13 +498,18 @@ async def extract_collected_data(transcript: list, intake_fields: list) -> dict:
         )
 
         prompt = f"""Aşağıdaki sesli görüşme transkripsiyonundan şu bilgileri çıkar ve JSON formatında döndür.
-Her field için kullanıcının verdiği değeri yaz, vermemişse null koy.
+Her field için YALNIZCA kullanıcının açıkça söylediği değeri yaz. Söylemediyse null koy.
+
+ÖNEMLI KURALLAR:
+- "nationality" (uyruk): Kullanıcının hangi ülkede okumak istediğinden DEĞİL, bizzat söylediği uyruğundan çıkar. Söylemediyse null.
+- "city": Kullanıcının aradığı Türkiye'deki şehir, hedef ülkedeki şehir değil.
+- Çıkarım veya tahmin YAPMA — sadece kullanıcının açıkça belirttiği bilgileri yaz.
 
 Toplanacak bilgiler:
 {field_defs}
 
 Konuşma:
-{transcript_text[:4000]}
+{transcript_text[:6000]}
 
 Sadece JSON döndür. Örnek: {{"full_name": "Ali Veli", "phone": null, "budget": "50000"}}"""
 
@@ -1035,7 +1111,7 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
 
     session = AgentSession(
         stt=deepgram.STT(model="nova-2", language=tts_lang),
-        llm=openai.LLM(model="gpt-4o-mini"),
+        llm=openai.LLM(model="gpt-4o-mini", temperature=0.4, max_tokens=200),
         tts=cartesia.TTS(
             model="sonic-3",
             voice=effective_voice_id,
@@ -1050,10 +1126,11 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
     handoff_reason    = None   # handoff tetiklendiyse sebebi
     routing_triggered = False  # routing kuralı tetiklendiyse True
 
-    async def _check_and_route(user_text: str, kb_was_empty: bool = False):
+    async def _check_and_route(user_text: str, kb_was_empty: bool = False) -> bool:
+        """Routing kuralını değerlendir. True → routing tetiklendi (LLM cevabı atlanmalı)."""
         nonlocal routing_triggered
         if routing_triggered or not routing_rules_list:
-            return
+            return False
         rule = await evaluate_routing(user_text, kb_was_empty, routing_rules_list)
         if rule:
             routing_triggered = True
@@ -1071,6 +1148,8 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
                 user_text=user_text,
                 agent_session=session,
             )
+            return True
+        return False
 
     @session.on("conversation_item_added")
     def on_item(ev):
@@ -1083,7 +1162,7 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
             transcript.append({"role": role, "content": text})
 
             if role == "user":
-                # Handoff keyword kontrolü
+                # Handoff keyword kontrolü (routing dışı — sadece log için)
                 if handoff_keywords and handoff_reason is None:
                     text_lower = text.lower()
                     for kw in handoff_keywords:
@@ -1091,20 +1170,11 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
                             handoff_reason = "user_requested"
                             logger.info(f"Handoff triggered by keyword: {kw}")
                             break
-
-                # Intent/topic/sentiment routing kuralları
-                if routing_rules_list and not routing_triggered:
-                    asyncio.create_task(_check_and_route(text, kb_was_empty=False))
+                # NOT: routing kontrolü artık on_user_turn_completed içinde (await, LLM öncesi)
 
     background_audio = BackgroundAudioPlayer(
         ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.15),
         thinking_sound=AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.5),
-    )
-
-    # KB fallback callback — sadece routing_rules varsa aktar
-    kb_empty_cb = (
-        (lambda text: _check_and_route(text, kb_was_empty=True))
-        if routing_rules_list else None
     )
 
     await session.start(
@@ -1112,7 +1182,7 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
             instructions=system_prompt,
             org_id=org_id,
             lang=tts_lang,
-            on_kb_empty=kb_empty_cb,
+            on_route_check=_check_and_route if routing_rules_list else None,
         ),
         room=ctx.room,
         room_input_options=RoomInputOptions(noise_cancellation=True),
@@ -1120,7 +1190,10 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
 
     await background_audio.start(room=ctx.room, agent_session=session)
 
-    await session.generate_reply(instructions=opening)
+    # Opening mesajı: LLM'e ekstra talimat vererek verbatim söylenmesini sağla
+    await session.generate_reply(
+        instructions=f"AÇILIŞ MESAJIN: Bu metni KELIMESI KELIMESINE söyle, hiçbir şey ekleme, hiçbir soru sorma: «{opening}»"
+    )
 
     MAX_CALL_SECONDS = 1800  # 30 dakika hard limit
 

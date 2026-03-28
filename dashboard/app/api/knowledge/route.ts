@@ -6,6 +6,35 @@ import { getSchema } from '@/lib/kb-schemas'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
+// Title + description içeriğinden ülke/bölüm tag'lerini otomatik çıkar
+// Panel'den elle tag girilmemişse bile KB search precision korunur
+const COUNTRY_KEYWORDS: Record<string, string> = {
+  'azerbaycan': 'azerbaycan', 'bosna': 'bosna_hersek', 'kosova': 'kosova',
+  'bulgaristan': 'bulgaristan', 'moldova': 'moldova', 'romanya': 'romanya',
+  'gürcistan': 'gurcistan', 'sırbistan': 'sirbistan', 'polonya': 'polonya',
+  'iran': 'iran', 'rusya': 'rusya', 'makedonya': 'kuzey_makedonya',
+  'macaristan': 'macaristan', 'çek': 'cek_cumhuriyeti',
+}
+const DEPT_KEYWORDS: Record<string, string> = {
+  'tıp': 'tıp', 'tıbbi': 'tıp', 'diş hekimliği': 'dis_hekimligi', 'diş': 'dis_hekimligi',
+  'eczacılık': 'eczacilik', 'hukuk': 'hukuk', 'mühendislik': 'muhendislik',
+  'psikoloji': 'psikoloji', 'veteriner': 'veterinerlik', 'hemşirelik': 'hemşirelik',
+  'mimarlık': 'mimarlık',
+}
+
+function autoDetectTags(title: string, description: string, itemType: string, existingTags: string[]): string[] {
+  const text = (title + ' ' + description).toLowerCase()
+  const detected = new Set<string>(existingTags)
+  if (itemType) detected.add(itemType)
+  for (const [kw, tag] of Object.entries(COUNTRY_KEYWORDS)) {
+    if (text.includes(kw)) detected.add(tag)
+  }
+  for (const [kw, tag] of Object.entries(DEPT_KEYWORDS)) {
+    if (text.includes(kw)) detected.add(tag)
+  }
+  return Array.from(detected)
+}
+
 async function generateEmbedding(text: string): Promise<number[]> {
   const response = await openai.embeddings.create({
     model: 'text-embedding-3-small',
@@ -15,6 +44,16 @@ async function generateEmbedding(text: string): Promise<number[]> {
   return response.data[0].embedding
 }
 
+const KB_GENERATION_SYSTEM_PROMPT =
+  'Sen bir sesli AI asistanı için bilgi tabanı içeriği yazıyorsun. ' +
+  'ZORUNLU KURALLAR:\n' +
+  '- "Merhaba", "Bugün size...", "Ben ... temsilcisiyim" gibi açılışlar YASAK\n' +
+  '- "Harika bir seçenek", "mükemmel tercih", "kariyer hedeflerinize ulaşın", ' +
+  '"memnuniyetle yanıtlarım", "unutmayın" gibi promosyon/öneri cümleleri YASAK\n' +
+  '- Yorum, tavsiye veya motivasyon cümlesi ekleme\n' +
+  '- Sadece nesnel ve olgusal bilgi yaz: programlar, ücretler, dil, koşullar\n' +
+  '- Kısa ve doğrudan yaz, gereksiz açıklama ekleme'
+
 async function generateDescriptionForAI(item_type: string, data: Record<string, any>): Promise<string> {
   const schema = getSchema(item_type)
   if (!schema) return JSON.stringify(data)
@@ -22,7 +61,10 @@ async function generateDescriptionForAI(item_type: string, data: Record<string, 
   const response = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
     max_tokens: 1024,
-    messages: [{ role: 'user', content: prompt }],
+    messages: [
+      { role: 'system', content: KB_GENERATION_SYSTEM_PROMPT },
+      { role: 'user',   content: prompt },
+    ],
   })
   return response.choices[0]?.message?.content?.trim() ?? JSON.stringify(data)
 }
@@ -62,7 +104,7 @@ export async function POST(request: NextRequest) {
       title,
       description_for_ai,
       data: itemData || {},
-      tags: tags || [],
+      tags: autoDetectTags(title, description_for_ai, item_type || 'faq', tags || []),
       is_active: is_active !== undefined ? is_active : true,
       embedding,
     })
