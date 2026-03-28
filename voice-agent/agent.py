@@ -1111,7 +1111,7 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
 
     session = AgentSession(
         stt=deepgram.STT(model="nova-2", language=tts_lang),
-        llm=openai.LLM(model="gpt-4o-mini", temperature=0.4, max_tokens=200),
+        llm=openai.LLM(model="gpt-4o-mini", temperature=0.4),
         tts=cartesia.TTS(
             model="sonic-3",
             voice=effective_voice_id,
