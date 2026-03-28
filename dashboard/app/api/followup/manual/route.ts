@@ -62,12 +62,14 @@ export async function POST(req: NextRequest) {
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { note, action_type, scheduled_at, contact_id, lead_id } = body as {
-    note:         string
-    action_type:  'call' | 'whatsapp' | 'offer' | 'other'
-    scheduled_at: string
-    contact_id?:  string
-    lead_id?:     string
+  const { note, action_type, scheduled_at, contact_name, contact_phone, contact_id, lead_id } = body as {
+    note:           string
+    action_type:    'call' | 'whatsapp' | 'offer' | 'other'
+    scheduled_at:   string
+    contact_name?:  string
+    contact_phone?: string
+    contact_id?:    string
+    lead_id?:       string
   }
 
   if (!note?.trim())     return NextResponse.json({ error: 'note zorunlu' }, { status: 400 })
@@ -85,7 +87,12 @@ export async function POST(req: NextRequest) {
       scheduled_at,
       contact_id:      contact_id ?? null,
       lead_id:         lead_id    ?? null,
-      variables: { note: note.trim(), action_type },
+      variables: {
+        note: note.trim(),
+        action_type,
+        ...(contact_name  ? { contact_name }  : {}),
+        ...(contact_phone ? { contact_phone } : {}),
+      },
     })
     .select('id')
     .single()

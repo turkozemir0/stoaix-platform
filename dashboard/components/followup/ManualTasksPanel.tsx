@@ -10,7 +10,7 @@ interface ManualTask {
   id: string
   status: TaskStatus
   scheduled_at: string
-  variables: { note?: string; action_type?: ActionType }
+  variables: { note?: string; action_type?: ActionType; contact_name?: string; contact_phone?: string }
   contact?: { id: string; full_name?: string; phone?: string } | null
   created_at: string
 }
@@ -51,7 +51,8 @@ export default function ManualTasksPanel() {
   const [note, setNote]               = useState('')
   const [actionType, setActionType]   = useState<ActionType>('call')
   const [scheduledAt, setScheduledAt] = useState('')
-  const [contactSearch, setContactSearch] = useState('')
+  const [contactName, setContactName] = useState('')
+  const [contactPhone, setContactPhone] = useState('')
   const [submitting, setSubmitting]   = useState(false)
 
   const load = useCallback(async () => {
@@ -70,9 +71,14 @@ export default function ManualTasksPanel() {
     await fetch('/api/followup/manual', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ note, action_type: actionType, scheduled_at: scheduledAt }),
+      body: JSON.stringify({
+        note, action_type: actionType, scheduled_at: scheduledAt,
+        contact_name: contactName.trim() || undefined,
+        contact_phone: contactPhone.trim() || undefined,
+      }),
     })
-    setNote(''); setScheduledAt(''); setActionType('call'); setShowForm(false)
+    setNote(''); setScheduledAt(''); setActionType('call')
+    setContactName(''); setContactPhone(''); setShowForm(false)
     await load()
     setSubmitting(false)
   }
@@ -138,6 +144,30 @@ export default function ManualTasksPanel() {
                 {ACTION_META[t].label}
               </button>
             ))}
+          </div>
+
+          {/* Kişi bilgisi */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Ad Soyad</label>
+              <input
+                type="text"
+                value={contactName}
+                onChange={e => setContactName(e.target.value)}
+                placeholder="Max Mustermann"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Telefon / WhatsApp</label>
+              <input
+                type="text"
+                value={contactPhone}
+                onChange={e => setContactPhone(e.target.value)}
+                placeholder="+49 173 704 3983"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
           </div>
 
           {/* Not */}
@@ -206,8 +236,15 @@ export default function ManualTasksPanel() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <ActionBadge type={task.variables?.action_type} />
-                    {contactName && (
-                      <span className="text-xs text-slate-600 font-medium">{contactName}</span>
+                    {(task.variables?.contact_name || task.contact?.full_name) && (
+                      <span className="text-xs text-slate-700 font-medium">
+                        {task.variables?.contact_name || task.contact?.full_name}
+                      </span>
+                    )}
+                    {(task.variables?.contact_phone || task.contact?.phone) && (
+                      <span className="text-xs text-slate-400 font-mono">
+                        {task.variables?.contact_phone || task.contact?.phone}
+                      </span>
                     )}
                   </div>
                   <p className="text-sm text-slate-700 leading-snug">{task.variables?.note ?? '—'}</p>
