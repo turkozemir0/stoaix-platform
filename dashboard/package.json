@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.49.4",
+    "clsx": "^2.1.1",
     "livekit-client": "^2.17.3",
     "livekit-server-sdk": "^2.15.0",
     "lucide-react": "^0.460.0",
@@ -19,7 +20,8 @@
     "openai": "^4.91.1",
     "react": "^18",
     "react-dom": "^18",
-    "recharts": "^2.15.0"
+    "recharts": "^2.15.0",
+    "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
     "@types/node": "^20",
