@@ -1216,17 +1216,20 @@ export default function AgentPage() {
             <h3 className="text-sm font-semibold text-slate-900">Hızlı kalite özeti</h3>
           </div>
           <div className="space-y-3">
-            {quickWins.map(item => (
+            {quickWins.map(item => {
+              const Icon = item.icon
+              return (
               <div key={item.label} className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2 text-slate-500">
-                  <item.icon size={13} />
+                  <Icon size={13} />
                   {item.label}
                 </div>
                 <span className={`font-semibold ${item.value === 'Geliştirilmeli' ? 'text-amber-600' : 'text-slate-800'}`}>
                   {item.value}
                 </span>
               </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </aside>
