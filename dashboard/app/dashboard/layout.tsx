@@ -30,7 +30,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <LangProvider initialLang={initialLang}>
-      <div className="relative flex min-h-screen [min-height:100dvh] overflow-x-hidden bg-transparent">
+      <div className="relative flex min-h-screen [min-height:100dvh] bg-transparent">
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute left-[-12rem] top-[-10rem] h-[24rem] w-[24rem] rounded-full bg-sky-200/30 blur-3xl" />
           <div className="absolute right-[-10rem] top-[8rem] h-[22rem] w-[22rem] rounded-full bg-teal-200/25 blur-3xl" />

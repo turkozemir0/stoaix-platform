@@ -75,11 +75,11 @@ export default function Sidebar({ orgName, isSuperAdmin }: Props) {
         <div className="relative border-b border-white/10 px-4 py-5 flex items-start justify-between">
           <div className="flex-1">
             <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur">
-              <div className="flex items-center justify-between gap-3">
-                <div className="rounded-2xl bg-gradient-to-br from-brand-400 via-brand-500 to-accent-500 px-3 py-2 shadow-lg shadow-brand-500/20">
+              <div className="flex items-center gap-3">
+                <div className="shrink-0 rounded-2xl bg-gradient-to-br from-brand-400 via-brand-500 to-accent-500 px-3 py-2 shadow-lg shadow-brand-500/20">
                   <img src="/stoaixlogo-tight.png" alt="stoaix" className="h-7 w-auto brightness-0 invert" />
                 </div>
-                <div className="min-w-0 text-right">
+                <div className="min-w-0">
                   <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Platform</p>
                   <p className="text-sm font-medium text-white truncate">{orgName}</p>
                 </div>
