@@ -400,14 +400,7 @@ export default function AgentPage() {
     }))
   }
 
-  if (loading) {
-    return (
-      <div className="p-6 flex items-center gap-2 text-slate-400 text-sm">
-        <Loader2 size={16} className="animate-spin" /> Yükleniyor...
-      </div>
-    )
-  }
-
+  // Computed values — before loading check so hooks are always called in same order
   const promptLength = current.systemPrompt.trim().length
   const intakeMustCount = currentIntake.filter(f => f.priority === 'must').length
 
@@ -473,6 +466,7 @@ export default function AgentPage() {
     { label: 'Prompt uzunluğu', value: promptLength < 500 ? 'Geliştirilmeli' : 'İyi', icon: MessageSquare },
   ]
 
+  // useEffect MUST be before early return (Rules of Hooks)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (improvementTips.length <= 1) { setActiveTipIndex(0); return }
@@ -481,6 +475,14 @@ export default function AgentPage() {
   }, [improvementTips.length])
 
   const activeTip = improvementTips[activeTipIndex] || improvementTips[0]
+
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center gap-2 text-slate-400 text-sm">
+        <Loader2 size={16} className="animate-spin" /> Yükleniyor...
+      </div>
+    )
+  }
 
   const isSaved = savedChannel === activeChannel
 
