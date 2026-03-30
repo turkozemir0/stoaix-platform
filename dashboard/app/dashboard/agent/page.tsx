@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare, ListChecks, FlaskConical, PhoneForwarded, Clock, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare, ListChecks, FlaskConical, PhoneForwarded, Clock, ToggleLeft, ToggleRight, Lightbulb, ArrowUpRight, CheckCircle2, BookOpen } from 'lucide-react'
 import AgentTestPanel from '@/components/agent/AgentTestPanel'
 
 type Channel = 'voice' | 'whatsapp'
@@ -64,6 +64,21 @@ const VOICE_LANGUAGES = [
   { value: 'pl', label: '🇵🇱 Polski' },
 ]
 
+interface ImprovementTip {
+  id: string
+  title: string
+  body: string
+  badge: string
+  tone: 'info' | 'success' | 'warning'
+  action?: { label: string; onClick: () => void }
+}
+
+const tipToneStyles: Record<ImprovementTip['tone'], string> = {
+  info: 'border-sky-200 bg-sky-50/80 text-sky-700',
+  success: 'border-emerald-200 bg-emerald-50/80 text-emerald-700',
+  warning: 'border-amber-200 bg-amber-50/80 text-amber-700',
+}
+
 export default function AgentPage() {
   const [orgId, setOrgId] = useState('')
   const [loading, setLoading] = useState(true)
@@ -84,6 +99,7 @@ export default function AgentPage() {
   const [intakeSaved, setIntakeSaved]             = useState(false)
 
   const [kbCount, setKbCount] = useState(0)
+  const [activeTipIndex, setActiveTipIndex] = useState(0)
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedChannel, setSavedChannel] = useState<Channel | null>(null)
@@ -392,10 +408,85 @@ export default function AgentPage() {
     )
   }
 
+  const promptLength = current.systemPrompt.trim().length
+  const intakeMustCount = currentIntake.filter(f => f.priority === 'must').length
+
+  const improvementTips: ImprovementTip[] = [
+    ...(kbCount < 12 ? [{
+      id: 'kb-depth',
+      title: 'Bilgi bankasını derinleştir',
+      body: 'Asistanın güven veren cevaplar vermesi için hizmet, fiyat, süreç ve sık sorulan sorular tarafında daha fazla bilgi ekleyin. Az veriyle iyi görünür; çok veriyle etkileyici çalışır.',
+      badge: 'Knowledge base',
+      tone: 'warning' as const,
+      action: { label: 'Knowledge base\'e geç', onClick: () => window.location.assign('/dashboard/knowledge') },
+    }] : [{
+      id: 'kb-healthy',
+      title: 'Bilgi bankası iyi durumda',
+      body: `${kbCount} aktif kayıt mevcut. Tekrar eden soruları knowledge base başlıklarına dönüştürmek kaliteyi daha da artırır.`,
+      badge: `${kbCount} aktif kayıt`,
+      tone: 'success' as const,
+    }]),
+    ...(promptLength < 500 ? [{
+      id: 'prompt-depth',
+      title: 'Talimatları biraz daha netleştir',
+      body: 'Kısa promptlar çalışır ama "premium" his veren cevaplar için hedef, sınır, ton ve handoff kurallarını daha görünür yazmak fark yaratır.',
+      badge: 'Prompt kalitesi',
+      tone: 'warning' as const,
+    }] : [{
+      id: 'prompt-strong',
+      title: 'Talimat katmanı güçlü',
+      body: 'Talimat uzunluğu yeterli tarafta. Bir sonraki kalite artışı gerçek müşteri mesajlarından örnek konuşmalar eklemekten gelir.',
+      badge: 'Prompt olgunluğu',
+      tone: 'success' as const,
+    }]),
+    ...(currentIntake.length < 4 ? [{
+      id: 'intake-missing',
+      title: 'Veri toplama alanları eksik',
+      body: 'Asistan ne kadar doğru veri toplarsa handoff o kadar kaliteli görünür. İsim, telefon, ihtiyaç gibi çekirdek alanlar tanımlı olsun.',
+      badge: 'Intake schema',
+      tone: 'warning' as const,
+    }] : [{
+      id: 'intake-strong',
+      title: 'Veri toplama akışı kurulmuş',
+      body: 'Alan sayısı iyi. Zorunlu alanları gözden geçirip kritik bilgileri "must" yapmanız kaliteyi yükseltir.',
+      badge: `${currentIntake.length} alan`,
+      tone: 'success' as const,
+    }]),
+    ...(current.blocks.length === 0 ? [{
+      id: 'guardrails',
+      title: 'Kırmızı çizgileri tanımla',
+      body: 'Rakip, hukuki konu, net fiyat garantisi veya iade gibi hassas başlıklarda hazır sınırlar tanımlamak asistanı daha güvenli ve profesyonel gösterir.',
+      badge: 'Risk kontrolü',
+      tone: 'info' as const,
+    }] : [{
+      id: 'guardrails-ready',
+      title: 'Kırmızı çizgiler tanımlı',
+      body: 'Sınır blokları mevcut. Yeni kanallar veya güncel mevzuat değiştikçe bu listeyi güncel tutmak yeterli.',
+      badge: `${current.blocks.length} blok`,
+      tone: 'success' as const,
+    }]),
+  ]
+
+  const quickWins = [
+    { label: 'Knowledge base kapsamı', value: kbCount < 12 ? 'Geliştirilmeli' : 'İyi', icon: BookOpen },
+    { label: 'Zorunlu intake alanı', value: `${intakeMustCount}`, icon: ListChecks },
+    { label: 'Prompt uzunluğu', value: promptLength < 500 ? 'Geliştirilmeli' : 'İyi', icon: MessageSquare },
+  ]
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (improvementTips.length <= 1) { setActiveTipIndex(0); return }
+    const id = window.setInterval(() => setActiveTipIndex(p => (p + 1) % improvementTips.length), 6500)
+    return () => window.clearInterval(id)
+  }, [improvementTips.length])
+
+  const activeTip = improvementTips[activeTipIndex] || improvementTips[0]
+
   const isSaved = savedChannel === activeChannel
 
   return (
-    <div className="p-6 max-w-3xl space-y-6">
+    <div className="p-6 xl:grid xl:grid-cols-[1fr_300px] xl:gap-8 xl:items-start">
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -1072,6 +1163,73 @@ export default function AgentPage() {
       )}
         </>
       )}
+      </div>{/* end main column */}
+
+      {/* Improvement tips sidebar */}
+      <aside className="hidden xl:block sticky top-6 space-y-4">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 text-white shadow-lg">
+          <div className="border-b border-white/10 p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-widest text-sky-200">Canlı öneri</p>
+                <h2 className="mt-2 text-base font-semibold">Asistanı daha iyi yap</h2>
+              </div>
+              <div className="rounded-xl bg-white/10 p-2.5">
+                <Lightbulb size={16} className="text-sky-200" />
+              </div>
+            </div>
+          </div>
+
+          {activeTip && (
+            <div className="p-5">
+              <div className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium ${tipToneStyles[activeTip.tone]}`}>
+                {activeTip.badge}
+              </div>
+              <h3 className="mt-3 text-sm font-semibold text-white">{activeTip.title}</h3>
+              <p className="mt-2 text-xs leading-5 text-slate-300">{activeTip.body}</p>
+              {activeTip.action && (
+                <button
+                  onClick={activeTip.action.onClick}
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 hover:-translate-y-0.5 transition-transform"
+                >
+                  {activeTip.action.label}
+                  <ArrowUpRight size={12} />
+                </button>
+              )}
+              <div className="mt-4 flex gap-1.5">
+                {improvementTips.map((tip, index) => (
+                  <button
+                    key={tip.id}
+                    onClick={() => setActiveTipIndex(index)}
+                    aria-label={tip.title}
+                    className={`h-1 rounded-full transition-all ${index === activeTipIndex ? 'w-6 bg-white' : 'w-2.5 bg-white/30 hover:bg-white/50'}`}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <CheckCircle2 size={15} className="text-emerald-500" />
+            <h3 className="text-sm font-semibold text-slate-900">Hızlı kalite özeti</h3>
+          </div>
+          <div className="space-y-3">
+            {quickWins.map(item => (
+              <div key={item.label} className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 text-slate-500">
+                  <item.icon size={13} />
+                  {item.label}
+                </div>
+                <span className={`font-semibold ${item.value === 'Geliştirilmeli' ? 'text-amber-600' : 'text-slate-800'}`}>
+                  {item.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </aside>
     </div>
   )
 }
