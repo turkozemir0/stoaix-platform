@@ -1,10 +1,13 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { t } from '@/lib/i18n'
+import { getT } from '@/lib/i18n'
+import { cookies } from 'next/headers'
 import { formatDuration } from '@/lib/types'
 import CallRow from './CallRow'
 
 export default async function CallsPage() {
+  const lang = cookies().get('lang')?.value === 'en' ? 'en' : 'tr'
+  const t = getT(lang)
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { t } from '@/lib/i18n'
+import { useT } from '@/lib/lang-context'
 import { formatDuration } from '@/lib/types'
 
 interface Props {
@@ -37,6 +37,7 @@ function scoreColor(score: number) {
 }
 
 export default function CallRow({ call }: Props) {
+  const t = useT()
   const [expanded, setExpanded] = useState(false)
   const lead = call.lead
   const hasDetail = call.transcript || lead?.ai_summary || lead?.collected_data

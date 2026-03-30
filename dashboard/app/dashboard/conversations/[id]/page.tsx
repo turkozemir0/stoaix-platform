@@ -2,10 +2,13 @@ import { redirect, notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import LeadBadge from '@/components/LeadBadge'
-import { t } from '@/lib/i18n'
+import { getT } from '@/lib/i18n'
+import { cookies } from 'next/headers'
 import { ArrowLeft } from 'lucide-react'
 
 export default async function LeadDetailPage({ params }: { params: { id: string } }) {
+  const lang = cookies().get('lang')?.value === 'en' ? 'en' : 'tr'
+  const t = getT(lang)
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')

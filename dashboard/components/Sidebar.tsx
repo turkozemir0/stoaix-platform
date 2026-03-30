@@ -206,7 +206,7 @@ export default function Sidebar({ orgName, isSuperAdmin }: Props) {
             </div>
             <div className="flex items-center gap-1">
             <button
-              onClick={() => setLang('tr')}
+              onClick={() => { setLang('tr'); router.refresh() }}
               className={`flex-1 min-h-[44px] rounded-xl py-2.5 text-xs font-medium transition-colors ${
                 lang === 'tr'
                   ? 'bg-white text-slate-950 shadow-sm'
@@ -216,7 +216,7 @@ export default function Sidebar({ orgName, isSuperAdmin }: Props) {
               TR
             </button>
             <button
-              onClick={() => setLang('en')}
+              onClick={() => { setLang('en'); router.refresh() }}
               className={`flex-1 min-h-[44px] rounded-xl py-2.5 text-xs font-medium transition-colors ${
                 lang === 'en'
                   ? 'bg-white text-slate-950 shadow-sm'

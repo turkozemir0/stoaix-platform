@@ -4,7 +4,8 @@ import { Users, Flame, TrendingUp, ArrowRight, Star, CalendarDays } from 'lucide
 import StatCard from '@/components/StatCard'
 import TrendChart from '@/components/TrendChart'
 import LeadBadge from '@/components/LeadBadge'
-import { t } from '@/lib/i18n'
+import { getT } from '@/lib/i18n'
+import { cookies } from 'next/headers'
 import { formatDuration } from '@/lib/types'
 import type { DailyTrend } from '@/lib/types'
 import Link from 'next/link'
@@ -37,6 +38,8 @@ async function getOrgId(supabase: any, userId: string) {
 }
 
 export default async function DashboardPage() {
+  const lang = cookies().get('lang')?.value === 'en' ? 'en' : 'tr'
+  const t = getT(lang)
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')

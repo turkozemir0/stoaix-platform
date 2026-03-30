@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Plus, Building2, Users, Settings, BookOpen, AlertTriangle } from 'lucide-react'
 import Link from 'next/link'
-import { t } from '@/lib/i18n'
+import { useT } from '@/lib/lang-context'
 import NewOrgModal from './NewOrgModal'
 import OrgSettingsModal from './OrgSettingsModal'
 
@@ -37,6 +37,7 @@ const statusColors: Record<string, string> = {
 }
 
 export default function AdminClient({ orgs: initialOrgs, countsByOrg, kbCountsByOrg }: Props) {
+  const t = useT()
   const [orgs, setOrgs] = useState(initialOrgs)
   const [showNewModal, setShowNewModal] = useState(false)
   const [settingsOrg, setSettingsOrg] = useState<{ id: string; name: string } | null>(null)
