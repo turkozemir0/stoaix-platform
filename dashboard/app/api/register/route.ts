@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
   const { data: tokenData, error: tokenError } = await service
     .from('invite_tokens')
-    .select('id, organization_id, is_used, expires_at')
+    .select('id, organization_id, is_used, expires_at, clinic_type')
     .eq('token', token)
     .maybeSingle()
 
@@ -52,6 +52,9 @@ export async function POST(request: NextRequest) {
       .eq('id', tokenData.organization_id)
   }
 
-  const redirect = org?.onboarding_status === 'completed' ? '/dashboard' : '/onboarding'
+  const clinicType = tokenData.clinic_type ?? 'other'
+  const redirect = org?.onboarding_status === 'completed'
+    ? '/dashboard'
+    : `/onboarding?type=${clinicType}`
   return NextResponse.json({ ok: true, redirect })
 }
