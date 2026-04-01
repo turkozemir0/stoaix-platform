@@ -62,14 +62,16 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // Broadcast notification to all org members
-  await service.from('notifications').insert({
-    organization_id: conv.organization_id,
-    user_id: null, // broadcast
-    type: 'takeover',
-    conversation_id: params.id,
-    title: 'Konuşma devralındı',
-    body: 'Bir temsilci konuşmayı devraldı.',
-  }).catch(() => {})
+  try {
+    await service.from('notifications').insert({
+      organization_id: conv.organization_id,
+      user_id: null, // broadcast
+      type: 'takeover',
+      conversation_id: params.id,
+      title: 'Konuşma devralındı',
+      body: 'Bir temsilci konuşmayı devraldı.',
+    })
+  } catch (_) {}
 
   return NextResponse.json({ ok: true, mode: 'human' })
 }
