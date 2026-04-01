@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
   const { data: tokenData, error: tokenError } = await service
     .from('invite_tokens')
-    .select('id, organization_id, is_used, expires_at, clinic_type')
+    .select('id, organization_id, is_used, expires_at, clinic_type, role')
     .eq('token', token)
     .maybeSingle()
 
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
   // Add org_user
   const { error: orgUserError } = await service
     .from('org_users')
-    .insert({ organization_id: tokenData.organization_id, user_id, role: 'admin' })
+    .insert({ organization_id: tokenData.organization_id, user_id, role: tokenData.role ?? 'admin' })
 
   if (orgUserError) return NextResponse.json({ error: `org_users hatası: ${orgUserError.message}` }, { status: 500 })
 

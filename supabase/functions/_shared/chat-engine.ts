@@ -772,6 +772,26 @@ export async function handleInboundMessage(opts: InboundMessageOptions): Promise
     return
   }
 
+  // ── Human mode check: if conversation is taken over by a human, skip AI ──
+  const { data: convMode } = await supabase
+    .from('conversations')
+    .select('mode, taken_over_by')
+    .eq('id', conversationId)
+    .maybeSingle()
+
+  if (convMode?.mode === 'human') {
+    // Notify the assigned human agent
+    await supabase.from('notifications').insert({
+      organization_id: orgId,
+      user_id: convMode.taken_over_by ?? null,
+      type: 'new_message',
+      conversation_id: conversationId,
+      title: 'Yeni mesaj',
+      body: messageText.slice(0, 80),
+    }).catch(() => {})
+    return
+  }
+
   // ── Re-engagement: lead cevap verdi → kalan re_contact task'larını iptal et ──
   await supabase
     .from('follow_up_tasks')
@@ -813,6 +833,32 @@ export async function handleInboundMessage(opts: InboundMessageOptions): Promise
       onScoreThreshold
     ) {
       onScoreThreshold({ score: scoreResult.newScore, collectedData: scoreResult.collectedData }).catch(() => {})
+    }
+
+    // ── Notifications ──
+    const { data: notifLead } = await supabase.from('leads').select('id').eq('organization_id', orgId).eq('contact_id', contactId).maybeSingle()
+    const leadId = notifLead?.id ?? null
+
+    if (handoff && leadId) {
+      supabase.from('notifications').insert({
+        organization_id: orgId,
+        user_id: null,
+        type: 'handoff',
+        lead_id: leadId,
+        conversation_id: conversationId,
+        title: '🤝 Handoff talebi',
+        body: 'Müşteri insan temsilci istedi.',
+      }).catch(() => {})
+    } else if (scoreResult && scoreResult.prevScore < 70 && scoreResult.newScore >= 70 && leadId) {
+      supabase.from('notifications').insert({
+        organization_id: orgId,
+        user_id: null,
+        type: 'hot_lead',
+        lead_id: leadId,
+        conversation_id: conversationId,
+        title: '🔥 Hot Lead!',
+        body: `Skor ${scoreResult.newScore} oldu.`,
+      }).catch(() => {})
     }
 
     if (isNewLead && onNewLead) {

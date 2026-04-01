@@ -23,6 +23,7 @@ export default function NewOrgModal({ onClose }: Props) {
   const [slug, setSlug] = useState('')
   const [sector, setSector] = useState('education')
   const [clinicType, setClinicType] = useState('hair_transplant')
+  const [inviteRole, setInviteRole] = useState('yönetici')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [inviteUrl, setInviteUrl] = useState('')
@@ -47,6 +48,7 @@ export default function NewOrgModal({ onClose }: Props) {
         slug: slug.trim(),
         sector,
         clinic_type: sector === 'clinic' ? clinicType : 'other',
+        role: inviteRole,
       }),
     })
 
@@ -135,6 +137,21 @@ export default function NewOrgModal({ onClose }: Props) {
                 <p className="text-xs text-slate-400 mt-1">Müşteri onboarding'de branşa özel hazır içerikler otomatik yüklenir.</p>
               </div>
             )}
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Davet Rolü</label>
+              <select
+                value={inviteRole}
+                onChange={e => setInviteRole(e.target.value)}
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+              >
+                <option value="admin">Admin — tam erişim</option>
+                <option value="yönetici">Yönetici — tam erişim (billing hariç)</option>
+                <option value="satisci">Satışçı — leads + teklifler</option>
+                <option value="muhasebe">Muhasebe — ödemeler</option>
+                <option value="viewer">Viewer — salt okunur</option>
+              </select>
+            </div>
 
             {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
 

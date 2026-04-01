@@ -18,7 +18,7 @@ export async function GET(request: NextRequest, { params }: { params: { token: s
 
   const { data: tokenRow, error: tokenErr } = await service
     .from('invite_tokens')
-    .select('id, organization_id, is_used, expires_at, clinic_type')
+    .select('id, organization_id, is_used, expires_at, clinic_type, role')
     .eq('token', token)
     .maybeSingle()
 
@@ -39,5 +39,6 @@ export async function GET(request: NextRequest, { params }: { params: { token: s
     org_name: org.name,
     sector: org.sector,
     clinic_type: tokenRow.clinic_type ?? org.sector ?? 'other',
+    role: tokenRow.role ?? 'admin',
   })
 }

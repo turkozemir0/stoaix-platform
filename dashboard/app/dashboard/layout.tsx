@@ -24,6 +24,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .maybeSingle()
 
   const orgName = (orgUser?.organization as any)?.name ?? (superAdmin ? 'stoaix Admin' : '')
+  const orgId = (orgUser?.organization as any)?.id ?? null
+  const userRole = orgUser?.role ?? null
 
   const cookieLang = cookies().get('lang')?.value as Lang | undefined
   const initialLang: Lang = cookieLang === 'en' ? 'en' : 'tr'
@@ -35,7 +37,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <div className="absolute left-[-12rem] top-[-10rem] h-[24rem] w-[24rem] rounded-full bg-sky-200/30 blur-3xl" />
           <div className="absolute right-[-10rem] top-[8rem] h-[22rem] w-[22rem] rounded-full bg-teal-200/25 blur-3xl" />
         </div>
-        <Sidebar orgName={orgName} isSuperAdmin={!!superAdmin} />
+        <Sidebar orgName={orgName} isSuperAdmin={!!superAdmin} userRole={userRole} userId={user.id} orgId={orgId} />
         <main className="relative flex-1 min-w-0 overflow-auto pt-16 md:pt-0">
           {children}
         </main>

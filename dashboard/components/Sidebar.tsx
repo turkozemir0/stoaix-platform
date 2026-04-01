@@ -3,34 +3,44 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, MessageSquare, Phone, BookOpen, Settings, LogOut, ShieldCheck, LifeBuoy, Bot, RefreshCw, ClipboardList, Menu, X, Target, CreditCard, HeartHandshake } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Phone, BookOpen, Settings, LogOut, ShieldCheck, LifeBuoy, Bot, RefreshCw, ClipboardList, Menu, X, Target, CreditCard, HeartHandshake, FileText, Wallet } from 'lucide-react'
 import { useT, useLang } from '@/lib/lang-context'
 import { createClient } from '@/lib/supabase/client'
+import NotificationBell from './NotificationBell'
 
 interface Props {
   orgName: string
   isSuperAdmin?: boolean
+  userRole?: string | null
+  userId?: string | null
+  orgId?: string | null
 }
 
-export default function Sidebar({ orgName, isSuperAdmin }: Props) {
+export default function Sidebar({ orgName, isSuperAdmin, userRole, userId, orgId }: Props) {
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
   const t = useT()
   const { lang, setLang } = useLang()
 
-  const navItems = [
-    { href: '/dashboard',               label: t.overview,       icon: LayoutDashboard },
-    { href: '/dashboard/conversations', label: t.conversations,  icon: MessageSquare },
-    { href: '/dashboard/calls',         label: t.calls,          icon: Phone },
-    { href: '/dashboard/knowledge',     label: t.knowledge,      icon: BookOpen },
-    { href: '/dashboard/leads',         label: 'Leads',          icon: Target },
-    { href: '/dashboard/agent',         label: 'AI Assistant',   icon: Bot },
-    { href: '/dashboard/followup',      label: 'Follow-up',      icon: RefreshCw },
-    { href: '/dashboard/support',       label: t.tickets,        icon: LifeBuoy },
-    { href: '/dashboard/billing',       label: t.billing,        icon: CreditCard },
-    { href: '/dashboard/settings',      label: lang === 'tr' ? 'Ayarlar' : 'Settings', icon: Settings },
+  const allNavItems = [
+    { href: '/dashboard',               label: t.overview,       icon: LayoutDashboard, roles: null },
+    { href: '/dashboard/leads',         label: 'Leads',          icon: Target,          roles: null },
+    { href: '/dashboard/conversations', label: t.conversations,  icon: MessageSquare,   roles: ['admin','viewer','yönetici','satisci'] },
+    { href: '/dashboard/calls',         label: t.calls,          icon: Phone,           roles: ['admin','viewer','yönetici','satisci'] },
+    { href: '/dashboard/proposals',     label: lang === 'tr' ? 'Teklifler' : 'Proposals', icon: FileText, roles: ['admin','yönetici','satisci','muhasebe'] },
+    { href: '/dashboard/payments',      label: lang === 'tr' ? 'Ödemeler' : 'Payments',   icon: Wallet,   roles: ['admin','yönetici','muhasebe'] },
+    { href: '/dashboard/knowledge',     label: t.knowledge,      icon: BookOpen,        roles: ['admin','viewer','yönetici','satisci'] },
+    { href: '/dashboard/agent',         label: 'AI Assistant',   icon: Bot,             roles: ['admin','yönetici','satisci'] },
+    { href: '/dashboard/followup',      label: 'Follow-up',      icon: RefreshCw,       roles: ['admin','yönetici','satisci'] },
+    { href: '/dashboard/support',       label: t.tickets,        icon: LifeBuoy,        roles: ['admin','viewer','yönetici'] },
+    { href: '/dashboard/billing',       label: t.billing,        icon: CreditCard,      roles: ['admin','yönetici'] },
+    { href: '/dashboard/settings',      label: lang === 'tr' ? 'Ayarlar' : 'Settings', icon: Settings, roles: ['admin','yönetici','satisci'] },
   ]
+
+  const navItems = allNavItems.filter(item =>
+    isSuperAdmin || item.roles === null || (userRole && item.roles.includes(userRole))
+  )
 
   // Sayfa değişince mobil menüyü kapat
   useEffect(() => {
@@ -71,7 +81,7 @@ export default function Sidebar({ orgName, isSuperAdmin }: Props) {
       `}>
         <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.24),_transparent_70%)]" />
 
-        {/* Logo */}
+        {/* Logo + Notification Bell */}
         <div className="relative border-b border-white/10 px-4 py-5 flex items-start justify-between">
           <div className="flex-1">
             <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur">
@@ -96,14 +106,20 @@ export default function Sidebar({ orgName, isSuperAdmin }: Props) {
               </div>
             </div>
           </div>
-          {/* Mobil kapat butonu */}
-          <button
-            className="md:hidden ml-2 mt-1 p-1 text-slate-400 hover:text-white"
-            onClick={() => setMobileOpen(false)}
-            aria-label="Menüyü kapat"
-          >
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-2 ml-2 mt-1">
+            {/* Notification Bell — only for org users */}
+            {userId && orgId && (
+              <NotificationBell userId={userId} orgId={orgId} />
+            )}
+            {/* Mobil kapat butonu */}
+            <button
+              className="md:hidden p-1 text-slate-400 hover:text-white"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Menüyü kapat"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Nav */}
