@@ -105,8 +105,6 @@ export default function NotificationBell({ userId, orgId }: Props) {
     if (!notif.read_at) markRead(notif.id)
     if (notif.lead_id) {
       router.push(`/dashboard/leads/${notif.lead_id}`)
-    } else if (notif.conversation_id) {
-      router.push(`/dashboard/leads/${notif.conversation_id}`)
     }
     setOpen(false)
   }

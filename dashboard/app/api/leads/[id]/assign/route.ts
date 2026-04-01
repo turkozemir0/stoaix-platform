@@ -36,9 +36,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     return NextResponse.json({ error: 'assigned_to veya status gerekli' }, { status: 400 })
   }
 
-  const query = supabase.from('leads').update(updates).eq('id', params.id)
+  let query = supabase.from('leads').update(updates).eq('id', params.id)
   if (orgUser && !superAdmin) {
-    query.eq('organization_id', orgUser.organization_id)
+    query = query.eq('organization_id', orgUser.organization_id)
   }
 
   const { error } = await query

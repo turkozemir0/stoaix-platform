@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import Papa from 'papaparse'
 import { Upload, FileText, CheckCircle, AlertCircle, X } from 'lucide-react'
+import { COUNTRY_CODES } from '@/lib/phone-utils'
 
 interface PreviewRow {
   [key: string]: string
@@ -17,15 +18,24 @@ interface ImportResult {
   truncated: boolean
 }
 
+// Kolon adlarını tespit et: önce tam eşleşme (case-insensitive), sonra içerik araması
+function autoDetect(cols: string[], exact: string[], partial: string[]): string {
+  const found = cols.find(c => exact.some(k => c.toLowerCase().trim() === k.toLowerCase()))
+  if (found) return found
+  return cols.find(c => partial.some(k => c.toLowerCase().includes(k.toLowerCase()))) ?? ''
+}
+
 export default function ImportPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [headers, setHeaders] = useState<string[]>([])
   const [preview, setPreview] = useState<PreviewRow[]>([])
   const [phoneCol, setPhoneCol] = useState('')
-  const [nameCol, setNameCol] = useState('')
+  const [firstNameCol, setFirstNameCol] = useState('')
+  const [lastNameCol, setLastNameCol] = useState('')
   const [emailCol, setEmailCol] = useState('')
   const [sourceCol, setSourceCol] = useState('')
+  const [defaultCC, setDefaultCC] = useState('90')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
   const [error, setError] = useState('')
@@ -45,12 +55,27 @@ export default function ImportPage() {
       setHeaders(cols)
       setPreview(parsed.data as PreviewRow[])
 
-      // Auto-detect columns
-      const lower = cols.map(c => c.toLowerCase())
-      setPhoneCol(cols[lower.findIndex(c => c.includes('tel') || c.includes('phone') || c.includes('gsm'))] ?? '')
-      setNameCol(cols[lower.findIndex(c => c.includes('isim') || c.includes('ad') || c.includes('name'))] ?? '')
-      setEmailCol(cols[lower.findIndex(c => c.includes('email') || c.includes('mail'))] ?? '')
-      setSourceCol(cols[lower.findIndex(c => c.includes('kaynak') || c.includes('source'))] ?? '')
+      // Auto-detect: tam eşleşme önce, sonra kısmi — çoklu CRM formatı desteği
+      setPhoneCol(autoDetect(cols,
+        ['Phone', 'Telefon', 'GSM', 'Mobile', 'Cep'],
+        ['phone', 'tel', 'gsm', 'mobile', 'cep', 'nummer', 'numar']
+      ))
+      setFirstNameCol(autoDetect(cols,
+        ['First Name', 'FirstName', 'Ad', 'İsim', 'Name'],
+        ['first name', 'first_name', 'firstname', 'isim', 'vorname']
+      ))
+      setLastNameCol(autoDetect(cols,
+        ['Last Name', 'LastName', 'Soyad', 'Surname'],
+        ['last name', 'last_name', 'lastname', 'soyad', 'surname', 'nachname', 'familienname']
+      ))
+      setEmailCol(autoDetect(cols,
+        ['Email', 'E-Mail', 'E-posta', 'Mail'],
+        ['email', 'mail', 'e-posta']
+      ))
+      setSourceCol(autoDetect(cols,
+        ['Tags', 'Tag', 'Kaynak', 'Source', 'Lead Source', 'Kanal'],
+        ['tag', 'kaynak', 'source', 'kanal', 'channel']
+      ))
     }
     reader.readAsText(f, 'UTF-8')
   }
@@ -67,9 +92,11 @@ export default function ImportPage() {
     const form = new FormData()
     form.append('file', file)
     form.append('phone_col', phoneCol)
-    if (nameCol) form.append('name_col', nameCol)
+    form.append('default_cc', defaultCC)
+    if (firstNameCol) form.append('first_name_col', firstNameCol)
+    if (lastNameCol) form.append('last_name_col', lastNameCol)
     if (emailCol) form.append('email_col', emailCol)
-    form.append('source_col', sourceCol || 'import')
+    if (sourceCol) form.append('source_col', sourceCol)
 
     const res = await fetch('/api/import', { method: 'POST', body: form })
     const data = await res.json()
@@ -92,11 +119,22 @@ export default function ImportPage() {
     if (fileRef.current) fileRef.current.value = ''
   }
 
+  const colFields = [
+    { label: 'Telefon *', value: phoneCol, setter: setPhoneCol },
+    { label: 'Ad (First Name)', value: firstNameCol, setter: setFirstNameCol },
+    { label: 'Soyad (Last Name)', value: lastNameCol, setter: setLastNameCol },
+    { label: 'E-posta', value: emailCol, setter: setEmailCol },
+    { label: 'Kaynak / Tags', value: sourceCol, setter: setSourceCol },
+  ]
+
   return (
     <div className="p-6 max-w-3xl space-y-6">
       <div>
         <h1 className="text-xl font-bold text-slate-900">CSV Lead Import</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Maksimum 500 satır. Duplicate'ler telefon veya e-posta ile tespit edilir.</p>
+        <p className="text-sm text-slate-500 mt-0.5">
+          Maksimum 3.500 satır. GHL, HubSpot, Pipedrive ve diğer CRM export'ları desteklenir.
+          Duplicate'ler telefon veya e-posta ile tespit edilir.
+        </p>
       </div>
 
       {/* Result */}
@@ -117,17 +155,19 @@ export default function ImportPage() {
               <p className="text-xl font-bold text-green-700">{result.inserted_count}</p>
             </div>
             <div className="bg-white rounded-lg p-3 border border-green-100">
-              <p className="text-xs text-slate-500">Duplicate</p>
+              <p className="text-xs text-slate-500">Zaten Mevcut</p>
               <p className="text-xl font-bold text-amber-600">{result.duplicate_count}</p>
             </div>
             <div className="bg-white rounded-lg p-3 border border-green-100">
               <p className="text-xs text-slate-500">Hata</p>
-              <p className={`text-xl font-bold ${result.error_count > 0 ? 'text-red-600' : 'text-slate-400'}`}>{result.error_count}</p>
+              <p className={`text-xl font-bold ${result.error_count > 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                {result.error_count}
+              </p>
             </div>
           </div>
           {result.truncated && (
             <p className="text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded-lg">
-              ⚠️ Dosya 500 satırdan fazla içeriyor, sadece ilk 500 satır işlendi.
+              Dosya 3.500 satırdan fazla içeriyor, sadece ilk 3.500 satır işlendi.
             </p>
           )}
         </div>
@@ -152,14 +192,16 @@ export default function ImportPage() {
                 <FileText size={24} className="text-brand-500" />
                 <div className="text-left">
                   <p className="font-medium text-slate-700">{file.name}</p>
-                  <p className="text-xs text-slate-400">{(file.size / 1024).toFixed(1)} KB</p>
+                  <p className="text-xs text-slate-400">
+                    {(file.size / 1024).toFixed(1)} KB &middot; {(file.size / 1024 / 1024).toFixed(2)} MB
+                  </p>
                 </div>
               </div>
             ) : (
               <div className="space-y-2">
                 <Upload size={32} className="mx-auto text-slate-300" />
                 <p className="text-sm text-slate-500">CSV dosyasını seçmek için tıklayın</p>
-                <p className="text-xs text-slate-400">Desteklenen format: .csv (UTF-8)</p>
+                <p className="text-xs text-slate-400">Desteklenen format: .csv (UTF-8) &middot; Maks. 10MB</p>
               </div>
             )}
           </div>
@@ -168,13 +210,33 @@ export default function ImportPage() {
           {headers.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
               <h2 className="text-sm font-semibold text-slate-700">Kolon Eşleştirme</h2>
+
+              {/* Default country code */}
+              <div className="bg-slate-50 rounded-lg p-3 flex items-center gap-3">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Varsayılan Ülke Kodu
+                    <span className="ml-1 text-slate-400 font-normal">(telefonda + yoksa uygulanır)</span>
+                  </label>
+                  <select
+                    value={defaultCC}
+                    onChange={e => setDefaultCC(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 bg-white"
+                  >
+                    {COUNTRY_CODES.map(c => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag} {c.label} (+{c.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="text-xs text-slate-500 max-w-[200px] leading-relaxed">
+                  GHL/uluslararası CSV'lerde telefon zaten <span className="font-mono">+49...</span> formatında gelir, bu ayar görmezden gelinir.
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: 'Telefon *', value: phoneCol, setter: setPhoneCol },
-                  { label: 'Ad Soyad', value: nameCol, setter: setNameCol },
-                  { label: 'E-posta', value: emailCol, setter: setEmailCol },
-                  { label: 'Kaynak', value: sourceCol, setter: setSourceCol },
-                ].map(({ label, value, setter }) => (
+                {colFields.map(({ label, value, setter }) => (
                   <div key={label}>
                     <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
                     <select
@@ -189,10 +251,14 @@ export default function ImportPage() {
                 ))}
               </div>
 
+              <p className="text-xs text-slate-400">
+                Ad + Soyad otomatik birleştirilir. Tags / Kaynak kolonu: "whatsapp", "instagram" gibi değerler source_channel'a dönüştürülür.
+              </p>
+
               {/* Preview */}
               <div>
                 <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">İlk 5 Satır Önizleme</h3>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto rounded-lg border border-slate-100">
                   <table className="text-xs w-full">
                     <thead>
                       <tr>
@@ -205,7 +271,7 @@ export default function ImportPage() {
                     </thead>
                     <tbody>
                       {preview.map((row, i) => (
-                        <tr key={i} className="border-b border-slate-50">
+                        <tr key={i} className="border-b border-slate-50 last:border-0">
                           {headers.map(h => (
                             <td key={h} className="px-3 py-1.5 text-slate-700 whitespace-nowrap max-w-[120px] truncate">
                               {row[h]}

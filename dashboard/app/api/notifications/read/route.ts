@@ -9,6 +9,13 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
 
   if (body.all && body.org_id) {
+    // Verify caller belongs to this org (or is super admin)
+    const [{ data: orgUser }, { data: superAdmin }] = await Promise.all([
+      supabase.from('org_users').select('organization_id').eq('user_id', user.id).eq('organization_id', body.org_id).maybeSingle(),
+      supabase.from('super_admin_users').select('id').eq('user_id', user.id).maybeSingle(),
+    ])
+    if (!orgUser && !superAdmin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
     // Mark all unread notifications for this user in this org
     const { error } = await supabase
       .from('notifications')

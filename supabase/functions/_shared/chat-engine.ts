@@ -658,29 +658,70 @@ export async function handleInboundMessage(opts: InboundMessageOptions): Promise
   } = opts
 
   // ── Upsert contact ──
-  // Lookup by the provider-specific identifier stored inside channel_identifiers JSONB
+  // Priority 1: provider-specific identifier (ghl_contact_id, wa_id, etc.)
+  // Priority 2: phone fallback — covers contacts imported via CSV that lack channel_identifiers
+  // When found by phone, we merge the provider ID so future lookups hit priority 1 (faster, no extra query)
   let contactId: string
   let isNewContact = false
 
-  const { data: existingContact } = await supabase
+  const { data: byChannelId } = await supabase
     .from('contacts')
     .select('id')
     .eq('organization_id', orgId)
     .filter(`channel_identifiers->>${channelIdentifierKey}`, 'eq', providerContactId)
     .maybeSingle()
 
-  if (existingContact?.id) {
-    contactId = existingContact.id
+  if (byChannelId?.id) {
+    contactId = byChannelId.id
+  } else if (phone) {
+    // Phone fallback: works for GHL, Meta, Wati, or any future provider
+    const { data: byPhone } = await supabase
+      .from('contacts')
+      .select('id, channel_identifiers')
+      .eq('organization_id', orgId)
+      .eq('phone', phone)
+      .maybeSingle()
+
+    if (byPhone?.id) {
+      contactId = byPhone.id
+      // Merge provider ID into channel_identifiers so next message uses priority 1
+      const merged = {
+        ...((byPhone.channel_identifiers as Record<string, string>) ?? {}),
+        [channelIdentifierKey]: providerContactId,
+      }
+      await supabase.from('contacts').update({ channel_identifiers: merged }).eq('id', byPhone.id)
+    } else {
+      // Truly new contact — create it
+      const { data: newContact, error } = await supabase
+        .from('contacts')
+        .insert({
+          organization_id: orgId,
+          phone: phone || null,
+          channel_identifiers: {
+            [channelIdentifierKey]: providerContactId,
+            ...(phone ? { phone } : {}),
+          },
+          source_channel: channel,
+          status: 'new',
+        })
+        .select('id')
+        .single()
+
+      if (error || !newContact?.id) {
+        console.error('Contact insert failed:', error)
+        return
+      }
+      contactId = newContact.id
+      isNewContact = true
+    }
   } else {
+    // No phone and no channel match — create contact without phone (e.g. Instagram DM)
     const { data: newContact, error } = await supabase
       .from('contacts')
       .insert({
         organization_id: orgId,
-        phone: phone || null,
-        channel_identifiers: {
-          [channelIdentifierKey]: providerContactId,
-          ...(phone ? { phone } : {}),
-        },
+        phone: null,
+        channel_identifiers: { [channelIdentifierKey]: providerContactId },
         source_channel: channel,
         status: 'new',
       })
@@ -691,7 +732,7 @@ export async function handleInboundMessage(opts: InboundMessageOptions): Promise
       console.error('Contact insert failed:', error)
       return
     }
-    contactId  = newContact.id
+    contactId = newContact.id
     isNewContact = true
   }
 
