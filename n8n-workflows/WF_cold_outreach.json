@@ -119,7 +119,7 @@
         "queryParameters": {
           "parameters": [
             { "name": "status",    "value": "eq.active" },
-            { "name": "select",    "value": "id,name,crm_config" },
+            { "name": "select",    "value": "id,name,crm_config,ai_persona" },
             { "name": "crm_config->>provider", "value": "eq.ghl" }
           ]
         }
@@ -142,7 +142,7 @@
       "typeVersion": 2,
       "position": [1500, 200],
       "parameters": {
-        "jsCode": "const org = $input.first().json;\nconst crm = typeof org.crm_config === 'string' ? JSON.parse(org.crm_config) : org.crm_config;\nreturn [{ json: {\n  orgId:      org.id,\n  orgName:    org.name,\n  locationId: crm.location_id,\n  pitToken:   crm.pit_token,\n  SUPABASE_URL: $('Config').first().json.SUPABASE_URL,\n  SUPABASE_SERVICE_KEY: $('Config').first().json.SUPABASE_SERVICE_KEY,\n  TOUCH2_DELAY_DAYS:   $('Config').first().json.TOUCH2_DELAY_DAYS,\n  CLEANUP_DELAY_DAYS:  $('Config').first().json.CLEANUP_DELAY_DAYS\n}}];"
+        "jsCode": "const org = $input.first().json;\nconst crm = typeof org.crm_config === 'string' ? JSON.parse(org.crm_config) : org.crm_config;\nreturn [{ json: {\n  orgId:      org.id,\n  orgName:    org.name,\n  agentName:  org.ai_persona || 'Asistan',\n  locationId: crm.location_id,\n  pitToken:   crm.pit_token,\n  SUPABASE_URL: $('Config').first().json.SUPABASE_URL,\n  SUPABASE_SERVICE_KEY: $('Config').first().json.SUPABASE_SERVICE_KEY,\n  TOUCH2_DELAY_DAYS:   $('Config').first().json.TOUCH2_DELAY_DAYS,\n  CLEANUP_DELAY_DAYS:  $('Config').first().json.CLEANUP_DELAY_DAYS\n}}];"
       }
     },
 
@@ -192,7 +192,7 @@
       "typeVersion": 2,
       "position": [2160, 100],
       "parameters": {
-        "jsCode": "// Filter out leads that already have cold outreach started\nconst leads = $input.all().map(i => i.json);\nconst orgConfig = $('Extract Org Config').first().json;\n\nfor (const lead of leads) {\n  // Skip if cold_outreach_started already set\n  const data = typeof lead.collected_data === 'string' ? JSON.parse(lead.collected_data) : (lead.collected_data || {});\n  if (data.cold_outreach_started) continue;\n\n  // Skip if no phone\n  const phone = lead.contacts?.phone;\n  if (!phone) continue;\n\n  return [{ json: {\n    leadId:    lead.id,\n    contactId: lead.contact_id,\n    phone:     phone,\n    name:      lead.contacts?.full_name || '',\n    orgId:     orgConfig.orgId,\n    orgName:   orgConfig.orgName,\n    locationId: orgConfig.locationId,\n    pitToken:  orgConfig.pitToken,\n    SUPABASE_URL: orgConfig.SUPABASE_URL,\n    SUPABASE_SERVICE_KEY: orgConfig.SUPABASE_SERVICE_KEY,\n    TOUCH2_DELAY_DAYS:   orgConfig.TOUCH2_DELAY_DAYS,\n    CLEANUP_DELAY_DAYS:  orgConfig.CLEANUP_DELAY_DAYS\n  }}];\n}\n\n// No eligible lead found\nreturn [{ json: { leadId: null } }];"
+        "jsCode": "// Filter out leads that already have cold outreach started\nconst leads = $input.all().map(i => i.json);\nconst orgConfig = $('Extract Org Config').first().json;\n\nfor (const lead of leads) {\n  // Skip if cold_outreach_started already set\n  const data = typeof lead.collected_data === 'string' ? JSON.parse(lead.collected_data) : (lead.collected_data || {});\n  if (data.cold_outreach_started) continue;\n\n  // Skip if no phone\n  const phone = lead.contacts?.phone;\n  if (!phone) continue;\n\n  return [{ json: {\n    leadId:    lead.id,\n    contactId: lead.contact_id,\n    phone:     phone,\n    name:      lead.contacts?.full_name || '',\n    orgId:     orgConfig.orgId,\n    orgName:   orgConfig.orgName,\n    agentName: orgConfig.agentName,\n    locationId: orgConfig.locationId,\n    pitToken:  orgConfig.pitToken,\n    SUPABASE_URL: orgConfig.SUPABASE_URL,\n    SUPABASE_SERVICE_KEY: orgConfig.SUPABASE_SERVICE_KEY,\n    TOUCH2_DELAY_DAYS:   orgConfig.TOUCH2_DELAY_DAYS,\n    CLEANUP_DELAY_DAYS:  orgConfig.CLEANUP_DELAY_DAYS\n  }}];\n}\n\n// No eligible lead found\nreturn [{ json: { leadId: null } }];"
       }
     },
 
@@ -247,7 +247,7 @@
       "typeVersion": 2,
       "position": [2820, 60],
       "parameters": {
-        "jsCode": "const lead = $('Pick Eligible Lead').first().json;\nconst templates = $input.all().map(i => i.json);\n\nif (!templates.length) {\n  // No template configured — skip\n  return [{ json: { skip: true, leadId: lead.leadId } }];\n}\n\nconst tpl = templates[0];\nconst firstName = (lead.name || '').split(' ')[0] || 'Hallo';\n\nconst message = tpl.message\n  .replace(/\\{\\{name\\}\\}/g, firstName)\n  .replace(/\\{\\{agent_name\\}\\}/g, 'Lisa'); // TODO: org persona name\n\nreturn [{ json: {\n  ...lead,\n  message,\n  skip: false\n}}];"
+        "jsCode": "const lead = $('Pick Eligible Lead').first().json;\nconst templates = $input.all().map(i => i.json);\n\nif (!templates.length) {\n  // No template configured — skip\n  return [{ json: { skip: true, leadId: lead.leadId } }];\n}\n\nconst tpl = templates[0];\nconst firstName = (lead.name || '').split(' ')[0] || 'Hallo';\n\nconst message = tpl.message\n  .replace(/\\{\\{name\\}\\}/g, firstName)\n  .replace(/\\{\\{agent_name\\}\\}/g, lead.agentName || task?.agentName || 'Asistan'); // TODO: org persona name\n\nreturn [{ json: {\n  ...lead,\n  message,\n  skip: false\n}}];"
       }
     },
 
@@ -379,7 +379,7 @@
         },
         "sendBody": true,
         "contentType": "json",
-        "jsonBody": "={\n  \"organization_id\": \"{{ $('Extract GHL Contact').first().json.orgId }}\",\n  \"lead_id\":         \"{{ $('Extract GHL Contact').first().json.leadId }}\",\n  \"contact_id\":      \"{{ $('Extract GHL Contact').first().json.contactId }}\",\n  \"task_type\":       \"cold_outreach\",\n  \"template_key\":    \"touch_2\",\n  \"status\":          \"pending\",\n  \"scheduled_at\":    \"{{ new Date(Date.now() + $('Extract GHL Contact').first().json.TOUCH2_DELAY_DAYS * 86400000).toISOString() }}\",\n  \"variables\": {\n    \"ghl_contact_id\": \"{{ $('Extract GHL Contact').first().json.ghlContactId }}\",\n    \"phone\": \"{{ $('Extract GHL Contact').first().json.phone }}\",\n    \"name\":  \"{{ $('Extract GHL Contact').first().json.name }}\"\n  }\n}"
+        "jsonBody": "={\n  \"organization_id\": \"{{ $('Extract GHL Contact').first().json.orgId }}\",\n  \"lead_id\":         \"{{ $('Extract GHL Contact').first().json.leadId }}\",\n  \"contact_id\":      \"{{ $('Extract GHL Contact').first().json.contactId }}\",\n  \"task_type\":       \"cold_outreach\",\n  \"template_key\":    \"touch_2\",\n  \"status\":          \"pending\",\n  \"scheduled_at\":    \"{{ new Date(Date.now() + $('Extract GHL Contact').first().json.TOUCH2_DELAY_DAYS * 86400000).toISOString() }}\",\n  \"variables\": {\n    \"ghl_contact_id\": \"{{ $('Extract GHL Contact').first().json.ghlContactId }}\",\n    \"phone\":      \"{{ $('Extract GHL Contact').first().json.phone }}\",\n    \"name\":       \"{{ $('Extract GHL Contact').first().json.name }}\",\n    \"agent_name\": \"{{ $('Extract GHL Contact').first().json.agentName }}\"\n  }\n}"
       }
     },
 
@@ -477,7 +477,7 @@
       "typeVersion": 2,
       "position": [2580, 380],
       "parameters": {
-        "jsCode": "const task = $input.first().json;\nconst org = $('Extract Org Config').first().json;\nconst vars = typeof task.variables === 'string' ? JSON.parse(task.variables) : (task.variables || {});\nreturn [{ json: {\n  taskId:        task.id,\n  leadId:        task.lead_id,\n  contactId:     task.contact_id,\n  templateKey:   task.template_key,\n  ghlContactId:  vars.ghl_contact_id || null,\n  phone:         vars.phone || null,\n  name:          vars.name || '',\n  orgId:         org.orgId,\n  locationId:    org.locationId,\n  pitToken:      org.pitToken,\n  SUPABASE_URL:  org.SUPABASE_URL,\n  SUPABASE_SERVICE_KEY: org.SUPABASE_SERVICE_KEY\n}}];"
+        "jsCode": "const task = $input.first().json;\nconst org = $('Extract Org Config').first().json;\nconst vars = typeof task.variables === 'string' ? JSON.parse(task.variables) : (task.variables || {});\nreturn [{ json: {\n  taskId:        task.id,\n  leadId:        task.lead_id,\n  contactId:     task.contact_id,\n  templateKey:   task.template_key,\n  ghlContactId:  vars.ghl_contact_id || null,\n  phone:         vars.phone || null,\n  name:          vars.name || '',\n  agentName:     vars.agent_name || 'Asistan',\n  orgId:         org.orgId,\n  locationId:    org.locationId,\n  pitToken:      org.pitToken,\n  SUPABASE_URL:  org.SUPABASE_URL,\n  SUPABASE_SERVICE_KEY: org.SUPABASE_SERVICE_KEY\n}}];"
       }
     },
 
@@ -626,7 +626,7 @@
       "typeVersion": 2,
       "position": [3680, 380],
       "parameters": {
-        "jsCode": "const task   = $('Enrich Task with Org Config').first().json;\nconst tplArr = $input.all().map(i => i.json);\nif (!tplArr.length) return [{ json: { skipped: true } }];\n\nconst tpl = tplArr[0];\nconst firstName = (task.name || '').split(' ')[0] || 'Hallo';\nconst message = tpl.message\n  .replace(/\\{\\{name\\}\\}/g, firstName)\n  .replace(/\\{\\{agent_name\\}\\}/g, 'Lisa');\n\n// Send via GHL\nconst res = await fetch('https://services.leadconnectorhq.com/conversations/messages', {\n  method: 'POST',\n  headers: {\n    'Authorization': `Bearer ${task.pitToken}`,\n    'Version': '2021-04-15',\n    'Content-Type': 'application/json'\n  },\n  body: JSON.stringify({ type: 'WhatsApp', contactId: task.ghlContactId, message })\n});\n\n// Mark task as sent\nawait fetch(`${task.SUPABASE_URL}/rest/v1/follow_up_tasks?id=eq.${task.taskId}`, {\n  method: 'PATCH',\n  headers: {\n    'apikey': task.SUPABASE_SERVICE_KEY,\n    'Authorization': `Bearer ${task.SUPABASE_SERVICE_KEY}`,\n    'Content-Type': 'application/json',\n    'Prefer': 'return=minimal'\n  },\n  body: JSON.stringify({ status: 'sent' })\n});\n\nreturn [{ json: { sent: true, taskId: task.taskId, leadId: task.leadId } }];"
+        "jsCode": "const task   = $('Enrich Task with Org Config').first().json;\nconst tplArr = $input.all().map(i => i.json);\nif (!tplArr.length) return [{ json: { skipped: true } }];\n\nconst tpl = tplArr[0];\nconst firstName = (task.name || '').split(' ')[0] || 'Hallo';\nconst message = tpl.message\n  .replace(/\\{\\{name\\}\\}/g, firstName)\n  .replace(/\\{\\{agent_name\\}\\}/g, lead.agentName || task?.agentName || 'Asistan');\n\n// Send via GHL\nconst res = await fetch('https://services.leadconnectorhq.com/conversations/messages', {\n  method: 'POST',\n  headers: {\n    'Authorization': `Bearer ${task.pitToken}`,\n    'Version': '2021-04-15',\n    'Content-Type': 'application/json'\n  },\n  body: JSON.stringify({ type: 'WhatsApp', contactId: task.ghlContactId, message })\n});\n\n// Mark task as sent\nawait fetch(`${task.SUPABASE_URL}/rest/v1/follow_up_tasks?id=eq.${task.taskId}`, {\n  method: 'PATCH',\n  headers: {\n    'apikey': task.SUPABASE_SERVICE_KEY,\n    'Authorization': `Bearer ${task.SUPABASE_SERVICE_KEY}`,\n    'Content-Type': 'application/json',\n    'Prefer': 'return=minimal'\n  },\n  body: JSON.stringify({ status: 'sent' })\n});\n\nreturn [{ json: { sent: true, taskId: task.taskId, leadId: task.leadId } }];"
       }
     },
 
