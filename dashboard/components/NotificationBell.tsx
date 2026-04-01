@@ -73,7 +73,7 @@ export default function NotificationBell({ userId, orgId }: Props) {
   async function fetchNotifications() {
     const { data } = await supabase
       .from('notifications')
-      .select('id, type, title, body, lead_id, conversation_id, read_at, created_at')
+      .select('id, type, title, body, user_id, lead_id, conversation_id, read_at, created_at')
       .eq('organization_id', orgId)
       .or(`user_id.is.null,user_id.eq.${userId}`)
       .order('created_at', { ascending: false })
