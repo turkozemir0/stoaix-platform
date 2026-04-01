@@ -952,335 +952,124 @@
   ],
   "connections": {
     "Schedule": {
-      "main": [
-        [
-          {
-            "node": "Config",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Config", "type": "main", "index": 0 }]]
     },
     "Config": {
-      "main": [
-        [
-          {
-            "node": "Get Active GHL Orgs",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Get Active GHL Orgs", "type": "main", "index": 0 }]]
     },
     "Get Active GHL Orgs": {
-      "main": [
-        [
-          {
-            "node": "Split by Org",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Split by Org", "type": "main", "index": 0 }]]
     },
     "Split by Org": {
       "main": [
-        [
-          {
-            "node": "Extract Org Config",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Extract Org Config", "type": "main", "index": 0 }],
+        []
       ]
     },
     "Extract Org Config": {
+      "main": [[{ "node": "Check Business Hours (Org TZ)", "type": "main", "index": 0 }]]
+    },
+    "Check Business Hours (Org TZ)": {
+      "main": [[{ "node": "Is Org Business Hours?", "type": "main", "index": 0 }]]
+    },
+    "Is Org Business Hours?": {
       "main": [
-        [
-          {
-            "node": "Check Business Hours (Org TZ)",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "═══ PHASE 1: New Outreach ═══", "type": "main", "index": 0 }],
+        [{ "node": "Split by Org", "type": "main", "index": 0 }]
       ]
     },
     "═══ PHASE 1: New Outreach ═══": {
-      "main": [
-        [
-          {
-            "node": "Get Candidate Leads",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Get Candidate Leads", "type": "main", "index": 0 }]]
     },
     "Get Candidate Leads": {
-      "main": [
-        [
-          {
-            "node": "Pick Eligible Lead",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Pick Eligible Lead", "type": "main", "index": 0 }]]
     },
     "Pick Eligible Lead": {
-      "main": [
-        [
-          {
-            "node": "Has Eligible Lead?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Has Eligible Lead?", "type": "main", "index": 0 }]]
     },
     "Has Eligible Lead?": {
       "main": [
-        [
-          {
-            "node": "Fetch Touch 1 Template",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        []
+        [{ "node": "Fetch Touch 1 Template", "type": "main", "index": 0 }],
+        [{ "node": "═══ PHASE 2: Process Pending ═══", "type": "main", "index": 0 }]
       ]
     },
     "Fetch Touch 1 Template": {
-      "main": [
-        [
-          {
-            "node": "Prepare Touch 1 Message",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Prepare Touch 1 Message", "type": "main", "index": 0 }]]
     },
     "Prepare Touch 1 Message": {
-      "main": [
-        [
-          {
-            "node": "GHL Search by Phone",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "GHL Search by Phone", "type": "main", "index": 0 }]]
     },
     "GHL Search by Phone": {
-      "main": [
-        [
-          {
-            "node": "Extract GHL Contact",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Extract GHL Contact", "type": "main", "index": 0 }]]
     },
     "Extract GHL Contact": {
-      "main": [
-        [
-          {
-            "node": "Found in GHL?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Found in GHL?", "type": "main", "index": 0 }]]
     },
     "Found in GHL?": {
       "main": [
-        [
-          {
-            "node": "GHL Send Touch 1",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        []
+        [{ "node": "GHL Send Touch 1", "type": "main", "index": 0 }],
+        [{ "node": "═══ PHASE 2: Process Pending ═══", "type": "main", "index": 0 }]
       ]
     },
     "GHL Send Touch 1": {
-      "main": [
-        [
-          {
-            "node": "Mark Outreach Started",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Mark Outreach Started", "type": "main", "index": 0 }]]
     },
     "Mark Outreach Started": {
-      "main": [
-        [
-          {
-            "node": "Schedule Touch 2",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Schedule Touch 2", "type": "main", "index": 0 }]]
     },
     "Schedule Touch 2": {
-      "main": [
-        [
-          {
-            "node": "Schedule Cleanup Check",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Schedule Cleanup Check", "type": "main", "index": 0 }]]
+    },
+    "Schedule Cleanup Check": {
+      "main": [[{ "node": "═══ PHASE 2: Process Pending ═══", "type": "main", "index": 0 }]]
     },
     "═══ PHASE 2: Process Pending ═══": {
-      "main": [
-        [
-          {
-            "node": "Get Pending Cold Tasks",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Get Pending Cold Tasks", "type": "main", "index": 0 }]]
     },
     "Get Pending Cold Tasks": {
-      "main": [
-        [
-          {
-            "node": "Has Pending Tasks?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Has Pending Tasks?", "type": "main", "index": 0 }]]
     },
     "Has Pending Tasks?": {
       "main": [
-        [
-          {
-            "node": "Split Tasks",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        []
+        [{ "node": "Split Tasks", "type": "main", "index": 0 }],
+        [{ "node": "Split by Org", "type": "main", "index": 0 }]
       ]
     },
     "Split Tasks": {
       "main": [
-        [
-          {
-            "node": "Enrich Task with Org Config",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Enrich Task with Org Config", "type": "main", "index": 0 }],
+        [{ "node": "Split by Org", "type": "main", "index": 0 }]
       ]
     },
     "Enrich Task with Org Config": {
-      "main": [
-        [
-          {
-            "node": "Check Conversations / Excluded",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Check Conversations / Excluded", "type": "main", "index": 0 }]]
     },
     "Check Conversations / Excluded": {
-      "main": [
-        [
-          {
-            "node": "Did They Reply?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Did They Reply?", "type": "main", "index": 0 }]]
     },
     "Did They Reply?": {
       "main": [
-        [
-          {
-            "node": "Cancel Remaining Tasks (Engaged)",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Which Task Type?",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Cancel Remaining Tasks (Engaged)", "type": "main", "index": 0 }],
+        [{ "node": "Which Task Type?", "type": "main", "index": 0 }]
       ]
+    },
+    "Cancel Remaining Tasks (Engaged)": {
+      "main": [[{ "node": "Split Tasks", "type": "main", "index": 0 }]]
     },
     "Which Task Type?": {
       "main": [
-        [
-          {
-            "node": "Fetch Touch 2 Template",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Mark Lead Lost",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Fetch Touch 2 Template", "type": "main", "index": 0 }],
+        [{ "node": "Mark Lead Lost", "type": "main", "index": 0 }]
       ]
     },
     "Fetch Touch 2 Template": {
-      "main": [
-        [
-          {
-            "node": "GHL Send Touch 2",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "GHL Send Touch 2", "type": "main", "index": 0 }]]
     },
-    "Check Business Hours (Org TZ)": {
-      "main": [
-        [
-          {
-            "node": "Is Org Business Hours?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "GHL Send Touch 2": {
+      "main": [[{ "node": "Split Tasks", "type": "main", "index": 0 }]]
     },
-    "Is Org Business Hours?": {
-      "main": [
-        [
-          {
-            "node": "═══ PHASE 1: New Outreach ═══",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "═══ PHASE 2: Process Pending ═══",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        []
-      ]
+    "Mark Lead Lost": {
+      "main": [[{ "node": "Split Tasks", "type": "main", "index": 0 }]]
     }
   },
   "settings": {
