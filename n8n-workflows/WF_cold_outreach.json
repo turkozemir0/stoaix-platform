@@ -22,13 +22,12 @@
       "parameters": {
         "assignments": {
           "assignments": [
-            { "id": "cfg_supabase_url",  "name": "SUPABASE_URL",          "value": "https://ablntzdbsrzbqyrnfwpl.supabase.co", "type": "string" },
-            { "id": "cfg_supabase_key",  "name": "SUPABASE_SERVICE_KEY",  "value": "YOUR_SUPABASE_SERVICE_ROLE_KEY",           "type": "string" },
-            { "id": "cfg_org_id",        "name": "ORG_ID",                "value": "YOUR_ESTELIFE_ORG_ID",                     "type": "string" },
-            { "id": "cfg_hour_start",    "name": "HOUR_START",            "value": "10",                                        "type": "number" },
-            { "id": "cfg_hour_end",      "name": "HOUR_END",              "value": "17",                                        "type": "number" },
-            { "id": "cfg_touch2_days",   "name": "TOUCH2_DELAY_DAYS",     "value": "3",                                         "type": "number" },
-            { "id": "cfg_cleanup_days",  "name": "CLEANUP_DELAY_DAYS",    "value": "3",                                         "type": "number" }
+            { "id": "cfg_supabase_url", "name": "SUPABASE_URL",         "value": "https://ablntzdbsrzbqyrnfwpl.supabase.co", "type": "string" },
+            { "id": "cfg_supabase_key", "name": "SUPABASE_SERVICE_KEY", "value": "YOUR_SUPABASE_SERVICE_ROLE_KEY",           "type": "string" },
+            { "id": "cfg_hour_start",   "name": "HOUR_START",           "value": "10",                                       "type": "number" },
+            { "id": "cfg_hour_end",     "name": "HOUR_END",             "value": "17",                                       "type": "number" },
+            { "id": "cfg_touch2_days",  "name": "TOUCH2_DELAY_DAYS",    "value": "3",                                        "type": "number" },
+            { "id": "cfg_cleanup_days", "name": "CLEANUP_DELAY_DAYS",   "value": "3",                                        "type": "number" }
           ]
         },
         "options": {}
@@ -36,7 +35,7 @@
     },
     {
       "id": "n05",
-      "name": "Get Org",
+      "name": "Get Active GHL Orgs",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [640, 300],
@@ -47,93 +46,35 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey",         "value": "={{ $json.SUPABASE_SERVICE_KEY }}" },
-            { "name": "Authorization",  "value": "=Bearer {{ $json.SUPABASE_SERVICE_KEY }}" }
+            { "name": "apikey",        "value": "={{ $json.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $json.SUPABASE_SERVICE_KEY }}" }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id",     "value": "=eq.{{ $json.ORG_ID }}" },
-            { "name": "status", "value": "eq.active" },
-            { "name": "select", "value": "id,name,crm_config,ai_persona,timezone,excluded_phones" },
-            { "name": "limit",  "value": "1" }
+            { "name": "status",              "value": "eq.active" },
+            { "name": "select",              "value": "id,name,crm_config,ai_persona,timezone,excluded_phones" },
+            { "name": "crm_config->>provider", "value": "eq.ghl" }
           ]
         }
       }
     },
     {
-      "id": "n07",
-      "name": "Extract Org Config",
+      "id": "n06",
+      "name": "Process All Orgs",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [860, 300],
       "parameters": {
-        "jsCode": "const orgs = $input.all().map(i => i.json);\nif (!orgs.length) throw new Error('Org bulunamadı — ORG_ID veya status kontrol et');\nconst org = orgs[0];\nconst crm = typeof org.crm_config === 'string' ? JSON.parse(org.crm_config) : (org.crm_config || {});\nconst persona = typeof org.ai_persona === 'string' ? JSON.parse(org.ai_persona) : (org.ai_persona || {});\nconst cfg = $('Config').first().json;\nreturn [{ json: {\n  orgId:       org.id,\n  orgName:     org.name,\n  orgTimezone: org.timezone || 'Europe/Berlin',\n  agentName:   persona.persona_name || 'Asistan',\n  locationId:  crm.location_id,\n  pitToken:    crm.pit_token,\n  excludedPhones: Array.isArray(org.excluded_phones) ? org.excluded_phones : [],\n  SUPABASE_URL:         cfg.SUPABASE_URL,\n  SUPABASE_SERVICE_KEY: cfg.SUPABASE_SERVICE_KEY,\n  HOUR_START:           cfg.HOUR_START,\n  HOUR_END:             cfg.HOUR_END,\n  TOUCH2_DELAY_DAYS:    cfg.TOUCH2_DELAY_DAYS,\n  CLEANUP_DELAY_DAYS:   cfg.CLEANUP_DELAY_DAYS\n}}];"
-      }
-    },
-    {
-      "id": "n03",
-      "name": "Check Business Hours",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1080, 300],
-      "parameters": {
-        "jsCode": "const org = $input.first().json;\nconst now = new Date();\nconst tz = org.orgTimezone || 'Europe/Berlin';\nconst local = new Date(now.toLocaleString('en-US', { timeZone: tz }));\nconst hour = local.getHours();\nconst day  = local.getDay(); // 0=Sun, 6=Sat\nconst allowed = !(day === 0 || day === 6 || hour < org.HOUR_START || hour >= org.HOUR_END);\nreturn [{ json: { ...org, allowed, bhReason: allowed ? null : `Outside hours (${tz} ${hour}:xx, day ${day})` } }];"
-      }
-    },
-    {
-      "id": "n04",
-      "name": "Is Business Hours?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [1300, 300],
-      "parameters": {
-        "conditions": {
-          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
-          "conditions": [
-            { "id": "c1", "leftValue": "={{ $json.allowed }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }
-          ],
-          "combinator": "and"
-        }
-      }
-    },
-    {
-      "id": "n08",
-      "name": "Phase 1 — Pick & Send Touch 1",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1520, 200],
-      "parameters": {
-        "jsCode": "const org = $input.first().json;\nconst { orgId, pitToken, agentName, locationId, SUPABASE_URL, SUPABASE_SERVICE_KEY, TOUCH2_DELAY_DAYS, CLEANUP_DELAY_DAYS, excludedPhones } = org;\nconst h = {\n  'apikey': SUPABASE_SERVICE_KEY,\n  'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,\n  'Content-Type': 'application/json',\n  'Prefer': 'return=minimal'\n};\nconst norm = (p) => String(p || '').replace(/\\D/g, '');\nconst excl = new Set((excludedPhones || []).map(norm).filter(Boolean));\n\n// 1. Candidate leads (new + import, not yet outreached)\nconst leadsRes = await fetch(\n  `${SUPABASE_URL}/rest/v1/leads?organization_id=eq.${orgId}&status=eq.new&source_channel=eq.import&select=id,contact_id,collected_data,contacts(phone,full_name)&order=created_at.asc&limit=15`,\n  { headers: h }\n);\nconst leads = await leadsRes.json();\n\n// 2. Pick first eligible (no cold_outreach_started, not excluded)\nlet el = null;\nfor (const l of (Array.isArray(leads) ? leads : [])) {\n  const d = typeof l.collected_data === 'string' ? JSON.parse(l.collected_data) : (l.collected_data || {});\n  if (d.cold_outreach_started) continue;\n  const phone = l.contacts?.phone;\n  if (!phone || excl.has(norm(phone))) continue;\n  el = { ...l, phone, name: l.contacts?.full_name || '' };\n  break;\n}\nif (!el) return [{ json: { ...org, phase1: 'no_eligible_lead' } }];\n\n// 3. Fetch touch_1 template\nconst tplRes = await fetch(\n  `${SUPABASE_URL}/rest/v1/outreach_templates?organization_id=eq.${orgId}&sequence_stage=eq.touch_1&channel=eq.whatsapp&active=eq.true&limit=1`,\n  { headers: h }\n);\nconst tpls = await tplRes.json();\nif (!Array.isArray(tpls) || !tpls.length) return [{ json: { ...org, phase1: 'no_template' } }];\n\nconst firstName = (el.name || '').split(' ')[0] || 'Hallo';\nconst msg = tpls[0].message\n  .replace(/\\{\\{name\\}\\}/g, firstName)\n  .replace(/\\{\\{agent_name\\}\\}/g, agentName || 'Asistan');\n\n// 4. GHL: find contact by phone\nconst srchRes = await fetch(\n  `https://services.leadconnectorhq.com/contacts/search?locationId=${locationId}&query=${encodeURIComponent(el.phone)}`,\n  { headers: { 'Authorization': `Bearer ${pitToken}`, 'Version': '2021-04-15' } }\n);\nconst srchData = await srchRes.json();\nconst ghlContacts = srchData.contacts || [];\nif (!ghlContacts.length) return [{ json: { ...org, phase1: 'not_in_ghl', phone: el.phone } }];\nconst ghlContactId = ghlContacts[0].id;\n\n// 5. Send WA message via WAGHL (type: SMS)\nawait fetch('https://services.leadconnectorhq.com/conversations/messages', {\n  method: 'POST',\n  headers: { 'Authorization': `Bearer ${pitToken}`, 'Version': '2021-04-15', 'Content-Type': 'application/json' },\n  body: JSON.stringify({ type: 'SMS', contactId: ghlContactId, message: msg })\n});\n\n// 6. Mark outreach started in Supabase\nconst now = new Date().toISOString();\nawait fetch(`${SUPABASE_URL}/rest/v1/leads?id=eq.${el.id}`, {\n  method: 'PATCH', headers: h,\n  body: JSON.stringify({ collected_data: { cold_outreach_started: now, cold_touch1_sent_at: now } })\n});\n\n// 7. Schedule touch_2\nawait fetch(`${SUPABASE_URL}/rest/v1/follow_up_tasks`, {\n  method: 'POST', headers: h,\n  body: JSON.stringify({\n    organization_id: orgId, lead_id: el.id, contact_id: el.contact_id,\n    task_type: 'cold_outreach', template_key: 'touch_2', status: 'pending',\n    scheduled_at: new Date(Date.now() + Number(TOUCH2_DELAY_DAYS) * 86400000).toISOString(),\n    variables: { ghl_contact_id: ghlContactId, phone: el.phone, name: el.name, agent_name: agentName }\n  })\n});\n\n// 8. Schedule cleanup check\nawait fetch(`${SUPABASE_URL}/rest/v1/follow_up_tasks`, {\n  method: 'POST', headers: h,\n  body: JSON.stringify({\n    organization_id: orgId, lead_id: el.id, contact_id: el.contact_id,\n    task_type: 'cold_outreach', template_key: 'cleanup', status: 'pending',\n    scheduled_at: new Date(Date.now() + (Number(TOUCH2_DELAY_DAYS) + Number(CLEANUP_DELAY_DAYS)) * 86400000).toISOString(),\n    variables: { lead_id: el.id }\n  })\n});\n\nreturn [{ json: { ...org, phase1: 'sent', leadId: el.id, name: el.name, phone: el.phone, ghlContactId } }];"
-      }
-    },
-    {
-      "id": "n21",
-      "name": "Phase 2 — Process Pending Tasks",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1740, 200],
-      "parameters": {
-        "jsCode": "const org = $input.first().json;\nconst { orgId, pitToken, agentName, SUPABASE_URL, SUPABASE_SERVICE_KEY } = org;\nconst h = {\n  'apikey': SUPABASE_SERVICE_KEY,\n  'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,\n  'Content-Type': 'application/json',\n  'Prefer': 'return=minimal'\n};\n\n// Fetch due pending tasks\nconst tasksRes = await fetch(\n  `${SUPABASE_URL}/rest/v1/follow_up_tasks?organization_id=eq.${orgId}&task_type=eq.cold_outreach&status=eq.pending&scheduled_at=lte.${new Date().toISOString()}&order=scheduled_at.asc&limit=10`,\n  { headers: h }\n);\nconst tasks = await tasksRes.json();\nif (!Array.isArray(tasks) || !tasks.length) return [{ json: { ...org, phase2: 'no_tasks' } }];\n\nlet processed = 0;\nfor (const task of tasks) {\n  const vars = typeof task.variables === 'string' ? JSON.parse(task.variables) : (task.variables || {});\n  const { ghl_contact_id, phone, name, agent_name } = vars;\n\n  // Check if contact already replied (conversation exists)\n  const convRes = await fetch(\n    `${SUPABASE_URL}/rest/v1/conversations?organization_id=eq.${orgId}&contact_id=eq.${task.contact_id}&select=id&limit=1`,\n    { headers: h }\n  );\n  const convs = await convRes.json();\n  if (Array.isArray(convs) && convs.length > 0) {\n    // Engaged — cancel all remaining cold tasks for this lead\n    await fetch(\n      `${SUPABASE_URL}/rest/v1/follow_up_tasks?lead_id=eq.${task.lead_id}&task_type=eq.cold_outreach&status=eq.pending`,\n      { method: 'PATCH', headers: h, body: JSON.stringify({ status: 'cancelled' }) }\n    );\n    processed++;\n    continue;\n  }\n\n  if (task.template_key === 'touch_2') {\n    const tplRes = await fetch(\n      `${SUPABASE_URL}/rest/v1/outreach_templates?organization_id=eq.${orgId}&sequence_stage=eq.touch_2&channel=eq.whatsapp&active=eq.true&limit=1`,\n      { headers: h }\n    );\n    const tpls = await tplRes.json();\n    if (Array.isArray(tpls) && tpls.length) {\n      const firstName = (name || '').split(' ')[0] || 'Hallo';\n      const msg = tpls[0].message\n        .replace(/\\{\\{name\\}\\}/g, firstName)\n        .replace(/\\{\\{agent_name\\}\\}/g, agent_name || agentName || 'Asistan');\n      await fetch('https://services.leadconnectorhq.com/conversations/messages', {\n        method: 'POST',\n        headers: { 'Authorization': `Bearer ${pitToken}`, 'Version': '2021-04-15', 'Content-Type': 'application/json' },\n        body: JSON.stringify({ type: 'SMS', contactId: ghl_contact_id, message: msg })\n      });\n    }\n    await fetch(`${SUPABASE_URL}/rest/v1/follow_up_tasks?id=eq.${task.id}`, {\n      method: 'PATCH', headers: h, body: JSON.stringify({ status: 'sent' })\n    });\n\n  } else if (task.template_key === 'cleanup') {\n    // No reply after touch_2 → mark lead lost\n    await fetch(`${SUPABASE_URL}/rest/v1/leads?id=eq.${task.lead_id}`, {\n      method: 'PATCH', headers: h, body: JSON.stringify({ status: 'lost' })\n    });\n    await fetch(\n      `${SUPABASE_URL}/rest/v1/follow_up_tasks?lead_id=eq.${task.lead_id}&task_type=eq.cold_outreach&status=eq.pending`,\n      { method: 'PATCH', headers: h, body: JSON.stringify({ status: 'cancelled' }) }\n    );\n  }\n  processed++;\n}\n\nreturn [{ json: { ...org, phase2: 'done', processed, total: tasks.length } }];"
+        "jsCode": "// ── Config ────────────────────────────────────────────────────────────────\nconst cfg = $('Config').first().json;\nconst SUPABASE_URL         = cfg.SUPABASE_URL;\nconst SUPABASE_SERVICE_KEY = cfg.SUPABASE_SERVICE_KEY;\nconst HOUR_START           = Number(cfg.HOUR_START);\nconst HOUR_END             = Number(cfg.HOUR_END);\nconst TOUCH2_DELAY_DAYS    = Number(cfg.TOUCH2_DELAY_DAYS);\nconst CLEANUP_DELAY_DAYS   = Number(cfg.CLEANUP_DELAY_DAYS);\n\nconst h = {\n  'apikey': SUPABASE_SERVICE_KEY,\n  'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,\n  'Content-Type': 'application/json',\n  'Prefer': 'return=minimal'\n};\n\nconst orgs = $input.all().map(i => i.json);\nif (!orgs.length) return [{ json: { result: 'no_active_ghl_orgs' } }];\n\nconst results = [];\nconst now = new Date();\nconst norm = (p) => String(p || '').replace(/\\D/g, '');\n\nfor (const org of orgs) {\n  const crm     = typeof org.crm_config === 'string' ? JSON.parse(org.crm_config) : (org.crm_config || {});\n  const persona = typeof org.ai_persona === 'string' ? JSON.parse(org.ai_persona) : (org.ai_persona || {});\n  const orgId      = org.id;\n  const orgName    = org.name;\n  const orgTZ      = org.timezone || 'Europe/Berlin';\n  const agentName  = persona.persona_name || 'Asistan';\n  const locationId = crm.location_id;\n  const pitToken   = crm.pit_token;\n  const excl       = new Set((Array.isArray(org.excluded_phones) ? org.excluded_phones : []).map(norm).filter(Boolean));\n\n  // ── Business hours check (per-org timezone) ──────────────────────────────\n  const local = new Date(now.toLocaleString('en-US', { timeZone: orgTZ }));\n  const hour  = local.getHours();\n  const day   = local.getDay(); // 0=Sun, 6=Sat\n  if (day === 0 || day === 6 || hour < HOUR_START || hour >= HOUR_END) {\n    results.push({ orgId, orgName, orgTZ, skipped: `outside_hours (${hour}:xx)` });\n    continue;\n  }\n\n  const orgResult = { orgId, orgName, orgTZ, phase1: null, phase2: null };\n\n  // ════════════════════════════════════════════════════════════════════════\n  // PHASE 1 — Pick one new lead and send Touch 1\n  // ════════════════════════════════════════════════════════════════════════\n  try {\n    const leadsRes = await fetch(\n      `${SUPABASE_URL}/rest/v1/leads?organization_id=eq.${orgId}&status=eq.new&source_channel=eq.import&select=id,contact_id,collected_data,contacts(phone,full_name)&order=created_at.asc&limit=15`,\n      { headers: h }\n    );\n    const leads = await leadsRes.json();\n\n    let el = null;\n    for (const l of (Array.isArray(leads) ? leads : [])) {\n      const d = typeof l.collected_data === 'string' ? JSON.parse(l.collected_data) : (l.collected_data || {});\n      if (d.cold_outreach_started) continue;\n      const phone = l.contacts?.phone;\n      if (!phone || excl.has(norm(phone))) continue;\n      el = { ...l, phone, name: l.contacts?.full_name || '' };\n      break;\n    }\n\n    if (!el) {\n      orgResult.phase1 = 'no_eligible_lead';\n    } else {\n      // Fetch touch_1 template\n      const tplRes = await fetch(\n        `${SUPABASE_URL}/rest/v1/outreach_templates?organization_id=eq.${orgId}&sequence_stage=eq.touch_1&channel=eq.whatsapp&active=eq.true&limit=1`,\n        { headers: h }\n      );\n      const tpls = await tplRes.json();\n\n      if (!Array.isArray(tpls) || !tpls.length) {\n        orgResult.phase1 = 'no_template';\n      } else {\n        const firstName = (el.name || '').split(' ')[0] || 'Hallo';\n        const msg = tpls[0].message\n          .replace(/\\{\\{name\\}\\}/g, firstName)\n          .replace(/\\{\\{agent_name\\}\\}/g, agentName);\n\n        // GHL: find contact by phone\n        const srchRes = await fetch(\n          `https://services.leadconnectorhq.com/contacts/search?locationId=${locationId}&query=${encodeURIComponent(el.phone)}`,\n          { headers: { 'Authorization': `Bearer ${pitToken}`, 'Version': '2021-04-15' } }\n        );\n        const srchData  = await srchRes.json();\n        const ghlList   = srchData.contacts || [];\n\n        if (!ghlList.length) {\n          orgResult.phase1 = `not_in_ghl (${el.phone})`;\n        } else {\n          const ghlContactId = ghlList[0].id;\n\n          // Send via WAGHL (type: SMS = WhatsApp QR-code connection)\n          await fetch('https://services.leadconnectorhq.com/conversations/messages', {\n            method: 'POST',\n            headers: { 'Authorization': `Bearer ${pitToken}`, 'Version': '2021-04-15', 'Content-Type': 'application/json' },\n            body: JSON.stringify({ type: 'SMS', contactId: ghlContactId, message: msg })\n          });\n\n          // Mark outreach started\n          const ts = new Date().toISOString();\n          await fetch(`${SUPABASE_URL}/rest/v1/leads?id=eq.${el.id}`, {\n            method: 'PATCH', headers: h,\n            body: JSON.stringify({ collected_data: { cold_outreach_started: ts, cold_touch1_sent_at: ts } })\n          });\n\n          // Schedule touch_2\n          await fetch(`${SUPABASE_URL}/rest/v1/follow_up_tasks`, {\n            method: 'POST', headers: h,\n            body: JSON.stringify({\n              organization_id: orgId, lead_id: el.id, contact_id: el.contact_id,\n              task_type: 'cold_outreach', template_key: 'touch_2', status: 'pending',\n              scheduled_at: new Date(Date.now() + TOUCH2_DELAY_DAYS * 86400000).toISOString(),\n              variables: { ghl_contact_id: ghlContactId, phone: el.phone, name: el.name, agent_name: agentName }\n            })\n          });\n\n          // Schedule cleanup check\n          await fetch(`${SUPABASE_URL}/rest/v1/follow_up_tasks`, {\n            method: 'POST', headers: h,\n            body: JSON.stringify({\n              organization_id: orgId, lead_id: el.id, contact_id: el.contact_id,\n              task_type: 'cold_outreach', template_key: 'cleanup', status: 'pending',\n              scheduled_at: new Date(Date.now() + (TOUCH2_DELAY_DAYS + CLEANUP_DELAY_DAYS) * 86400000).toISOString(),\n              variables: { lead_id: el.id }\n            })\n          });\n\n          orgResult.phase1 = `sent → ${el.name} (${el.phone})`;\n        }\n      }\n    }\n  } catch (e) {\n    orgResult.phase1 = `error: ${e.message}`;\n  }\n\n  // ════════════════════════════════════════════════════════════════════════\n  // PHASE 2 — Process pending follow-up tasks (touch_2 + cleanup)\n  // ════════════════════════════════════════════════════════════════════════\n  try {\n    const tasksRes = await fetch(\n      `${SUPABASE_URL}/rest/v1/follow_up_tasks?organization_id=eq.${orgId}&task_type=eq.cold_outreach&status=eq.pending&scheduled_at=lte.${now.toISOString()}&order=scheduled_at.asc&limit=10`,\n      { headers: h }\n    );\n    const tasks = await tasksRes.json();\n\n    if (!Array.isArray(tasks) || !tasks.length) {\n      orgResult.phase2 = 'no_tasks';\n    } else {\n      let processed = 0;\n      for (const task of tasks) {\n        const vars = typeof task.variables === 'string' ? JSON.parse(task.variables) : (task.variables || {});\n        const { ghl_contact_id, phone, name, agent_name } = vars;\n\n        // Check if already replied\n        const convRes = await fetch(\n          `${SUPABASE_URL}/rest/v1/conversations?organization_id=eq.${orgId}&contact_id=eq.${task.contact_id}&select=id&limit=1`,\n          { headers: h }\n        );\n        const convs = await convRes.json();\n        if (Array.isArray(convs) && convs.length > 0) {\n          await fetch(\n            `${SUPABASE_URL}/rest/v1/follow_up_tasks?lead_id=eq.${task.lead_id}&task_type=eq.cold_outreach&status=eq.pending`,\n            { method: 'PATCH', headers: h, body: JSON.stringify({ status: 'cancelled' }) }\n          );\n          processed++;\n          continue;\n        }\n\n        if (task.template_key === 'touch_2') {\n          const tplRes = await fetch(\n            `${SUPABASE_URL}/rest/v1/outreach_templates?organization_id=eq.${orgId}&sequence_stage=eq.touch_2&channel=eq.whatsapp&active=eq.true&limit=1`,\n            { headers: h }\n          );\n          const tpls = await tplRes.json();\n          if (Array.isArray(tpls) && tpls.length) {\n            const firstName = (name || '').split(' ')[0] || 'Hallo';\n            const msg = tpls[0].message\n              .replace(/\\{\\{name\\}\\}/g, firstName)\n              .replace(/\\{\\{agent_name\\}\\}/g, agent_name || agentName);\n            await fetch('https://services.leadconnectorhq.com/conversations/messages', {\n              method: 'POST',\n              headers: { 'Authorization': `Bearer ${pitToken}`, 'Version': '2021-04-15', 'Content-Type': 'application/json' },\n              body: JSON.stringify({ type: 'SMS', contactId: ghl_contact_id, message: msg })\n            });\n          }\n          await fetch(`${SUPABASE_URL}/rest/v1/follow_up_tasks?id=eq.${task.id}`, {\n            method: 'PATCH', headers: h, body: JSON.stringify({ status: 'sent' })\n          });\n\n        } else if (task.template_key === 'cleanup') {\n          await fetch(`${SUPABASE_URL}/rest/v1/leads?id=eq.${task.lead_id}`, {\n            method: 'PATCH', headers: h, body: JSON.stringify({ status: 'lost' })\n          });\n          await fetch(\n            `${SUPABASE_URL}/rest/v1/follow_up_tasks?lead_id=eq.${task.lead_id}&task_type=eq.cold_outreach&status=eq.pending`,\n            { method: 'PATCH', headers: h, body: JSON.stringify({ status: 'cancelled' }) }\n          );\n        }\n        processed++;\n      }\n      orgResult.phase2 = `done (${processed}/${tasks.length})`;\n    }\n  } catch (e) {\n    orgResult.phase2 = `error: ${e.message}`;\n  }\n\n  results.push(orgResult);\n}\n\nreturn [{ json: { processed_orgs: results.length, results } }];"
       }
     }
   ],
   "connections": {
-    "Schedule":             { "main": [[{ "node": "Config",               "type": "main", "index": 0 }]] },
-    "Config":               { "main": [[{ "node": "Get Org",              "type": "main", "index": 0 }]] },
-    "Get Org":              { "main": [[{ "node": "Extract Org Config",   "type": "main", "index": 0 }]] },
-    "Extract Org Config":   { "main": [[{ "node": "Check Business Hours", "type": "main", "index": 0 }]] },
-    "Check Business Hours": { "main": [[{ "node": "Is Business Hours?",   "type": "main", "index": 0 }]] },
-    "Is Business Hours?": {
-      "main": [
-        [{ "node": "Phase 1 — Pick & Send Touch 1", "type": "main", "index": 0 }],
-        []
-      ]
-    },
-    "Phase 1 — Pick & Send Touch 1": {
-      "main": [[{ "node": "Phase 2 — Process Pending Tasks", "type": "main", "index": 0 }]]
-    }
+    "Schedule":           { "main": [[{ "node": "Config",             "type": "main", "index": 0 }]] },
+    "Config":             { "main": [[{ "node": "Get Active GHL Orgs","type": "main", "index": 0 }]] },
+    "Get Active GHL Orgs":{ "main": [[{ "node": "Process All Orgs",   "type": "main", "index": 0 }]] }
   },
   "settings": {
     "executionOrder": "v1",
