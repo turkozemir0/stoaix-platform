@@ -5,11 +5,12 @@ import { Bell, X, Check } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
-interface Notification {
+interface OrgNotification {
   id: string
   type: string
   title: string
   body: string | null
+  user_id: string | null
   lead_id: string | null
   conversation_id: string | null
   read_at: string | null
@@ -22,7 +23,7 @@ interface Props {
 }
 
 export default function NotificationBell({ userId, orgId }: Props) {
-  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [notifications, setNotifications] = useState<OrgNotification[]>([])
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -46,7 +47,7 @@ export default function NotificationBell({ userId, orgId }: Props) {
           filter: `organization_id=eq.${orgId}`,
         },
         (payload) => {
-          const notif = payload.new as Notification
+          const notif = payload.new as OrgNotification
           // Only show if broadcast or targeted at me
           if (notif.user_id === null || notif.user_id === userId) {
             setNotifications(prev => [notif, ...prev].slice(0, 20))
@@ -100,7 +101,7 @@ export default function NotificationBell({ userId, orgId }: Props) {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read_at: new Date().toISOString() } : n))
   }
 
-  function handleNotifClick(notif: Notification) {
+  function handleNotifClick(notif: OrgNotification) {
     if (!notif.read_at) markRead(notif.id)
     if (notif.lead_id) {
       router.push(`/dashboard/leads/${notif.lead_id}`)
