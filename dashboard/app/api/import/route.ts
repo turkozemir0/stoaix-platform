@@ -117,8 +117,8 @@ export async function POST(request: NextRequest) {
   }
 
   // Step 2: Bulk dedup — batched IN queries (500 per query, PostgREST safe)
-  const phones = [...new Set(normalized.filter(r => r.phone).map(r => r.phone as string))]
-  const emails = [...new Set(normalized.filter(r => r.email).map(r => r.email as string))]
+  const phones = Array.from(new Set(normalized.filter(r => r.phone).map(r => r.phone as string)))
+  const emails = Array.from(new Set(normalized.filter(r => r.email).map(r => r.email as string)))
 
   const existingPhones = new Set<string>()
   const existingEmails = new Set<string>()
