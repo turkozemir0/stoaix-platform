@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Phone, MessageSquare, Flame, Target, Loader2, LayoutGrid, List } from 'lucide-react'
+import { Phone, MessageSquare, Flame, Target, Loader2, LayoutGrid, List, ChevronLeft, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import KanbanBoard from './KanbanBoard'
 
@@ -59,55 +59,89 @@ function ScoreBadge({ score }: { score: number }) {
 
 type FilterStatus = 'all' | 'handed_off' | 'in_progress' | 'new'
 
+const PAGE_SIZE = 100
+
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<FilterStatus>('all')
   const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table')
+  const [page, setPage] = useState(0)
+  const [total, setTotal] = useState(0)
+  const [statusCounts, setStatusCounts] = useState({ all: 0, new: 0, handed_off: 0, in_progress: 0 })
+  const [orgId, setOrgId] = useState<string | null>(null)
 
+  // Load org once
   useEffect(() => {
-    async function load() {
+    async function loadOrg() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-
       const { data: orgUser } = await supabase
         .from('org_users')
         .select('organization_id')
         .eq('user_id', user.id)
         .maybeSingle()
-      if (!orgUser) return
-
-      const { data } = await supabase
-        .from('leads')
-        .select('id,qualification_score,status,source_channel,collected_data,updated_at,contact_id,contacts(phone,full_name,source_channel)')
-        .eq('organization_id', orgUser.organization_id)
-        .order('qualification_score', { ascending: false })
-        .order('updated_at', { ascending: false })
-
-      setLeads((data as unknown as Lead[]) ?? [])
-      setLoading(false)
+      if (orgUser) setOrgId(orgUser.organization_id)
     }
-    load()
+    loadOrg()
   }, [])
 
-  const filtered = filter === 'all'
-    ? leads
-    : leads.filter(l => l.status === filter)
+  // Load status counts (separate lightweight queries)
+  useEffect(() => {
+    if (!orgId) return
+    async function loadCounts() {
+      const supabase = createClient()
+      const base = supabase.from('leads').select('*', { count: 'exact', head: true }).eq('organization_id', orgId!)
+      const [all, newC, handedOff, inProgress] = await Promise.all([
+        base,
+        supabase.from('leads').select('*', { count: 'exact', head: true }).eq('organization_id', orgId!).eq('status', 'new'),
+        supabase.from('leads').select('*', { count: 'exact', head: true }).eq('organization_id', orgId!).eq('status', 'handed_off'),
+        supabase.from('leads').select('*', { count: 'exact', head: true }).eq('organization_id', orgId!).eq('status', 'in_progress'),
+      ])
+      setStatusCounts({
+        all:         all.count ?? 0,
+        new:         newC.count ?? 0,
+        handed_off:  handedOff.count ?? 0,
+        in_progress: inProgress.count ?? 0,
+      })
+    }
+    loadCounts()
+  }, [orgId])
 
-  const counts = {
-    all:         leads.length,
-    new:         leads.filter(l => l.status === 'new').length,
-    handed_off:  leads.filter(l => l.status === 'handed_off').length,
-    in_progress: leads.filter(l => l.status === 'in_progress').length,
-  }
+  // Load page of leads
+  const loadLeads = useCallback(async (orgId: string, filter: FilterStatus, page: number) => {
+    setLoading(true)
+    const supabase = createClient()
+    const from = page * PAGE_SIZE
+    const to = from + PAGE_SIZE - 1
 
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 text-slate-400 py-12 justify-center">
-        <Loader2 size={16} className="animate-spin" /> Yükleniyor...
-      </div>
-    )
+    let query = supabase
+      .from('leads')
+      .select('id,qualification_score,status,source_channel,collected_data,updated_at,contact_id,contacts(phone,full_name,source_channel)', { count: 'exact' })
+      .eq('organization_id', orgId)
+      .order('qualification_score', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .range(from, to)
+
+    if (filter !== 'all') query = query.eq('status', filter)
+
+    const { data, count } = await query
+    setLeads((data as unknown as Lead[]) ?? [])
+    setTotal(count ?? 0)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (!orgId) return
+    loadLeads(orgId, filter, page)
+  }, [orgId, filter, page, loadLeads])
+
+  const totalPages = Math.ceil(total / PAGE_SIZE)
+
+  function handleFilter(f: FilterStatus) {
+    setFilter(f)
+    setPage(0)
   }
 
   return (
@@ -118,7 +152,7 @@ export default function LeadsPage() {
           <Target size={22} className="text-brand-600" />
           <div>
             <h1 className="text-xl font-semibold text-slate-800">Leads</h1>
-            <p className="text-sm text-slate-500">{leads.length} kayıt</p>
+            <p className="text-sm text-slate-500">{statusCounts.all} kayıt</p>
           </div>
         </div>
 
@@ -159,7 +193,7 @@ export default function LeadsPage() {
             ] as const).map(([key, label]) => (
               <button
                 key={key}
-                onClick={() => setFilter(key)}
+                onClick={() => handleFilter(key)}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   filter === key
                     ? 'bg-brand-600 text-white'
@@ -168,99 +202,135 @@ export default function LeadsPage() {
               >
                 {label}
                 <span className={`ml-1.5 text-xs ${filter === key ? 'text-brand-200' : 'text-slate-400'}`}>
-                  {counts[key]}
+                  {statusCounts[key]}
                 </span>
               </button>
             ))}
           </div>
 
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center gap-2 text-slate-400 py-12 justify-center">
+              <Loader2 size={16} className="animate-spin" /> Yükleniyor...
+            </div>
+          ) : leads.length === 0 ? (
             <div className="text-center py-16 text-slate-400">
               <Target size={32} className="mx-auto mb-3 opacity-40" />
               <p>Bu kriterde lead yok.</p>
             </div>
           ) : (
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                    <th className="text-left px-4 py-3">Kişi</th>
-                    <th className="text-left px-4 py-3">Telefon</th>
-                    <th className="text-left px-4 py-3">Skor</th>
-                    <th className="text-left px-4 py-3">Durum</th>
-                    <th className="text-left px-4 py-3">Son Aktiv.</th>
-                    <th className="px-4 py-3"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filtered.map((lead) => {
-                    const name = lead.collected_data?.full_name || lead.contacts?.full_name
-                    const channel = lead.source_channel
-                    const phone = lead.contacts?.phone || (lead.collected_data?.phone as string)
-                    const updatedAt = new Date(lead.updated_at).toLocaleDateString('tr-TR', {
-                      day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-                    })
+            <>
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                      <th className="text-left px-4 py-3">Kişi</th>
+                      <th className="text-left px-4 py-3">Telefon</th>
+                      <th className="text-left px-4 py-3">Skor</th>
+                      <th className="text-left px-4 py-3">Durum</th>
+                      <th className="text-left px-4 py-3">Son Aktiv.</th>
+                      <th className="px-4 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {leads.map((lead) => {
+                      const name = lead.collected_data?.full_name || lead.contacts?.full_name
+                      const channel = lead.source_channel
+                      const phone = lead.contacts?.phone || (lead.collected_data?.phone as string)
+                      const updatedAt = new Date(lead.updated_at).toLocaleDateString('tr-TR', {
+                        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                      })
 
-                    return (
-                      <tr key={lead.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold ${
-                              channel === 'whatsapp' ? 'bg-green-100 text-green-600' :
-                              channel === 'instagram' ? 'bg-pink-100 text-pink-600' :
-                              'bg-slate-100 text-slate-500'
-                            }`}>
-                              {channel === 'whatsapp' ? 'W' : channel === 'instagram' ? 'IG' : '?'}
-                            </span>
-                            <span className="font-medium text-slate-800">
-                              {name || <span className="text-slate-400 font-normal">İsimsiz</span>}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          {phone ? (
-                            <a href={`tel:${phone}`} className="font-mono text-sm text-slate-800 hover:text-brand-600">
-                              {phone}
-                            </a>
-                          ) : (
-                            <span className="text-xs text-slate-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <ScoreBadge score={lead.qualification_score} />
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[lead.status]}`}>
-                            {STATUS_LABEL[lead.status]}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">{updatedAt}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2 justify-end">
-                            {phone && (
-                              <a
-                                href={`tel:${phone}`}
-                                className="flex items-center gap-1 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700 transition-colors"
-                              >
-                                <Phone size={12} />
-                                Ara
+                      return (
+                        <tr key={lead.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold ${
+                                channel === 'whatsapp' ? 'bg-green-100 text-green-600' :
+                                channel === 'instagram' ? 'bg-pink-100 text-pink-600' :
+                                'bg-slate-100 text-slate-500'
+                              }`}>
+                                {channel === 'whatsapp' ? 'W' : channel === 'instagram' ? 'IG' : '?'}
+                              </span>
+                              <span className="font-medium text-slate-800">
+                                {name || <span className="text-slate-400 font-normal">İsimsiz</span>}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            {phone ? (
+                              <a href={`tel:${phone}`} className="font-mono text-sm text-slate-800 hover:text-brand-600">
+                                {phone}
                               </a>
+                            ) : (
+                              <span className="text-xs text-slate-400">—</span>
                             )}
-                            <Link
-                              href={`/dashboard/leads/${lead.id}`}
-                              className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-medium hover:bg-slate-200 transition-colors"
-                            >
-                              <MessageSquare size={12} />
-                              Detay
-                            </Link>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <ScoreBadge score={lead.qualification_score} />
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[lead.status]}`}>
+                              {STATUS_LABEL[lead.status]}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">{updatedAt}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2 justify-end">
+                              {phone && (
+                                <a
+                                  href={`tel:${phone}`}
+                                  className="flex items-center gap-1 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700 transition-colors"
+                                >
+                                  <Phone size={12} />
+                                  Ara
+                                </a>
+                              )}
+                              <Link
+                                href={`/dashboard/leads/${lead.id}`}
+                                className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-medium hover:bg-slate-200 transition-colors"
+                              >
+                                <MessageSquare size={12} />
+                                Detay
+                              </Link>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4">
+                  <p className="text-sm text-slate-500">
+                    {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} / {total} kayıt
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setPage(p => Math.max(0, p - 1))}
+                      disabled={page === 0}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronLeft size={14} />
+                      Önceki
+                    </button>
+                    <span className="text-sm text-slate-500 px-2">
+                      {page + 1} / {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                      disabled={page >= totalPages - 1}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Sonraki
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </>
       )}
