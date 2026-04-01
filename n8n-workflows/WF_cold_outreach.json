@@ -6,18 +6,10 @@
       "name": "Schedule",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [
-        200,
-        300
-      ],
+      "position": [200, 300],
       "parameters": {
         "rule": {
-          "interval": [
-            {
-              "field": "minutes",
-              "minutesInterval": 12
-            }
-          ]
+          "interval": [{ "field": "minutes", "minutesInterval": 12 }]
         }
       }
     },
@@ -26,155 +18,48 @@
       "name": "Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [
-        420,
-        300
-      ],
+      "position": [420, 300],
       "parameters": {
         "assignments": {
           "assignments": [
-            {
-              "id": "cfg_supabase_url",
-              "name": "SUPABASE_URL",
-              "value": "https://ablntzdbsrzbqyrnfwpl.supabase.co",
-              "type": "string"
-            },
-            {
-              "id": "cfg_supabase_key",
-              "name": "SUPABASE_SERVICE_KEY",
-              "value": "YOUR_SUPABASE_SERVICE_ROLE_KEY",
-              "type": "string"
-            },
-            {
-              "id": "cfg_hour_start",
-              "name": "HOUR_START",
-              "value": "10",
-              "type": "number"
-            },
-            {
-              "id": "cfg_hour_end",
-              "name": "HOUR_END",
-              "value": "17",
-              "type": "number"
-            },
-            {
-              "id": "cfg_touch2_delay_days",
-              "name": "TOUCH2_DELAY_DAYS",
-              "value": "3",
-              "type": "number"
-            },
-            {
-              "id": "cfg_cleanup_delay_days",
-              "name": "CLEANUP_DELAY_DAYS",
-              "value": "3",
-              "type": "number"
-            }
+            { "id": "cfg_supabase_url",  "name": "SUPABASE_URL",          "value": "https://ablntzdbsrzbqyrnfwpl.supabase.co", "type": "string" },
+            { "id": "cfg_supabase_key",  "name": "SUPABASE_SERVICE_KEY",  "value": "YOUR_SUPABASE_SERVICE_ROLE_KEY",           "type": "string" },
+            { "id": "cfg_org_id",        "name": "ORG_ID",                "value": "YOUR_ESTELIFE_ORG_ID",                     "type": "string" },
+            { "id": "cfg_hour_start",    "name": "HOUR_START",            "value": "10",                                        "type": "number" },
+            { "id": "cfg_hour_end",      "name": "HOUR_END",              "value": "17",                                        "type": "number" },
+            { "id": "cfg_touch2_days",   "name": "TOUCH2_DELAY_DAYS",     "value": "3",                                         "type": "number" },
+            { "id": "cfg_cleanup_days",  "name": "CLEANUP_DELAY_DAYS",    "value": "3",                                         "type": "number" }
           ]
         },
         "options": {}
       }
     },
     {
-      "id": "n03",
-      "name": "Check Business Hours (Org TZ)",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1280,
-        300
-      ],
-      "parameters": {
-        "jsCode": "const org = $input.first().json;\nconst now = new Date();\nconst timezone = org.orgTimezone || 'Europe/Berlin';\nconst localTime = new Date(now.toLocaleString('en-US', { timeZone: timezone }));\nconst hour = localTime.getHours();\nconst day = localTime.getDay(); // 0=Sun, 6=Sat\n\nconst hourStart = org.HOUR_START;\nconst hourEnd = org.HOUR_END;\n\nif (day === 0 || day === 6 || hour < hourStart || hour >= hourEnd) {\n  return [{ json: { ...org, allowed: false, reason: `Outside business hours (${timezone} ${hour}:xx, day ${day})` } }];\n}\n\nreturn [{ json: { ...org, allowed: true } }];"
-      }
-    },
-    {
-      "id": "n04",
-      "name": "Is Org Business Hours?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        1500,
-        300
-      ],
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": false,
-            "leftValue": "",
-            "typeValidation": "strict"
-          },
-          "conditions": [
-            {
-              "id": "c1",
-              "leftValue": "={{ $json.allowed }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        }
-      }
-    },
-    {
       "id": "n05",
-      "name": "Get Active GHL Orgs",
+      "name": "Get Org",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        640,
-        300
-      ],
+      "position": [640, 300],
       "parameters": {
         "method": "GET",
-        "url": "={{ $('Config').first().json.SUPABASE_URL }}/rest/v1/organizations",
+        "url": "={{ $json.SUPABASE_URL }}/rest/v1/organizations",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $('Config').first().json.SUPABASE_SERVICE_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $('Config').first().json.SUPABASE_SERVICE_KEY }}"
-            }
+            { "name": "apikey",         "value": "={{ $json.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization",  "value": "=Bearer {{ $json.SUPABASE_SERVICE_KEY }}" }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            {
-              "name": "status",
-              "value": "eq.active"
-            },
-            {
-              "name": "select",
-              "value": "id,name,crm_config,ai_persona,timezone,excluded_phones"
-            },
-            {
-              "name": "crm_config->>provider",
-              "value": "eq.ghl"
-            }
+            { "name": "id",     "value": "=eq.{{ $json.ORG_ID }}" },
+            { "name": "status", "value": "eq.active" },
+            { "name": "select", "value": "id,name,crm_config,ai_persona,timezone,excluded_phones" },
+            { "name": "limit",  "value": "1" }
           ]
         }
-      }
-    },
-    {
-      "id": "n06",
-      "name": "Split by Org",
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
-      "position": [
-        860,
-        300
-      ],
-      "parameters": {
-        "batchSize": 1,
-        "options": {}
       }
     },
     {
@@ -182,894 +67,72 @@
       "name": "Extract Org Config",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        1080,
-        300
-      ],
+      "position": [860, 300],
       "parameters": {
-        "jsCode": "const org = $input.first().json;\nconst crm = typeof org.crm_config === 'string' ? JSON.parse(org.crm_config) : org.crm_config;\nconst persona = typeof org.ai_persona === 'string' ? JSON.parse(org.ai_persona) : (org.ai_persona || {});\nconst excludedPhones = Array.isArray(org.excluded_phones) ? org.excluded_phones : [];\nreturn [{ json: {\n  orgId:      org.id,\n  orgName:    org.name,\n  orgTimezone: org.timezone || 'Europe/Berlin',\n  agentName:  persona.persona_name || 'Asistan',\n  locationId: crm.location_id,\n  pitToken:   crm.pit_token,\n  excludedPhones,\n  SUPABASE_URL: $('Config').first().json.SUPABASE_URL,\n  SUPABASE_SERVICE_KEY: $('Config').first().json.SUPABASE_SERVICE_KEY,\n  HOUR_START: $('Config').first().json.HOUR_START,\n  HOUR_END: $('Config').first().json.HOUR_END,\n  TOUCH2_DELAY_DAYS:   $('Config').first().json.TOUCH2_DELAY_DAYS,\n  CLEANUP_DELAY_DAYS:  $('Config').first().json.CLEANUP_DELAY_DAYS\n}}];"
+        "jsCode": "const orgs = $input.all().map(i => i.json);\nif (!orgs.length) throw new Error('Org bulunamadı — ORG_ID veya status kontrol et');\nconst org = orgs[0];\nconst crm = typeof org.crm_config === 'string' ? JSON.parse(org.crm_config) : (org.crm_config || {});\nconst persona = typeof org.ai_persona === 'string' ? JSON.parse(org.ai_persona) : (org.ai_persona || {});\nconst cfg = $('Config').first().json;\nreturn [{ json: {\n  orgId:       org.id,\n  orgName:     org.name,\n  orgTimezone: org.timezone || 'Europe/Berlin',\n  agentName:   persona.persona_name || 'Asistan',\n  locationId:  crm.location_id,\n  pitToken:    crm.pit_token,\n  excludedPhones: Array.isArray(org.excluded_phones) ? org.excluded_phones : [],\n  SUPABASE_URL:         cfg.SUPABASE_URL,\n  SUPABASE_SERVICE_KEY: cfg.SUPABASE_SERVICE_KEY,\n  HOUR_START:           cfg.HOUR_START,\n  HOUR_END:             cfg.HOUR_END,\n  TOUCH2_DELAY_DAYS:    cfg.TOUCH2_DELAY_DAYS,\n  CLEANUP_DELAY_DAYS:   cfg.CLEANUP_DELAY_DAYS\n}}];"
+      }
+    },
+    {
+      "id": "n03",
+      "name": "Check Business Hours",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 300],
+      "parameters": {
+        "jsCode": "const org = $input.first().json;\nconst now = new Date();\nconst tz = org.orgTimezone || 'Europe/Berlin';\nconst local = new Date(now.toLocaleString('en-US', { timeZone: tz }));\nconst hour = local.getHours();\nconst day  = local.getDay(); // 0=Sun, 6=Sat\nconst allowed = !(day === 0 || day === 6 || hour < org.HOUR_START || hour >= org.HOUR_END);\nreturn [{ json: { ...org, allowed, bhReason: allowed ? null : `Outside hours (${tz} ${hour}:xx, day ${day})` } }];"
+      }
+    },
+    {
+      "id": "n04",
+      "name": "Is Business Hours?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1300, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            { "id": "c1", "leftValue": "={{ $json.allowed }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }
+          ],
+          "combinator": "and"
+        }
       }
     },
     {
       "id": "n08",
-      "name": "═══ PHASE 1: New Outreach ═══",
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [
-        1720,
-        100
-      ]
-    },
-    {
-      "id": "n09",
-      "name": "Get Candidate Leads",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1940,
-        100
-      ],
-      "parameters": {
-        "method": "GET",
-        "url": "={{ $('Extract Org Config').first().json.SUPABASE_URL }}/rest/v1/leads",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $('Extract Org Config').first().json.SUPABASE_SERVICE_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $('Extract Org Config').first().json.SUPABASE_SERVICE_KEY }}"
-            }
-          ]
-        },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "organization_id",
-              "value": "=eq.{{ $('Extract Org Config').first().json.orgId }}"
-            },
-            {
-              "name": "status",
-              "value": "eq.new"
-            },
-            {
-              "name": "source_channel",
-              "value": "eq.import"
-            },
-            {
-              "name": "select",
-              "value": "id,contact_id,collected_data,contacts(phone,full_name)"
-            },
-            {
-              "name": "order",
-              "value": "created_at.asc"
-            },
-            {
-              "name": "limit",
-              "value": "15"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "n10",
-      "name": "Pick Eligible Lead",
+      "name": "Phase 1 — Pick & Send Touch 1",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        2160,
-        100
-      ],
+      "position": [1520, 200],
       "parameters": {
-        "jsCode": "// Filter out leads that already have cold outreach started\nconst leads = $input.all().map(i => i.json);\nconst orgConfig = $('Extract Org Config').first().json;\nconst normalizePhone = (raw) => String(raw || '').replace(/\\D/g, '');\nconst excludedPhones = new Set((orgConfig.excludedPhones || []).map(normalizePhone).filter(Boolean));\n\nfor (const lead of leads) {\n  // Skip if cold_outreach_started already set\n  const data = typeof lead.collected_data === 'string' ? JSON.parse(lead.collected_data) : (lead.collected_data || {});\n  if (data.cold_outreach_started) continue;\n\n  // Skip if no phone\n  const phone = lead.contacts?.phone;\n  if (!phone) continue;\n\n  if (excludedPhones.has(normalizePhone(phone))) continue;\n\n  return [{ json: {\n    leadId:    lead.id,\n    contactId: lead.contact_id,\n    phone:     phone,\n    name:      lead.contacts?.full_name || '',\n    orgId:     orgConfig.orgId,\n    orgName:   orgConfig.orgName,\n    agentName: orgConfig.agentName,\n    locationId: orgConfig.locationId,\n    pitToken:  orgConfig.pitToken,\n    excludedPhones: orgConfig.excludedPhones,\n    SUPABASE_URL: orgConfig.SUPABASE_URL,\n    SUPABASE_SERVICE_KEY: orgConfig.SUPABASE_SERVICE_KEY,\n    TOUCH2_DELAY_DAYS:   orgConfig.TOUCH2_DELAY_DAYS,\n    CLEANUP_DELAY_DAYS:  orgConfig.CLEANUP_DELAY_DAYS\n  }}];\n}\n\n// No eligible lead found\nreturn [{ json: { leadId: null } }];"
-      }
-    },
-    {
-      "id": "n11",
-      "name": "Has Eligible Lead?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        2380,
-        100
-      ],
-      "parameters": {
-        "conditions": {
-          "conditions": [
-            {
-              "id": "c1",
-              "leftValue": "={{ $json.leadId }}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "notEmpty"
-              }
-            }
-          ],
-          "combinator": "and"
-        }
-      }
-    },
-    {
-      "id": "n12",
-      "name": "Fetch Touch 1 Template",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2600,
-        60
-      ],
-      "parameters": {
-        "method": "GET",
-        "url": "={{ $json.SUPABASE_URL }}/rest/v1/outreach_templates",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $json.SUPABASE_SERVICE_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $json.SUPABASE_SERVICE_KEY }}"
-            }
-          ]
-        },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "organization_id",
-              "value": "=eq.{{ $json.orgId }}"
-            },
-            {
-              "name": "sequence_stage",
-              "value": "eq.touch_1"
-            },
-            {
-              "name": "channel",
-              "value": "eq.whatsapp"
-            },
-            {
-              "name": "active",
-              "value": "eq.true"
-            },
-            {
-              "name": "limit",
-              "value": "1"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "n13",
-      "name": "Prepare Touch 1 Message",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        2820,
-        60
-      ],
-      "parameters": {
-        "jsCode": "const lead = $('Pick Eligible Lead').first().json;\nconst templates = $input.all().map(i => i.json);\n\nif (!templates.length) {\n  return [{ json: { skip: true, leadId: lead.leadId } }];\n}\n\nconst tpl = templates[0];\nconst firstName = (lead.name || '').split(' ')[0] || 'Hallo';\n\nconst message = tpl.message\n  .replace(/\\{\\{name\\}\\}/g, firstName)\n  .replace(/\\{\\{agent_name\\}\\}/g, lead.agentName || 'Asistan');\n\nreturn [{ json: {\n  ...lead,\n  message,\n  skip: false\n}}];"
-      }
-    },
-    {
-      "id": "n14",
-      "name": "GHL Search by Phone",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        3040,
-        60
-      ],
-      "parameters": {
-        "method": "GET",
-        "url": "https://services.leadconnectorhq.com/contacts/search",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $json.pitToken }}"
-            },
-            {
-              "name": "Version",
-              "value": "2021-04-15"
-            }
-          ]
-        },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "locationId",
-              "value": "={{ $json.locationId }}"
-            },
-            {
-              "name": "query",
-              "value": "={{ $json.phone }}"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "n15",
-      "name": "Extract GHL Contact",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        3260,
-        60
-      ],
-      "parameters": {
-        "jsCode": "const res = $input.first().json;\nconst lead = $('Prepare Touch 1 Message').first().json;\nconst contacts = res.contacts || [];\nconst ghlContact = contacts[0];\n\nif (!ghlContact) {\n  return [{ json: { ghlContactId: null, leadId: lead.leadId } }];\n}\n\nreturn [{ json: { ...lead, ghlContactId: ghlContact.id } }];"
-      }
-    },
-    {
-      "id": "n16",
-      "name": "Found in GHL?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        3480,
-        60
-      ],
-      "parameters": {
-        "conditions": {
-          "conditions": [
-            {
-              "id": "c1",
-              "leftValue": "={{ $json.ghlContactId }}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "notEmpty"
-              }
-            }
-          ],
-          "combinator": "and"
-        }
-      }
-    },
-    {
-      "id": "n17",
-      "name": "GHL Send Touch 1",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        3700,
-        40
-      ],
-      "parameters": {
-        "method": "POST",
-        "url": "https://services.leadconnectorhq.com/conversations/messages",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $json.pitToken }}"
-            },
-            {
-              "name": "Version",
-              "value": "2021-04-15"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={\n  \"type\": \"SMS\",\n  \"contactId\": \"{{ $json.ghlContactId }}\",\n  \"message\": {{ JSON.stringify($json.message) }}\n}"
-      }
-    },
-    {
-      "id": "n18",
-      "name": "Mark Outreach Started",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        3920,
-        40
-      ],
-      "parameters": {
-        "method": "PATCH",
-        "url": "={{ $('Extract GHL Contact').first().json.SUPABASE_URL }}/rest/v1/leads",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $('Extract GHL Contact').first().json.SUPABASE_SERVICE_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $('Extract GHL Contact').first().json.SUPABASE_SERVICE_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
-              "name": "Prefer",
-              "value": "return=minimal"
-            }
-          ]
-        },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "id",
-              "value": "=eq.{{ $('Extract GHL Contact').first().json.leadId }}"
-            }
-          ]
-        },
-        "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={\n  \"collected_data\": { \"cold_outreach_started\": \"{{ new Date().toISOString() }}\", \"cold_touch1_sent_at\": \"{{ new Date().toISOString() }}\" }\n}"
-      }
-    },
-    {
-      "id": "n19",
-      "name": "Schedule Touch 2",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        4140,
-        40
-      ],
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Extract GHL Contact').first().json.SUPABASE_URL }}/rest/v1/follow_up_tasks",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $('Extract GHL Contact').first().json.SUPABASE_SERVICE_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $('Extract GHL Contact').first().json.SUPABASE_SERVICE_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
-              "name": "Prefer",
-              "value": "return=minimal"
-            }
-          ]
-        },
-        "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={\n  \"organization_id\": \"{{ $('Extract GHL Contact').first().json.orgId }}\",\n  \"lead_id\":         \"{{ $('Extract GHL Contact').first().json.leadId }}\",\n  \"contact_id\":      \"{{ $('Extract GHL Contact').first().json.contactId }}\",\n  \"task_type\":       \"cold_outreach\",\n  \"template_key\":    \"touch_2\",\n  \"status\":          \"pending\",\n  \"scheduled_at\":    \"{{ new Date(Date.now() + $('Extract GHL Contact').first().json.TOUCH2_DELAY_DAYS * 86400000).toISOString() }}\",\n  \"variables\": {\n    \"ghl_contact_id\": \"{{ $('Extract GHL Contact').first().json.ghlContactId }}\",\n    \"phone\":      \"{{ $('Extract GHL Contact').first().json.phone }}\",\n    \"name\":       \"{{ $('Extract GHL Contact').first().json.name }}\",\n    \"agent_name\": \"{{ $('Extract GHL Contact').first().json.agentName }}\"\n  }\n}"
-      }
-    },
-    {
-      "id": "n20",
-      "name": "Schedule Cleanup Check",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        4360,
-        40
-      ],
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Extract GHL Contact').first().json.SUPABASE_URL }}/rest/v1/follow_up_tasks",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $('Extract GHL Contact').first().json.SUPABASE_SERVICE_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $('Extract GHL Contact').first().json.SUPABASE_SERVICE_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
-              "name": "Prefer",
-              "value": "return=minimal"
-            }
-          ]
-        },
-        "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={\n  \"organization_id\": \"{{ $('Extract GHL Contact').first().json.orgId }}\",\n  \"lead_id\":         \"{{ $('Extract GHL Contact').first().json.leadId }}\",\n  \"contact_id\":      \"{{ $('Extract GHL Contact').first().json.contactId }}\",\n  \"task_type\":       \"cold_outreach\",\n  \"template_key\":    \"cleanup\",\n  \"status\":          \"pending\",\n  \"scheduled_at\":    \"{{ new Date(Date.now() + ($('Extract GHL Contact').first().json.TOUCH2_DELAY_DAYS + $('Extract GHL Contact').first().json.CLEANUP_DELAY_DAYS) * 86400000).toISOString() }}\",\n  \"variables\": {\n    \"lead_id\": \"{{ $('Extract GHL Contact').first().json.leadId }}\"\n  }\n}"
+        "jsCode": "const org = $input.first().json;\nconst { orgId, pitToken, agentName, locationId, SUPABASE_URL, SUPABASE_SERVICE_KEY, TOUCH2_DELAY_DAYS, CLEANUP_DELAY_DAYS, excludedPhones } = org;\nconst h = {\n  'apikey': SUPABASE_SERVICE_KEY,\n  'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,\n  'Content-Type': 'application/json',\n  'Prefer': 'return=minimal'\n};\nconst norm = (p) => String(p || '').replace(/\\D/g, '');\nconst excl = new Set((excludedPhones || []).map(norm).filter(Boolean));\n\n// 1. Candidate leads (new + import, not yet outreached)\nconst leadsRes = await fetch(\n  `${SUPABASE_URL}/rest/v1/leads?organization_id=eq.${orgId}&status=eq.new&source_channel=eq.import&select=id,contact_id,collected_data,contacts(phone,full_name)&order=created_at.asc&limit=15`,\n  { headers: h }\n);\nconst leads = await leadsRes.json();\n\n// 2. Pick first eligible (no cold_outreach_started, not excluded)\nlet el = null;\nfor (const l of (Array.isArray(leads) ? leads : [])) {\n  const d = typeof l.collected_data === 'string' ? JSON.parse(l.collected_data) : (l.collected_data || {});\n  if (d.cold_outreach_started) continue;\n  const phone = l.contacts?.phone;\n  if (!phone || excl.has(norm(phone))) continue;\n  el = { ...l, phone, name: l.contacts?.full_name || '' };\n  break;\n}\nif (!el) return [{ json: { ...org, phase1: 'no_eligible_lead' } }];\n\n// 3. Fetch touch_1 template\nconst tplRes = await fetch(\n  `${SUPABASE_URL}/rest/v1/outreach_templates?organization_id=eq.${orgId}&sequence_stage=eq.touch_1&channel=eq.whatsapp&active=eq.true&limit=1`,\n  { headers: h }\n);\nconst tpls = await tplRes.json();\nif (!Array.isArray(tpls) || !tpls.length) return [{ json: { ...org, phase1: 'no_template' } }];\n\nconst firstName = (el.name || '').split(' ')[0] || 'Hallo';\nconst msg = tpls[0].message\n  .replace(/\\{\\{name\\}\\}/g, firstName)\n  .replace(/\\{\\{agent_name\\}\\}/g, agentName || 'Asistan');\n\n// 4. GHL: find contact by phone\nconst srchRes = await fetch(\n  `https://services.leadconnectorhq.com/contacts/search?locationId=${locationId}&query=${encodeURIComponent(el.phone)}`,\n  { headers: { 'Authorization': `Bearer ${pitToken}`, 'Version': '2021-04-15' } }\n);\nconst srchData = await srchRes.json();\nconst ghlContacts = srchData.contacts || [];\nif (!ghlContacts.length) return [{ json: { ...org, phase1: 'not_in_ghl', phone: el.phone } }];\nconst ghlContactId = ghlContacts[0].id;\n\n// 5. Send WA message via WAGHL (type: SMS)\nawait fetch('https://services.leadconnectorhq.com/conversations/messages', {\n  method: 'POST',\n  headers: { 'Authorization': `Bearer ${pitToken}`, 'Version': '2021-04-15', 'Content-Type': 'application/json' },\n  body: JSON.stringify({ type: 'SMS', contactId: ghlContactId, message: msg })\n});\n\n// 6. Mark outreach started in Supabase\nconst now = new Date().toISOString();\nawait fetch(`${SUPABASE_URL}/rest/v1/leads?id=eq.${el.id}`, {\n  method: 'PATCH', headers: h,\n  body: JSON.stringify({ collected_data: { cold_outreach_started: now, cold_touch1_sent_at: now } })\n});\n\n// 7. Schedule touch_2\nawait fetch(`${SUPABASE_URL}/rest/v1/follow_up_tasks`, {\n  method: 'POST', headers: h,\n  body: JSON.stringify({\n    organization_id: orgId, lead_id: el.id, contact_id: el.contact_id,\n    task_type: 'cold_outreach', template_key: 'touch_2', status: 'pending',\n    scheduled_at: new Date(Date.now() + Number(TOUCH2_DELAY_DAYS) * 86400000).toISOString(),\n    variables: { ghl_contact_id: ghlContactId, phone: el.phone, name: el.name, agent_name: agentName }\n  })\n});\n\n// 8. Schedule cleanup check\nawait fetch(`${SUPABASE_URL}/rest/v1/follow_up_tasks`, {\n  method: 'POST', headers: h,\n  body: JSON.stringify({\n    organization_id: orgId, lead_id: el.id, contact_id: el.contact_id,\n    task_type: 'cold_outreach', template_key: 'cleanup', status: 'pending',\n    scheduled_at: new Date(Date.now() + (Number(TOUCH2_DELAY_DAYS) + Number(CLEANUP_DELAY_DAYS)) * 86400000).toISOString(),\n    variables: { lead_id: el.id }\n  })\n});\n\nreturn [{ json: { ...org, phase1: 'sent', leadId: el.id, name: el.name, phone: el.phone, ghlContactId } }];"
       }
     },
     {
       "id": "n21",
-      "name": "═══ PHASE 2: Process Pending ═══",
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [
-        1720,
-        420
-      ]
-    },
-    {
-      "id": "n22",
-      "name": "Get Pending Cold Tasks",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1940,
-        420
-      ],
-      "parameters": {
-        "method": "GET",
-        "url": "={{ $('Extract Org Config').first().json.SUPABASE_URL }}/rest/v1/follow_up_tasks",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $('Extract Org Config').first().json.SUPABASE_SERVICE_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $('Extract Org Config').first().json.SUPABASE_SERVICE_KEY }}"
-            }
-          ]
-        },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "organization_id",
-              "value": "=eq.{{ $('Extract Org Config').first().json.orgId }}"
-            },
-            {
-              "name": "task_type",
-              "value": "eq.cold_outreach"
-            },
-            {
-              "name": "status",
-              "value": "eq.pending"
-            },
-            {
-              "name": "scheduled_at",
-              "value": "=lte.{{ new Date().toISOString() }}"
-            },
-            {
-              "name": "order",
-              "value": "scheduled_at.asc"
-            },
-            {
-              "name": "limit",
-              "value": "5"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "n23",
-      "name": "Has Pending Tasks?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        2160,
-        420
-      ],
-      "parameters": {
-        "conditions": {
-          "conditions": [
-            {
-              "id": "c1",
-              "leftValue": "={{ $input.all().length }}",
-              "rightValue": 0,
-              "operator": {
-                "type": "number",
-                "operation": "gt"
-              }
-            }
-          ],
-          "combinator": "and"
-        }
-      }
-    },
-    {
-      "id": "n24",
-      "name": "Split Tasks",
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
-      "position": [
-        2380,
-        380
-      ],
-      "parameters": {
-        "batchSize": 1,
-        "options": {}
-      }
-    },
-    {
-      "id": "n25",
-      "name": "Enrich Task with Org Config",
+      "name": "Phase 2 — Process Pending Tasks",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        2580,
-        380
-      ],
+      "position": [1740, 200],
       "parameters": {
-        "jsCode": "const task = $input.first().json;\nconst org = $('Extract Org Config').first().json;\nconst vars = typeof task.variables === 'string' ? JSON.parse(task.variables) : (task.variables || {});\nreturn [{ json: {\n  taskId:        task.id,\n  leadId:        task.lead_id,\n  contactId:     task.contact_id,\n  templateKey:   task.template_key,\n  ghlContactId:  vars.ghl_contact_id || null,\n  phone:         vars.phone || null,\n  name:          vars.name || '',\n  agentName:     vars.agent_name || 'Asistan',\n  orgId:         org.orgId,\n  locationId:    org.locationId,\n  pitToken:      org.pitToken,\n  excludedPhones: org.excludedPhones || [],\n  SUPABASE_URL:  org.SUPABASE_URL,\n  SUPABASE_SERVICE_KEY: org.SUPABASE_SERVICE_KEY\n}}];"
-      }
-    },
-    {
-      "id": "n26",
-      "name": "Check Conversations / Excluded",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        2800,
-        380
-      ],
-      "parameters": {
-        "jsCode": "const task = $('Enrich Task with Org Config').first().json;\nconst normalizePhone = (raw) => String(raw || '').replace(/\\D/g, '');\nconst excludedPhones = new Set((task.excludedPhones || []).map(normalizePhone).filter(Boolean));\nconst normalizedPhone = normalizePhone(task.phone);\nconst isExcludedPhone = normalizedPhone ? excludedPhones.has(normalizedPhone) : false;\n\nif (isExcludedPhone) {\n  return [{ json: { ...task, stopSequence: true, stopReason: 'excluded_phone' } }];\n}\n\nconst url = `${task.SUPABASE_URL}/rest/v1/conversations?organization_id=eq.${task.orgId}&contact_id=eq.${task.contactId}&select=id&limit=1`;\nconst res = await fetch(url, {\n  method: 'GET',\n  headers: {\n    apikey: task.SUPABASE_SERVICE_KEY,\n    Authorization: `Bearer ${task.SUPABASE_SERVICE_KEY}`,\n  },\n});\n\nconst conversations = await res.json();\nconst hasConversation = Array.isArray(conversations) && conversations.length > 0;\n\nreturn [{ json: { ...task, stopSequence: hasConversation, stopReason: hasConversation ? 'existing_conversation' : null } } }];"
-      }
-    },
-    {
-      "id": "n27",
-      "name": "Did They Reply?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        3020,
-        380
-      ],
-      "parameters": {
-        "conditions": {
-          "conditions": [
-            {
-              "id": "c1",
-              "leftValue": "={{ $json.stopSequence }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        }
-      }
-    },
-    {
-      "id": "n28",
-      "name": "Cancel Remaining Tasks (Engaged)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        3240,
-        300
-      ],
-      "parameters": {
-        "method": "PATCH",
-        "url": "={{ $('Enrich Task with Org Config').first().json.SUPABASE_URL }}/rest/v1/follow_up_tasks",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $('Enrich Task with Org Config').first().json.SUPABASE_SERVICE_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $('Enrich Task with Org Config').first().json.SUPABASE_SERVICE_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
-              "name": "Prefer",
-              "value": "return=minimal"
-            }
-          ]
-        },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "lead_id",
-              "value": "=eq.{{ $('Enrich Task with Org Config').first().json.leadId }}"
-            },
-            {
-              "name": "task_type",
-              "value": "eq.cold_outreach"
-            },
-            {
-              "name": "status",
-              "value": "eq.pending"
-            }
-          ]
-        },
-        "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "{ \"status\": \"cancelled\" }"
-      }
-    },
-    {
-      "id": "n29",
-      "name": "Which Task Type?",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3,
-      "position": [
-        3240,
-        460
-      ],
-      "parameters": {
-        "mode": "rules",
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('Enrich Task with Org Config').first().json.templateKey }}",
-                    "rightValue": "touch_2",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "touch_2"
-            },
-            {
-              "conditions": {
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('Enrich Task with Org Config').first().json.templateKey }}",
-                    "rightValue": "cleanup",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "cleanup"
-            }
-          ]
-        },
-        "options": {}
-      }
-    },
-    {
-      "id": "n30",
-      "name": "Fetch Touch 2 Template",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        3460,
-        380
-      ],
-      "parameters": {
-        "method": "GET",
-        "url": "={{ $('Enrich Task with Org Config').first().json.SUPABASE_URL }}/rest/v1/outreach_templates",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $('Enrich Task with Org Config').first().json.SUPABASE_SERVICE_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $('Enrich Task with Org Config').first().json.SUPABASE_SERVICE_KEY }}"
-            }
-          ]
-        },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "organization_id",
-              "value": "=eq.{{ $('Enrich Task with Org Config').first().json.orgId }}"
-            },
-            {
-              "name": "sequence_stage",
-              "value": "eq.touch_2"
-            },
-            {
-              "name": "channel",
-              "value": "eq.whatsapp"
-            },
-            {
-              "name": "active",
-              "value": "eq.true"
-            },
-            {
-              "name": "limit",
-              "value": "1"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "n31",
-      "name": "GHL Send Touch 2",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        3680,
-        380
-      ],
-      "parameters": {
-        "jsCode": "const task = $('Enrich Task with Org Config').first().json;\nconst tplArr = $input.all().map(i => i.json);\nif (!tplArr.length) return [{ json: { skipped: true } }];\n\nconst tpl = tplArr[0];\nconst firstName = (task.name || '').split(' ')[0] || 'Hallo';\nconst message = tpl.message\n  .replace(/\\{\\{name\\}\\}/g, firstName)\n  .replace(/\\{\\{agent_name\\}\\}/g, task.agentName || 'Asistan');\n\nawait fetch('https://services.leadconnectorhq.com/conversations/messages', {\n  method: 'POST',\n  headers: {\n    'Authorization': `Bearer ${task.pitToken}`,\n    'Version': '2021-04-15',\n    'Content-Type': 'application/json'\n  },\n  body: JSON.stringify({ type: 'SMS', contactId: task.ghlContactId, message })\n});\n\nawait fetch(`${task.SUPABASE_URL}/rest/v1/follow_up_tasks?id=eq.${task.taskId}`, {\n  method: 'PATCH',\n  headers: {\n    'apikey': task.SUPABASE_SERVICE_KEY,\n    'Authorization': `Bearer ${task.SUPABASE_SERVICE_KEY}`,\n    'Content-Type': 'application/json',\n    'Prefer': 'return=minimal'\n  },\n  body: JSON.stringify({ status: 'sent' })\n});\n\nreturn [{ json: { sent: true, taskId: task.taskId, leadId: task.leadId } }];"
-      }
-    },
-    {
-      "id": "n32",
-      "name": "Mark Lead Lost",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        3460,
-        540
-      ],
-      "parameters": {
-        "jsCode": "const task = $('Enrich Task with Org Config').first().json;\n\n// Mark lead as lost\nawait fetch(`${task.SUPABASE_URL}/rest/v1/leads?id=eq.${task.leadId}`, {\n  method: 'PATCH',\n  headers: {\n    'apikey': task.SUPABASE_SERVICE_KEY,\n    'Authorization': `Bearer ${task.SUPABASE_SERVICE_KEY}`,\n    'Content-Type': 'application/json',\n    'Prefer': 'return=minimal'\n  },\n  body: JSON.stringify({ status: 'lost' })\n});\n\n// Cancel all remaining cold tasks for this lead\nawait fetch(`${task.SUPABASE_URL}/rest/v1/follow_up_tasks?lead_id=eq.${task.leadId}&task_type=eq.cold_outreach&status=eq.pending`, {\n  method: 'PATCH',\n  headers: {\n    'apikey': task.SUPABASE_SERVICE_KEY,\n    'Authorization': `Bearer ${task.SUPABASE_SERVICE_KEY}`,\n    'Content-Type': 'application/json',\n    'Prefer': 'return=minimal'\n  },\n  body: JSON.stringify({ status: 'cancelled' })\n});\n\nreturn [{ json: { markedLost: true, leadId: task.leadId } }];"
+        "jsCode": "const org = $input.first().json;\nconst { orgId, pitToken, agentName, SUPABASE_URL, SUPABASE_SERVICE_KEY } = org;\nconst h = {\n  'apikey': SUPABASE_SERVICE_KEY,\n  'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,\n  'Content-Type': 'application/json',\n  'Prefer': 'return=minimal'\n};\n\n// Fetch due pending tasks\nconst tasksRes = await fetch(\n  `${SUPABASE_URL}/rest/v1/follow_up_tasks?organization_id=eq.${orgId}&task_type=eq.cold_outreach&status=eq.pending&scheduled_at=lte.${new Date().toISOString()}&order=scheduled_at.asc&limit=10`,\n  { headers: h }\n);\nconst tasks = await tasksRes.json();\nif (!Array.isArray(tasks) || !tasks.length) return [{ json: { ...org, phase2: 'no_tasks' } }];\n\nlet processed = 0;\nfor (const task of tasks) {\n  const vars = typeof task.variables === 'string' ? JSON.parse(task.variables) : (task.variables || {});\n  const { ghl_contact_id, phone, name, agent_name } = vars;\n\n  // Check if contact already replied (conversation exists)\n  const convRes = await fetch(\n    `${SUPABASE_URL}/rest/v1/conversations?organization_id=eq.${orgId}&contact_id=eq.${task.contact_id}&select=id&limit=1`,\n    { headers: h }\n  );\n  const convs = await convRes.json();\n  if (Array.isArray(convs) && convs.length > 0) {\n    // Engaged — cancel all remaining cold tasks for this lead\n    await fetch(\n      `${SUPABASE_URL}/rest/v1/follow_up_tasks?lead_id=eq.${task.lead_id}&task_type=eq.cold_outreach&status=eq.pending`,\n      { method: 'PATCH', headers: h, body: JSON.stringify({ status: 'cancelled' }) }\n    );\n    processed++;\n    continue;\n  }\n\n  if (task.template_key === 'touch_2') {\n    const tplRes = await fetch(\n      `${SUPABASE_URL}/rest/v1/outreach_templates?organization_id=eq.${orgId}&sequence_stage=eq.touch_2&channel=eq.whatsapp&active=eq.true&limit=1`,\n      { headers: h }\n    );\n    const tpls = await tplRes.json();\n    if (Array.isArray(tpls) && tpls.length) {\n      const firstName = (name || '').split(' ')[0] || 'Hallo';\n      const msg = tpls[0].message\n        .replace(/\\{\\{name\\}\\}/g, firstName)\n        .replace(/\\{\\{agent_name\\}\\}/g, agent_name || agentName || 'Asistan');\n      await fetch('https://services.leadconnectorhq.com/conversations/messages', {\n        method: 'POST',\n        headers: { 'Authorization': `Bearer ${pitToken}`, 'Version': '2021-04-15', 'Content-Type': 'application/json' },\n        body: JSON.stringify({ type: 'SMS', contactId: ghl_contact_id, message: msg })\n      });\n    }\n    await fetch(`${SUPABASE_URL}/rest/v1/follow_up_tasks?id=eq.${task.id}`, {\n      method: 'PATCH', headers: h, body: JSON.stringify({ status: 'sent' })\n    });\n\n  } else if (task.template_key === 'cleanup') {\n    // No reply after touch_2 → mark lead lost\n    await fetch(`${SUPABASE_URL}/rest/v1/leads?id=eq.${task.lead_id}`, {\n      method: 'PATCH', headers: h, body: JSON.stringify({ status: 'lost' })\n    });\n    await fetch(\n      `${SUPABASE_URL}/rest/v1/follow_up_tasks?lead_id=eq.${task.lead_id}&task_type=eq.cold_outreach&status=eq.pending`,\n      { method: 'PATCH', headers: h, body: JSON.stringify({ status: 'cancelled' }) }\n    );\n  }\n  processed++;\n}\n\nreturn [{ json: { ...org, phase2: 'done', processed, total: tasks.length } }];"
       }
     }
   ],
   "connections": {
-    "Schedule": {
-      "main": [[{ "node": "Config", "type": "main", "index": 0 }]]
-    },
-    "Config": {
-      "main": [[{ "node": "Get Active GHL Orgs", "type": "main", "index": 0 }]]
-    },
-    "Get Active GHL Orgs": {
-      "main": [[{ "node": "Split by Org", "type": "main", "index": 0 }]]
-    },
-    "Split by Org": {
+    "Schedule":             { "main": [[{ "node": "Config",               "type": "main", "index": 0 }]] },
+    "Config":               { "main": [[{ "node": "Get Org",              "type": "main", "index": 0 }]] },
+    "Get Org":              { "main": [[{ "node": "Extract Org Config",   "type": "main", "index": 0 }]] },
+    "Extract Org Config":   { "main": [[{ "node": "Check Business Hours", "type": "main", "index": 0 }]] },
+    "Check Business Hours": { "main": [[{ "node": "Is Business Hours?",   "type": "main", "index": 0 }]] },
+    "Is Business Hours?": {
       "main": [
-        [{ "node": "Extract Org Config", "type": "main", "index": 0 }],
+        [{ "node": "Phase 1 — Pick & Send Touch 1", "type": "main", "index": 0 }],
         []
       ]
     },
-    "Extract Org Config": {
-      "main": [[{ "node": "Check Business Hours (Org TZ)", "type": "main", "index": 0 }]]
-    },
-    "Check Business Hours (Org TZ)": {
-      "main": [[{ "node": "Is Org Business Hours?", "type": "main", "index": 0 }]]
-    },
-    "Is Org Business Hours?": {
-      "main": [
-        [{ "node": "═══ PHASE 1: New Outreach ═══", "type": "main", "index": 0 }],
-        [{ "node": "Split by Org", "type": "main", "index": 0 }]
-      ]
-    },
-    "═══ PHASE 1: New Outreach ═══": {
-      "main": [[{ "node": "Get Candidate Leads", "type": "main", "index": 0 }]]
-    },
-    "Get Candidate Leads": {
-      "main": [[{ "node": "Pick Eligible Lead", "type": "main", "index": 0 }]]
-    },
-    "Pick Eligible Lead": {
-      "main": [[{ "node": "Has Eligible Lead?", "type": "main", "index": 0 }]]
-    },
-    "Has Eligible Lead?": {
-      "main": [
-        [{ "node": "Fetch Touch 1 Template", "type": "main", "index": 0 }],
-        [{ "node": "═══ PHASE 2: Process Pending ═══", "type": "main", "index": 0 }]
-      ]
-    },
-    "Fetch Touch 1 Template": {
-      "main": [[{ "node": "Prepare Touch 1 Message", "type": "main", "index": 0 }]]
-    },
-    "Prepare Touch 1 Message": {
-      "main": [[{ "node": "GHL Search by Phone", "type": "main", "index": 0 }]]
-    },
-    "GHL Search by Phone": {
-      "main": [[{ "node": "Extract GHL Contact", "type": "main", "index": 0 }]]
-    },
-    "Extract GHL Contact": {
-      "main": [[{ "node": "Found in GHL?", "type": "main", "index": 0 }]]
-    },
-    "Found in GHL?": {
-      "main": [
-        [{ "node": "GHL Send Touch 1", "type": "main", "index": 0 }],
-        [{ "node": "═══ PHASE 2: Process Pending ═══", "type": "main", "index": 0 }]
-      ]
-    },
-    "GHL Send Touch 1": {
-      "main": [[{ "node": "Mark Outreach Started", "type": "main", "index": 0 }]]
-    },
-    "Mark Outreach Started": {
-      "main": [[{ "node": "Schedule Touch 2", "type": "main", "index": 0 }]]
-    },
-    "Schedule Touch 2": {
-      "main": [[{ "node": "Schedule Cleanup Check", "type": "main", "index": 0 }]]
-    },
-    "Schedule Cleanup Check": {
-      "main": [[{ "node": "═══ PHASE 2: Process Pending ═══", "type": "main", "index": 0 }]]
-    },
-    "═══ PHASE 2: Process Pending ═══": {
-      "main": [[{ "node": "Get Pending Cold Tasks", "type": "main", "index": 0 }]]
-    },
-    "Get Pending Cold Tasks": {
-      "main": [[{ "node": "Has Pending Tasks?", "type": "main", "index": 0 }]]
-    },
-    "Has Pending Tasks?": {
-      "main": [
-        [{ "node": "Split Tasks", "type": "main", "index": 0 }],
-        [{ "node": "Split by Org", "type": "main", "index": 0 }]
-      ]
-    },
-    "Split Tasks": {
-      "main": [
-        [{ "node": "Enrich Task with Org Config", "type": "main", "index": 0 }],
-        [{ "node": "Split by Org", "type": "main", "index": 0 }]
-      ]
-    },
-    "Enrich Task with Org Config": {
-      "main": [[{ "node": "Check Conversations / Excluded", "type": "main", "index": 0 }]]
-    },
-    "Check Conversations / Excluded": {
-      "main": [[{ "node": "Did They Reply?", "type": "main", "index": 0 }]]
-    },
-    "Did They Reply?": {
-      "main": [
-        [{ "node": "Cancel Remaining Tasks (Engaged)", "type": "main", "index": 0 }],
-        [{ "node": "Which Task Type?", "type": "main", "index": 0 }]
-      ]
-    },
-    "Cancel Remaining Tasks (Engaged)": {
-      "main": [[{ "node": "Split Tasks", "type": "main", "index": 0 }]]
-    },
-    "Which Task Type?": {
-      "main": [
-        [{ "node": "Fetch Touch 2 Template", "type": "main", "index": 0 }],
-        [{ "node": "Mark Lead Lost", "type": "main", "index": 0 }]
-      ]
-    },
-    "Fetch Touch 2 Template": {
-      "main": [[{ "node": "GHL Send Touch 2", "type": "main", "index": 0 }]]
-    },
-    "GHL Send Touch 2": {
-      "main": [[{ "node": "Split Tasks", "type": "main", "index": 0 }]]
-    },
-    "Mark Lead Lost": {
-      "main": [[{ "node": "Split Tasks", "type": "main", "index": 0 }]]
+    "Phase 1 — Pick & Send Touch 1": {
+      "main": [[{ "node": "Phase 2 — Process Pending Tasks", "type": "main", "index": 0 }]]
     }
   },
   "settings": {
