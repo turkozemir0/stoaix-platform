@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Flame, Phone, MessageSquare } from 'lucide-react'
+import { Flame, Search } from 'lucide-react'
 
 type LeadStatus = 'new' | 'in_progress' | 'handed_off' | 'nurturing' | 'qualified' | 'converted' | 'lost'
 
@@ -30,6 +30,8 @@ const COLUMNS: { key: LeadStatus; label: string; color: string; headerColor: str
   { key: 'lost',        label: 'Kaybedildi',      color: 'bg-red-50 border-red-100',        headerColor: 'bg-red-100 text-red-700' },
 ]
 
+const PAGE_SIZE = 30
+
 function ScoreBadge({ score }: { score: number }) {
   const color =
     score >= 80 ? 'bg-red-500 text-white' :
@@ -47,6 +49,8 @@ function ScoreBadge({ score }: { score: number }) {
 export default function KanbanBoard({ leads: initialLeads }: Props) {
   const [leads, setLeads] = useState(initialLeads)
   const [movingId, setMovingId] = useState<string | null>(null)
+  const [searches, setSearches] = useState<Record<string, string>>({})
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   async function moveToStatus(leadId: string, newStatus: LeadStatus) {
     setMovingId(leadId)
@@ -61,82 +65,139 @@ export default function KanbanBoard({ leads: initialLeads }: Props) {
     setMovingId(null)
   }
 
+  function setSearch(colKey: string, val: string) {
+    setSearches(prev => ({ ...prev, [colKey]: val }))
+    // Arama değişince sayfa sıfırla
+    setExpanded(prev => ({ ...prev, [colKey]: false }))
+  }
+
   const byStatus = COLUMNS.reduce<Record<string, Lead[]>>((acc, col) => {
-    acc[col.key] = leads.filter(l => l.status === col.key)
+    const q = (searches[col.key] ?? '').toLowerCase().trim()
+    const all = leads.filter(l => l.status === col.key)
+    if (!q) { acc[col.key] = all; return acc }
+
+    acc[col.key] = all.filter(l => {
+      const name = (l.collected_data?.full_name || l.contacts?.full_name || '').toLowerCase()
+      const phone = (l.contacts?.phone || l.collected_data?.phone || '').toLowerCase()
+      return name.includes(q) || phone.includes(q)
+    })
     return acc
   }, {})
 
   return (
     <div className="flex gap-3 overflow-x-auto pb-4">
-      {COLUMNS.map(col => (
-        <div key={col.key} className="flex-shrink-0 w-64">
-          {/* Column header */}
-          <div className={`rounded-t-xl px-3 py-2.5 flex items-center justify-between ${col.headerColor}`}>
-            <span className="text-xs font-semibold">{col.label}</span>
-            <span className="text-xs font-bold opacity-70">{byStatus[col.key]?.length ?? 0}</span>
-          </div>
+      {COLUMNS.map(col => {
+        const filtered = byStatus[col.key] ?? []
+        const total = leads.filter(l => l.status === col.key).length
+        const isExpanded = expanded[col.key]
+        const visible = isExpanded ? filtered : filtered.slice(0, PAGE_SIZE)
+        const hiddenCount = filtered.length - PAGE_SIZE
 
-          {/* Cards */}
-          <div className={`rounded-b-xl border ${col.color} min-h-[200px] p-2 space-y-2`}>
-            {byStatus[col.key]?.map(lead => {
-              const name = lead.collected_data?.full_name || lead.contacts?.full_name
-              const phone = lead.contacts?.phone || lead.collected_data?.phone
-              const isMoving = movingId === lead.id
+        return (
+          <div key={col.key} className="flex-shrink-0 w-64">
+            {/* Column header */}
+            <div className={`rounded-t-xl px-3 pt-2.5 pb-1.5 ${col.headerColor}`}>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-semibold">{col.label}</span>
+                <span className="text-xs font-bold opacity-70">
+                  {searches[col.key] ? `${filtered.length} / ${total}` : total}
+                </span>
+              </div>
+              {/* Per-column search */}
+              <div className="relative">
+                <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 opacity-50" />
+                <input
+                  type="text"
+                  value={searches[col.key] ?? ''}
+                  onChange={e => setSearch(col.key, e.target.value)}
+                  placeholder="İsim veya telefon..."
+                  className="w-full pl-5 pr-2 py-1 text-[10px] rounded-lg bg-white/60 border border-black/10 focus:outline-none focus:bg-white placeholder:opacity-50"
+                />
+              </div>
+            </div>
 
-              return (
-                <div
-                  key={lead.id}
-                  className={`bg-white rounded-xl border border-slate-100 p-3 shadow-sm transition-opacity ${isMoving ? 'opacity-50' : ''}`}
+            {/* Cards */}
+            <div className={`rounded-b-xl border ${col.color} min-h-[200px] p-2 space-y-2`}>
+              {visible.length === 0 && (
+                <p className="text-[11px] text-slate-400 text-center py-6">
+                  {searches[col.key] ? 'Eşleşme yok' : 'Lead yok'}
+                </p>
+              )}
+
+              {visible.map(lead => {
+                const name = lead.collected_data?.full_name || lead.contacts?.full_name
+                const phone = lead.contacts?.phone || lead.collected_data?.phone
+                const isMoving = movingId === lead.id
+
+                return (
+                  <div
+                    key={lead.id}
+                    className={`bg-white rounded-xl border border-slate-100 p-3 shadow-sm transition-opacity ${isMoving ? 'opacity-50' : ''}`}
+                  >
+                    <div className="flex items-start justify-between gap-1 mb-2">
+                      <p className="text-xs font-medium text-slate-800 truncate flex-1">
+                        {name || <span className="text-slate-400">İsimsiz</span>}
+                      </p>
+                      <ScoreBadge score={lead.qualification_score} />
+                    </div>
+
+                    {phone && (
+                      <p className="text-[11px] text-slate-500 font-mono mb-2 truncate">{phone}</p>
+                    )}
+
+                    <div className="flex items-center gap-1 mb-2">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                        lead.source_channel === 'whatsapp' ? 'bg-green-100 text-green-700' :
+                        lead.source_channel === 'instagram' ? 'bg-pink-100 text-pink-700' :
+                        'bg-slate-100 text-slate-600'
+                      }`}>
+                        {lead.source_channel}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 pt-1 border-t border-slate-50">
+                      <Link
+                        href={`/dashboard/leads/${lead.id}`}
+                        className="flex-1 text-center text-[10px] text-brand-600 hover:text-brand-700 font-medium py-1 rounded hover:bg-brand-50 transition-colors"
+                      >
+                        Detay
+                      </Link>
+                      <select
+                        value={lead.status}
+                        onChange={e => moveToStatus(lead.id, e.target.value as LeadStatus)}
+                        disabled={isMoving}
+                        className="text-[10px] border border-slate-200 rounded px-1 py-1 text-slate-600 bg-white focus:outline-none focus:ring-1 focus:ring-brand-400 disabled:opacity-50"
+                      >
+                        {COLUMNS.map(c => (
+                          <option key={c.key} value={c.key}>{c.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )
+              })}
+
+              {/* "Daha fazla göster" */}
+              {!isExpanded && hiddenCount > 0 && (
+                <button
+                  onClick={() => setExpanded(prev => ({ ...prev, [col.key]: true }))}
+                  className="w-full text-[11px] text-slate-500 hover:text-slate-700 py-2 border border-dashed border-slate-200 rounded-xl hover:bg-white transition-colors"
                 >
-                  <div className="flex items-start justify-between gap-1 mb-2">
-                    <p className="text-xs font-medium text-slate-800 truncate flex-1">
-                      {name || <span className="text-slate-400">İsimsiz</span>}
-                    </p>
-                    <ScoreBadge score={lead.qualification_score} />
-                  </div>
-
-                  {phone && (
-                    <p className="text-[11px] text-slate-500 font-mono mb-2 truncate">{phone}</p>
-                  )}
-
-                  {/* Channel badge */}
-                  <div className="flex items-center gap-1 mb-2">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                      lead.source_channel === 'whatsapp' ? 'bg-green-100 text-green-700' :
-                      lead.source_channel === 'instagram' ? 'bg-pink-100 text-pink-700' :
-                      'bg-slate-100 text-slate-600'
-                    }`}>
-                      {lead.source_channel}
-                    </span>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1.5 pt-1 border-t border-slate-50">
-                    <Link
-                      href={`/dashboard/leads/${lead.id}`}
-                      className="flex-1 text-center text-[10px] text-brand-600 hover:text-brand-700 font-medium py-1 rounded hover:bg-brand-50 transition-colors"
-                    >
-                      Detay
-                    </Link>
-
-                    {/* Status move dropdown */}
-                    <select
-                      value={lead.status}
-                      onChange={e => moveToStatus(lead.id, e.target.value as LeadStatus)}
-                      disabled={isMoving}
-                      className="text-[10px] border border-slate-200 rounded px-1 py-1 text-slate-600 bg-white focus:outline-none focus:ring-1 focus:ring-brand-400 disabled:opacity-50"
-                    >
-                      {COLUMNS.map(c => (
-                        <option key={c.key} value={c.key}>{c.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )
-            })}
+                  + {hiddenCount} kişi daha
+                </button>
+              )}
+              {isExpanded && filtered.length > PAGE_SIZE && (
+                <button
+                  onClick={() => setExpanded(prev => ({ ...prev, [col.key]: false }))}
+                  className="w-full text-[11px] text-slate-400 hover:text-slate-600 py-2 transition-colors"
+                >
+                  Küçült
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
