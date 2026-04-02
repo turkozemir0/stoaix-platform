@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Bell, X, Check } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -26,11 +26,23 @@ export default function NotificationBell({ userId, orgId }: Props) {
   const [notifications, setNotifications] = useState<OrgNotification[]>([])
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [dropdownStyle, setDropdownStyle] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+  const buttonRef = useRef<HTMLButtonElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const supabase = createClient()
   const router = useRouter()
 
   const unreadCount = notifications.filter(n => !n.read_at).length
+
+  const DROPDOWN_W = 320
+
+  const calcPosition = useCallback(() => {
+    if (!buttonRef.current) return
+    const rect = buttonRef.current.getBoundingClientRect()
+    const vw = window.innerWidth
+    const left = Math.min(rect.left, vw - DROPDOWN_W - 8)
+    setDropdownStyle({ top: rect.bottom + 8, left: Math.max(8, left) })
+  }, [])
 
   useEffect(() => {
     fetchNotifications()
@@ -62,7 +74,11 @@ export default function NotificationBell({ userId, orgId }: Props) {
   // Close on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      const target = e.target as Node
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(target) &&
+        buttonRef.current && !buttonRef.current.contains(target)
+      ) {
         setOpen(false)
       }
     }
@@ -117,9 +133,10 @@ export default function NotificationBell({ userId, orgId }: Props) {
   }
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div className="relative">
       <button
-        onClick={() => setOpen(o => !o)}
+        ref={buttonRef}
+        onClick={() => { calcPosition(); setOpen(o => !o) }}
         className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-400 transition-all hover:border-white/15 hover:text-white"
         aria-label="Bildirimler"
       >
@@ -132,7 +149,11 @@ export default function NotificationBell({ userId, orgId }: Props) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-11 z-50 w-80 rounded-2xl border border-slate-200 bg-white shadow-xl">
+        <div
+          ref={dropdownRef}
+          className="fixed z-[200] w-80 rounded-2xl border border-slate-200 bg-white shadow-xl"
+          style={{ top: dropdownStyle.top, left: dropdownStyle.left, maxWidth: 'calc(100vw - 16px)' }}
+        >
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <p className="text-sm font-semibold text-slate-800">Bildirimler</p>
             <div className="flex items-center gap-2">

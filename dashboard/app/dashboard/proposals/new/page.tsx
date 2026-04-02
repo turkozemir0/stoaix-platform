@@ -231,7 +231,7 @@ export default function NewProposalPage() {
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value)}
-              placeholder="Örn: İngiltere Lisans Programı Teklifi"
+              placeholder=""
               required
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
