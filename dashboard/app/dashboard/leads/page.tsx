@@ -180,7 +180,7 @@ export default function LeadsPage() {
       </div>
 
       {viewMode === 'kanban' ? (
-        <KanbanBoard leads={leads as any} />
+        orgId ? <KanbanBoard orgId={orgId} /> : null
       ) : (
         <>
           {/* Filter tabs */}

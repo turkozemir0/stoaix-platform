@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { Flame, Search } from 'lucide-react'
+import { Flame, Search, Loader2 } from 'lucide-react'
 
 type LeadStatus = 'new' | 'in_progress' | 'handed_off' | 'nurturing' | 'qualified' | 'converted' | 'lost'
 
@@ -16,18 +16,27 @@ interface Lead {
   contacts: { phone: string | null; full_name: string | null } | null
 }
 
-interface Props {
+interface ColState {
   leads: Lead[]
+  count: number
+  loading: boolean
+  page: number
+  search: string
+  hasMore: boolean
+}
+
+interface Props {
+  orgId: string
 }
 
 const COLUMNS: { key: LeadStatus; label: string; color: string; headerColor: string }[] = [
-  { key: 'new',         label: 'Yeni',           color: 'bg-slate-50 border-slate-200',    headerColor: 'bg-slate-100 text-slate-700' },
-  { key: 'in_progress', label: 'Aktif',           color: 'bg-blue-50 border-blue-100',      headerColor: 'bg-blue-100 text-blue-700' },
-  { key: 'handed_off',  label: 'Temsilci Talep',  color: 'bg-amber-50 border-amber-100',    headerColor: 'bg-amber-100 text-amber-700' },
-  { key: 'nurturing',   label: 'Takipte',         color: 'bg-purple-50 border-purple-100',  headerColor: 'bg-purple-100 text-purple-700' },
-  { key: 'qualified',   label: 'Randevu',         color: 'bg-green-50 border-green-100',    headerColor: 'bg-green-100 text-green-700' },
-  { key: 'converted',   label: 'Dönüştü',         color: 'bg-emerald-50 border-emerald-100',headerColor: 'bg-emerald-100 text-emerald-700' },
-  { key: 'lost',        label: 'Kaybedildi',      color: 'bg-red-50 border-red-100',        headerColor: 'bg-red-100 text-red-700' },
+  { key: 'new',         label: 'Yeni',           color: 'bg-slate-50 border-slate-200',     headerColor: 'bg-slate-100 text-slate-700' },
+  { key: 'in_progress', label: 'Aktif',           color: 'bg-blue-50 border-blue-100',       headerColor: 'bg-blue-100 text-blue-700' },
+  { key: 'handed_off',  label: 'Temsilci Talep',  color: 'bg-amber-50 border-amber-100',     headerColor: 'bg-amber-100 text-amber-700' },
+  { key: 'nurturing',   label: 'Takipte',         color: 'bg-purple-50 border-purple-100',   headerColor: 'bg-purple-100 text-purple-700' },
+  { key: 'qualified',   label: 'Randevu',         color: 'bg-green-50 border-green-100',     headerColor: 'bg-green-100 text-green-700' },
+  { key: 'converted',   label: 'Dönüştü',         color: 'bg-emerald-50 border-emerald-100', headerColor: 'bg-emerald-100 text-emerald-700' },
+  { key: 'lost',        label: 'Kaybedildi',      color: 'bg-red-50 border-red-100',         headerColor: 'bg-red-100 text-red-700' },
 ]
 
 const PAGE_SIZE = 30
@@ -46,13 +55,73 @@ function ScoreBadge({ score }: { score: number }) {
   )
 }
 
-export default function KanbanBoard({ leads: initialLeads }: Props) {
-  const [leads, setLeads] = useState(initialLeads)
-  const [movingId, setMovingId] = useState<string | null>(null)
-  const [searches, setSearches] = useState<Record<string, string>>({})
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+function initCol(): ColState {
+  return { leads: [], count: 0, loading: true, page: 0, search: '', hasMore: false }
+}
 
-  async function moveToStatus(leadId: string, newStatus: LeadStatus) {
+export default function KanbanBoard({ orgId }: Props) {
+  const [cols, setCols] = useState<Record<string, ColState>>(() =>
+    Object.fromEntries(COLUMNS.map(c => [c.key, initCol()]))
+  )
+  const [movingId, setMovingId] = useState<string | null>(null)
+  const debounceRefs = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  // Tek bir kolon için veri çek
+  const fetchCol = useCallback(async (status: string, search: string, page: number, append: boolean) => {
+    setCols(prev => ({
+      ...prev,
+      [status]: { ...prev[status], loading: true },
+    }))
+
+    const params = new URLSearchParams({ status, page: String(page) })
+    if (search) params.set('q', search)
+
+    const res = await fetch(`/api/leads/kanban?${params}`)
+    const data = await res.json()
+
+    const newLeads: Lead[] = data.leads ?? []
+    const count: number = data.count ?? 0
+
+    setCols(prev => {
+      const existing = append ? prev[status].leads : []
+      return {
+        ...prev,
+        [status]: {
+          ...prev[status],
+          leads: [...existing, ...newLeads],
+          count,
+          loading: false,
+          page,
+          hasMore: (append ? existing.length + newLeads.length : newLeads.length) < count,
+        },
+      }
+    })
+  }, [])
+
+  // İlk yüklemede tüm kolonları paralel çek
+  useEffect(() => {
+    if (!orgId) return
+    COLUMNS.forEach(col => fetchCol(col.key, '', 0, false))
+  }, [orgId, fetchCol])
+
+  // Arama — debounce
+  function handleSearch(status: string, val: string) {
+    setCols(prev => ({ ...prev, [status]: { ...prev[status], search: val } }))
+
+    if (debounceRefs.current[status]) clearTimeout(debounceRefs.current[status])
+    debounceRefs.current[status] = setTimeout(() => {
+      fetchCol(status, val, 0, false)
+    }, 400)
+  }
+
+  // Daha fazla göster
+  function loadMore(status: string) {
+    const col = cols[status]
+    fetchCol(status, col.search, col.page + 1, true)
+  }
+
+  // Kart taşı
+  async function moveToStatus(leadId: string, fromStatus: string, newStatus: LeadStatus) {
     setMovingId(leadId)
     const res = await fetch(`/api/leads/${leadId}/assign`, {
       method: 'POST',
@@ -60,71 +129,66 @@ export default function KanbanBoard({ leads: initialLeads }: Props) {
       body: JSON.stringify({ status: newStatus }),
     })
     if (res.ok) {
-      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, status: newStatus } : l))
+      // Kaynaktan kaldır, hedef kolonu yeniden yükle
+      setCols(prev => ({
+        ...prev,
+        [fromStatus]: {
+          ...prev[fromStatus],
+          leads: prev[fromStatus].leads.filter(l => l.id !== leadId),
+          count: Math.max(0, prev[fromStatus].count - 1),
+        },
+      }))
+      fetchCol(newStatus, cols[newStatus].search, 0, false)
     }
     setMovingId(null)
   }
 
-  function setSearch(colKey: string, val: string) {
-    setSearches(prev => ({ ...prev, [colKey]: val }))
-    // Arama değişince sayfa sıfırla
-    setExpanded(prev => ({ ...prev, [colKey]: false }))
-  }
-
-  const byStatus = COLUMNS.reduce<Record<string, Lead[]>>((acc, col) => {
-    const q = (searches[col.key] ?? '').toLowerCase().trim()
-    const all = leads.filter(l => l.status === col.key)
-    if (!q) { acc[col.key] = all; return acc }
-
-    acc[col.key] = all.filter(l => {
-      const name = (l.collected_data?.full_name || l.contacts?.full_name || '').toLowerCase()
-      const phone = (l.contacts?.phone || l.collected_data?.phone || '').toLowerCase()
-      return name.includes(q) || phone.includes(q)
-    })
-    return acc
-  }, {})
-
   return (
     <div className="flex gap-3 overflow-x-auto pb-4">
       {COLUMNS.map(col => {
-        const filtered = byStatus[col.key] ?? []
-        const total = leads.filter(l => l.status === col.key).length
-        const isExpanded = expanded[col.key]
-        const visible = isExpanded ? filtered : filtered.slice(0, PAGE_SIZE)
-        const hiddenCount = filtered.length - PAGE_SIZE
+        const state = cols[col.key]
 
         return (
           <div key={col.key} className="flex-shrink-0 w-64">
-            {/* Column header */}
+            {/* Kolon başlığı */}
             <div className={`rounded-t-xl px-3 pt-2.5 pb-1.5 ${col.headerColor}`}>
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-xs font-semibold">{col.label}</span>
-                <span className="text-xs font-bold opacity-70">
-                  {searches[col.key] ? `${filtered.length} / ${total}` : total}
+                <span className="text-xs font-bold opacity-70 flex items-center gap-1">
+                  {state.loading && state.leads.length === 0
+                    ? <Loader2 size={10} className="animate-spin" />
+                    : state.count.toLocaleString('tr-TR')
+                  }
                 </span>
               </div>
-              {/* Per-column search */}
+              {/* Arama */}
               <div className="relative">
-                <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 opacity-50" />
+                <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 opacity-50 pointer-events-none" />
                 <input
                   type="text"
-                  value={searches[col.key] ?? ''}
-                  onChange={e => setSearch(col.key, e.target.value)}
+                  value={state.search}
+                  onChange={e => handleSearch(col.key, e.target.value)}
                   placeholder="İsim veya telefon..."
                   className="w-full pl-5 pr-2 py-1 text-[10px] rounded-lg bg-white/60 border border-black/10 focus:outline-none focus:bg-white placeholder:opacity-50"
                 />
               </div>
             </div>
 
-            {/* Cards */}
+            {/* Kartlar */}
             <div className={`rounded-b-xl border ${col.color} min-h-[200px] p-2 space-y-2`}>
-              {visible.length === 0 && (
+              {state.loading && state.leads.length === 0 && (
+                <div className="flex justify-center py-8 text-slate-400">
+                  <Loader2 size={16} className="animate-spin" />
+                </div>
+              )}
+
+              {!state.loading && state.leads.length === 0 && (
                 <p className="text-[11px] text-slate-400 text-center py-6">
-                  {searches[col.key] ? 'Eşleşme yok' : 'Lead yok'}
+                  {state.search ? 'Eşleşme yok' : 'Lead yok'}
                 </p>
               )}
 
-              {visible.map(lead => {
+              {state.leads.map(lead => {
                 const name = lead.collected_data?.full_name || lead.contacts?.full_name
                 const phone = lead.contacts?.phone || lead.collected_data?.phone
                 const isMoving = movingId === lead.id
@@ -164,7 +228,7 @@ export default function KanbanBoard({ leads: initialLeads }: Props) {
                       </Link>
                       <select
                         value={lead.status}
-                        onChange={e => moveToStatus(lead.id, e.target.value as LeadStatus)}
+                        onChange={e => moveToStatus(lead.id, col.key, e.target.value as LeadStatus)}
                         disabled={isMoving}
                         className="text-[10px] border border-slate-200 rounded px-1 py-1 text-slate-600 bg-white focus:outline-none focus:ring-1 focus:ring-brand-400 disabled:opacity-50"
                       >
@@ -177,21 +241,17 @@ export default function KanbanBoard({ leads: initialLeads }: Props) {
                 )
               })}
 
-              {/* "Daha fazla göster" */}
-              {!isExpanded && hiddenCount > 0 && (
+              {/* Daha fazla */}
+              {state.hasMore && (
                 <button
-                  onClick={() => setExpanded(prev => ({ ...prev, [col.key]: true }))}
-                  className="w-full text-[11px] text-slate-500 hover:text-slate-700 py-2 border border-dashed border-slate-200 rounded-xl hover:bg-white transition-colors"
+                  onClick={() => loadMore(col.key)}
+                  disabled={state.loading}
+                  className="w-full text-[11px] text-slate-500 hover:text-slate-700 py-2 border border-dashed border-slate-200 rounded-xl hover:bg-white transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
                 >
-                  + {hiddenCount} kişi daha
-                </button>
-              )}
-              {isExpanded && filtered.length > PAGE_SIZE && (
-                <button
-                  onClick={() => setExpanded(prev => ({ ...prev, [col.key]: false }))}
-                  className="w-full text-[11px] text-slate-400 hover:text-slate-600 py-2 transition-colors"
-                >
-                  Küçült
+                  {state.loading
+                    ? <><Loader2 size={10} className="animate-spin" /> Yükleniyor...</>
+                    : `+ ${(state.count - state.leads.length).toLocaleString('tr-TR')} kişi daha`
+                  }
                 </button>
               )}
             </div>
