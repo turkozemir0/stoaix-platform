@@ -38,6 +38,7 @@ interface PlaybookState {
   openingMessage: string
   blocks: { keywords: string; response: string }[]
   features: { calendar_booking: boolean; voice_language?: string; tts_voice_id?: string }
+  fewShots: { user: string; assistant: string }[]
 }
 
 interface IntakeField {
@@ -48,7 +49,7 @@ interface IntakeField {
   voice_prompt?: string
 }
 
-const EMPTY: PlaybookState = { systemPrompt: '', openingMessage: '', blocks: [], features: { calendar_booking: false, voice_language: '', tts_voice_id: '' } }
+const EMPTY: PlaybookState = { systemPrompt: '', openingMessage: '', blocks: [], features: { calendar_booking: false, voice_language: '', tts_voice_id: '' }, fewShots: [] }
 
 const VOICE_LANGUAGES = [
   { value: '',   label: 'Varsayılan (ai_persona dilinden alınır)' },
@@ -152,7 +153,7 @@ export default function AgentPage() {
       // Her iki kanalı da yükle
       const { data: playbooks } = await supabase
         .from('agent_playbooks')
-        .select('id, channel, system_prompt_template, opening_message, hard_blocks, features')
+        .select('id, channel, system_prompt_template, opening_message, hard_blocks, features, few_shot_examples')
         .eq('organization_id', resolvedOrgId)
         .eq('is_active', true)
         .in('channel', ['voice', 'whatsapp', 'chat', 'all'])
@@ -167,6 +168,10 @@ export default function AgentPage() {
           response: b.response || '',
         })),
         features: pb.features ?? { calendar_booking: false },
+        fewShots: (Array.isArray(pb.few_shot_examples) ? pb.few_shot_examples : []).map((ex: any) => ({
+          user: ex.user || '',
+          assistant: ex.assistant || '',
+        })),
       })
 
       if (playbooks) {
@@ -256,6 +261,10 @@ export default function AgentPage() {
         response: b.response.trim(),
       }))
 
+    const few_shot_examples = current.fewShots
+      .filter(ex => ex.user.trim() && ex.assistant.trim())
+      .map(ex => ({ user: ex.user.trim(), assistant: ex.assistant.trim() }))
+
     const supabase = createClient()
 
     if (current.id) {
@@ -266,6 +275,7 @@ export default function AgentPage() {
           opening_message: current.openingMessage || null,
           hard_blocks,
           features: current.features,
+          few_shot_examples,
           updated_at: new Date().toISOString(),
         })
         .eq('id', current.id)
@@ -281,6 +291,7 @@ export default function AgentPage() {
           opening_message: current.openingMessage || null,
           hard_blocks,
           features: current.features,
+          few_shot_examples,
           version: 1,
           is_active: true,
         })
@@ -397,6 +408,24 @@ export default function AgentPage() {
     setCurrent(prev => ({
       ...prev,
       blocks: prev.blocks.map((b, idx) => idx === i ? { ...b, [field]: val } : b),
+    }))
+  }
+
+  const fewShotMax = activeChannel === 'voice' ? 3 : 5
+
+  function addFewShot() {
+    if (current.fewShots.length >= fewShotMax) return
+    setCurrent(prev => ({ ...prev, fewShots: [...prev.fewShots, { user: '', assistant: '' }] }))
+  }
+
+  function removeFewShot(i: number) {
+    setCurrent(prev => ({ ...prev, fewShots: prev.fewShots.filter((_, idx) => idx !== i) }))
+  }
+
+  function updateFewShot(i: number, field: 'user' | 'assistant', val: string) {
+    setCurrent(prev => ({
+      ...prev,
+      fewShots: prev.fewShots.map((ex, idx) => idx === i ? { ...ex, [field]: val } : ex),
     }))
   }
 
@@ -1157,6 +1186,65 @@ export default function AgentPage() {
         >
           <Plus size={15} />
           Kural Ekle
+        </button>
+      </div>
+
+      {/* Few-shot Examples */}
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-800">Örnek Diyaloglar</h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            AI'ın taklit edeceği ideal konuşma örnekleri — maks {fewShotMax} örnek ({activeChannel === 'voice' ? 'sesli' : 'chat'} için).
+          </p>
+        </div>
+
+        {current.fewShots.length === 0 && (
+          <p className="text-sm text-slate-400 py-2">Henüz örnek eklenmemiş.</p>
+        )}
+
+        <div className="space-y-3">
+          {current.fewShots.map((ex, i) => (
+            <div key={i} className="border border-slate-100 rounded-xl p-4 space-y-3 bg-slate-50">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 space-y-2">
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">Kullanıcı</label>
+                    <input
+                      value={ex.user}
+                      onChange={e => updateFewShot(i, 'user', e.target.value)}
+                      placeholder="örn: Polonya hakkında bilgi alabilir miyim?"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">Asistan</label>
+                    <textarea
+                      value={ex.assistant}
+                      onChange={e => updateFewShot(i, 'assistant', e.target.value)}
+                      placeholder="örn: Tabii! Polonya'da üniversite eğitimi hem kaliteli hem uygun fiyatlı..."
+                      rows={2}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={() => removeFewShot(i)}
+                  className="text-slate-300 hover:text-red-400 transition-colors mt-1 flex-shrink-0"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button
+          onClick={addFewShot}
+          disabled={current.fewShots.length >= fewShotMax}
+          className="flex items-center gap-1.5 text-sm text-brand-600 font-medium hover:text-brand-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Plus size={15} />
+          Örnek Ekle {current.fewShots.length > 0 && `(${current.fewShots.length}/${fewShotMax})`}
         </button>
       </div>
 
