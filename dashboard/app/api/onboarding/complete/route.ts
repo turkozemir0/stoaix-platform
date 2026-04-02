@@ -132,13 +132,21 @@ export async function POST(_request: NextRequest) {
   const existingSchemaChannels = new Set((existingSchemas || []).map((s: any) => s.channel))
   const schemaInserts: any[] = []
 
-  const voiceDefaultFields = [
-    { key: 'full_name', label: 'Ad Soyad', type: 'text', priority: 'must', voice_prompt: 'Adınızı ve soyadınızı öğrenebilir miyim?' },
-    { key: 'phone', label: 'Telefon', type: 'phone', priority: 'must', voice_prompt: 'Sizi daha sonra arayabilmemiz için telefon numaranızı alabilir miyim?' },
-  ]
-  // WhatsApp'ta telefon payload'dan otomatik geliyor, sohbetten extract etmeye gerek yok
-  const whatsappDefaultFields = [
-    { key: 'full_name', label: 'Ad Soyad', type: 'text', priority: 'must' },
+  const minimalFields = [
+    {
+      key: 'full_name',
+      label: 'Ad Soyad',
+      type: 'text',
+      priority: 'must',
+      voice_prompt: 'Adınızı ve soyadınızı öğrenebilir miyim?',
+    },
+    {
+      key: 'phone',
+      label: 'Telefon',
+      type: 'phone',
+      priority: 'must',
+      voice_prompt: 'Sizi daha sonra arayabilmemiz için telefon numaranızı alabilir miyim?',
+    },
   ]
 
   if (!existingSchemaChannels.has('voice')) {
@@ -146,7 +154,7 @@ export async function POST(_request: NextRequest) {
       organization_id: orgId,
       channel: 'voice',
       name: `${org?.name ?? 'İşletme'} Voice Başvuru Formu`,
-      fields: voiceDefaultFields,
+      fields: minimalFields,
     })
   }
   if (!existingSchemaChannels.has('whatsapp')) {
@@ -154,7 +162,7 @@ export async function POST(_request: NextRequest) {
       organization_id: orgId,
       channel: 'whatsapp',
       name: `${org?.name ?? 'İşletme'} WhatsApp Başvuru Formu`,
-      fields: whatsappDefaultFields,
+      fields: minimalFields,
     })
   }
   if (schemaInserts.length > 0) {

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { X, Plus, Trash2, Loader2, Sparkles } from 'lucide-react'
 import type { KnowledgeItem } from '@/lib/types'
-import { useT } from '@/lib/lang-context'
+import { t } from '@/lib/i18n'
 import { getSchemasForSector, getSchema, type FieldDef } from '@/lib/kb-schemas'
 
 interface Props {
@@ -32,7 +32,6 @@ const TAG_PLACEHOLDERS: Record<string, string> = {
 }
 
 export default function KBItemModal({ orgId, sector, item, onClose, onSaved }: Props) {
-  const t = useT()
   const isEdit = !!item
   const availableSchemas = getSchemasForSector(sector)
 

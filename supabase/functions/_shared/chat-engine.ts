@@ -19,10 +19,7 @@ export interface InboundMessageOptions {
   messageText:           string
   channelMetadata?:      Record<string, unknown>  // provider-specific extras (location_id, phone_number_id…)
   sendReply:             (message: string) => Promise<void>
-  onNewLead?:            () => Promise<void>
-  onHandoff?:            (info: { collectedData: Record<string, unknown>; lastMessage: string }) => Promise<void>
-  onOptOut?:             (info: { lastMessage: string }) => Promise<void>
-  onScoreThreshold?:     (info: { score: number; collectedData: Record<string, unknown> }) => Promise<void>
+  onNewLead?:            () => Promise<void>      // e.g. GHL pipeline stage update
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -261,11 +258,11 @@ async function runChatEngine(
   messageText: string,
   channel: Channel,
   sendReply: (message: string) => Promise<void>
-): Promise<{ handoff: boolean; optOut: boolean }> {
+): Promise<void> {
   // Load channel-specific playbook; fall back to 'whatsapp' if no dedicated one exists
   let { data: playbook } = await supabase
     .from('agent_playbooks')
-    .select('system_prompt_template, fallback_responses, hard_blocks, features, few_shot_examples')
+    .select('system_prompt_template, fallback_responses, hard_blocks, features')
     .eq('organization_id', orgId)
     .eq('channel', channel)
     .order('version', { ascending: false })
@@ -275,7 +272,7 @@ async function runChatEngine(
   if (!playbook && channel !== 'whatsapp') {
     const { data: fallback } = await supabase
       .from('agent_playbooks')
-      .select('system_prompt_template, fallback_responses, hard_blocks, features, few_shot_examples')
+      .select('system_prompt_template, fallback_responses, hard_blocks, features')
       .eq('organization_id', orgId)
       .eq('channel', 'whatsapp')
       .order('version', { ascending: false })
@@ -286,7 +283,7 @@ async function runChatEngine(
 
   if (!playbook) {
     console.error('No playbook found for org', orgId, 'channel', channel)
-    return { handoff: false, optOut: false }
+    return
   }
 
   const { data: org } = await supabase
@@ -295,7 +292,7 @@ async function runChatEngine(
     .eq('id', orgId)
     .single()
 
-  if (!org) return { handoff: false, optOut: false }
+  if (!org) return
 
   const fallbackResponses = playbook.fallback_responses as Record<string, string>
 
@@ -309,7 +306,7 @@ async function runChatEngine(
         role: 'assistant', content: block.response, content_type: 'text',
       })
       await sendReply(block.response)
-      return { handoff: false, optOut: false }
+      return
     }
   }
 
@@ -349,7 +346,7 @@ async function runChatEngine(
   let profileSection = ''
   const { data: leadRow } = await supabase
     .from('leads')
-    .select('id, collected_data, missing_fields')
+    .select('collected_data')
     .eq('organization_id', orgId)
     .eq('contact_id', contactId)
     .maybeSingle()
@@ -363,49 +360,16 @@ async function runChatEngine(
 
   // Build system prompt
   const persona      = org.ai_persona as Record<string, string>
-
-  // Persona tonu (ai_persona.tone varsa kullan)
-  const personaTone = (persona as any)?.tone
-    ? `\n\nKonuşma tonu: ${(persona as any).tone}.` : ''
-  const fallbackInstruction = (persona as any)?.fallback_instruction
-    ? `\n${(persona as any).fallback_instruction}` : ''
-
-  // KB boşsa hallüsinasyon önleme
-  const noKbFallback = (fallbackResponses as any)?.['no_kb_match']
-    ?? 'Bu konuda elimde net bilgi yok. Uzman ekibimiz en kısa sürede dönecek.'
-  const kbFallbackNote = !kbContext
-    ? `\n\n━━━ KAPSAM UYARISI ━━━\nBu soru için bilgi tabanında eşleşen içerik bulunamadı. Kesin bilgiye dayanmayan bir yanıt VERME. Bunun yerine şunu söyle: "${noKbFallback}"`
-    : ''
-
-  // Missing fields — AI hangi bilgileri toplaması gerektiğini bilsin
-  const missingFields = ((leadRow as any)?.missing_fields ?? []) as string[]
-  const missingSection = missingFields.length > 0
-    ? `\n\n━━━ TOPLANMASI GEREKEN BİLGİLER ━━━\nHenüz alınmayan zorunlu alanlar: ${missingFields.join(', ')}\nKural: Konuşmanın doğal akışında bu bilgileri SIRAYLA ve TEK TEK sor. Aynı mesajda birden fazla soru YASAK.`
-    : ''
-
   const systemPrompt = [
     playbook.system_prompt_template,
     kbContext ? `\n\n[BİLGİ TABANI]\n${kbContext}` : '',
     profileSection,
-    personaTone,
-    fallbackInstruction,
-    kbFallbackNote,
-    missingSection,
     calendarSection,
     `\nOrganizasyon: ${org.name}`,
     persona?.persona_name ? `\nSenin adın: ${persona.persona_name}` : '',
-    `\n\nEtiket kuralları (yanıtının EN SONUNA, ayrı satıra ekle):\n- Müşteri insan temsilci/müdür/yetkili talep ediyorsa veya şikayet bildiriyorsa → [HANDOFF]\n- Müşteri iletişimi açıkça durdurmak istiyorsa ("bana yazma", "istemiyorum", "kaldır" vb.) → [OPT_OUT]\nBaşka hiçbir durumda bu etiketleri kullanma.`,
   ].filter(Boolean).join('')
 
-  // Few-shot examples — varsa konuşma geçmişinden ÖNCE eklenir
-  const fewShots = ((playbook as any).few_shot_examples ?? []) as Array<{ user: string; assistant: string }>
-  const fewShotMessages = fewShots.slice(0, 5).flatMap(ex => [
-    { role: 'user' as const, content: ex.user },
-    { role: 'assistant' as const, content: ex.assistant },
-  ])
-
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
-    ...fewShotMessages,
     ...history.slice(-(MAX_HISTORY * 2 - 1)),
     { role: 'user', content: messageText },
   ]
@@ -432,29 +396,6 @@ async function runChatEngine(
     reply = fallbackResponses['error'] ??
       fallbackResponses['no_kb_match'] ??
       'Şu an bir sorun yaşıyorum. Lütfen birazdan tekrar yazın.'
-  }
-
-  // Detect action tags
-  let handoffTriggered = false
-  let optOutTriggered  = false
-
-  if (reply.includes('[HANDOFF]')) {
-    reply = reply.replace(/\[HANDOFF\]/g, '').trim()
-    handoffTriggered = true
-    Promise.all([
-      supabase.from('leads').update({ status: 'handed_off' }).eq('organization_id', orgId).eq('contact_id', contactId),
-      leadRow?.id
-        ? supabase.from('handoff_logs').insert({
-            organization_id: orgId, lead_id: leadRow.id,
-            conversation_id: conversationId, trigger_reason: 'user_requested', status: 'pending',
-          })
-        : Promise.resolve(),
-    ]).catch((err) => console.error('Handoff logging failed:', err))
-  } else if (reply.includes('[OPT_OUT]')) {
-    reply = reply.replace(/\[OPT_OUT\]/g, '').trim()
-    optOutTriggered = true
-    supabase.from('leads').update({ status: 'lost' }).eq('organization_id', orgId).eq('contact_id', contactId)
-      .then(() => {}).catch((err) => console.error('OptOut status update failed:', err))
   }
 
   // Parse booking intent from AI reply (RANDEVU_AL:ad=...,telefon=...,saat=...)
@@ -490,7 +431,6 @@ async function runChatEngine(
   })
 
   await sendReply(reply)
-  return { handoff: handoffTriggered, optOut: optOutTriggered }
 }
 
 // ─── Lead data extraction (chat) ─────────────────────────────────────────────
@@ -532,18 +472,9 @@ async function extractCollectedData(
   }
 }
 
-const INTENT_KEYWORDS = [
-  'randevu', 'ne zaman gelebilirim', 'ne zaman başlayabiliriz', 'ne zaman gelsem',
-  'fiyat alabilir miyim', 'teklif alabilir miyim', 'teklif ver', 'sipariş',
-  'başlamak istiyorum', 'almak istiyorum', 'satın almak', 'satın almak istiyorum',
-  'görüşmek istiyorum', 'geri arayın', 'geri arar mısınız', 'ara beni', 'beni arayın',
-  'rezervasyon', 'ayarlayabilir misiniz', 'müsait misiniz', 'ne zaman başlar',
-]
-
 function calculateLeadScore(
   intakeFields: Array<{ key: string; priority?: string }>,
-  collectedData: Record<string, unknown>,
-  history: Array<{ role: string; content: string }> = []
+  collectedData: Record<string, unknown>
 ): number {
   const mustFields   = intakeFields.filter(f => f.priority === 'must').map(f => f.key)
   const shouldFields = intakeFields.filter(f => f.priority === 'should').map(f => f.key)
@@ -554,23 +485,7 @@ function calculateLeadScore(
 
   const mustScore   = (mustDone / mustFields.length) * 70
   const shouldScore = shouldFields.length ? (shouldDone / shouldFields.length) * 30 : 0
-  let base = Math.round(mustScore + shouldScore)
-
-  if (history.length) {
-    const userTexts = history
-      .filter(m => m.role === 'user')
-      .map(m => m.content.toLowerCase())
-      .join(' ')
-
-    // Niyet bonusu +12: satın alma / randevu niyeti sinyali
-    if (INTENT_KEYWORDS.some(kw => userTexts.includes(kw))) base += 12
-
-    // Etkileşim bonusu +5: 3+ mesaj gönderen aktif kullanıcı
-    const userMsgCount = history.filter(m => m.role === 'user').length
-    if (userMsgCount >= 3) base += 5
-  }
-
-  return Math.min(100, base)
+  return Math.min(100, Math.round(mustScore + shouldScore))
 }
 
 /**
@@ -583,45 +498,35 @@ async function updateLeadFromChat(
   contactId: string,
   conversationId: string,
   channel: Channel
-): Promise<{ prevScore: number; newScore: number; collectedData: Record<string, unknown> } | null> {
+): Promise<void> {
   try {
     const { data: lead } = await supabase
       .from('leads')
-      .select('id, collected_data, status, qualification_score')
+      .select('id, collected_data, status')
       .eq('organization_id', orgId)
       .eq('contact_id', contactId)
       .maybeSingle()
-    if (!lead?.id) return null
+    if (!lead?.id) return
 
-    // Intake schema fallback zinciri:
-    // exact channel → whatsapp (instagram gibi chat kanalları için) → voice (son çare)
+    // Intake schema: önce kanalın kendi şeması, yoksa voice fallback
     let { data: schema } = await supabase
       .from('intake_schemas')
       .select('fields')
       .eq('organization_id', orgId)
       .eq('channel', channel)
       .maybeSingle()
-    if (!schema && channel !== 'whatsapp' && channel !== 'voice') {
-      const { data: chatFallback } = await supabase
-        .from('intake_schemas')
-        .select('fields')
-        .eq('organization_id', orgId)
-        .eq('channel', 'whatsapp')
-        .maybeSingle()
-      schema = chatFallback
-    }
     if (!schema) {
-      const { data: voiceFallback } = await supabase
+      const { data: fallback } = await supabase
         .from('intake_schemas')
         .select('fields')
         .eq('organization_id', orgId)
         .eq('channel', 'voice')
         .maybeSingle()
-      schema = voiceFallback
+      schema = fallback
     }
 
     const intakeFields = (schema?.fields ?? []) as Array<{ key: string; label: string; type?: string; priority?: string }>
-    if (!intakeFields.length) return null
+    if (!intakeFields.length) return
 
     // Konuşma geçmişi
     const { data: historyRows } = await supabase
@@ -630,7 +535,7 @@ async function updateLeadFromChat(
       .eq('conversation_id', conversationId)
       .in('role', ['user', 'assistant'])
       .order('created_at', { ascending: true })
-    if (!historyRows?.length) return null
+    if (!historyRows?.length) return
 
     // Yapılandırılmış veri çıkar
     const newData  = await extractCollectedData(historyRows, intakeFields)
@@ -651,7 +556,7 @@ async function updateLeadFromChat(
       .filter(f => f.priority === 'must' && !merged[f.key])
       .map(f => f.key)
 
-    const score     = calculateLeadScore(intakeFields, merged, historyRows)
+    const score     = calculateLeadScore(intakeFields, merged)
     const newStatus = lead.status === 'new' && Object.values(merged).some(v => v)
       ? 'in_progress'
       : lead.status
@@ -667,11 +572,8 @@ async function updateLeadFromChat(
         updated_at:          new Date().toISOString(),
       })
       .eq('id', lead.id)
-
-    return { prevScore: lead.qualification_score ?? 0, newScore: score, collectedData: merged }
   } catch (err) {
     console.error('updateLeadFromChat failed:', err)
-    return null
   }
 }
 
@@ -685,75 +587,33 @@ async function updateLeadFromChat(
 export async function handleInboundMessage(opts: InboundMessageOptions): Promise<void> {
   const {
     supabase, orgId, phone, providerContactId, channelIdentifierKey,
-    channel, messageText, channelMetadata, sendReply,
-    onNewLead, onHandoff, onOptOut, onScoreThreshold,
+    channel, messageText, channelMetadata, sendReply, onNewLead,
   } = opts
 
   // ── Upsert contact ──
-  // Priority 1: provider-specific identifier (ghl_contact_id, wa_id, etc.)
-  // Priority 2: phone fallback — covers contacts imported via CSV that lack channel_identifiers
-  // When found by phone, we merge the provider ID so future lookups hit priority 1 (faster, no extra query)
+  // Lookup by the provider-specific identifier stored inside channel_identifiers JSONB
   let contactId: string
   let isNewContact = false
 
-  const { data: byChannelId } = await supabase
+  const { data: existingContact } = await supabase
     .from('contacts')
     .select('id')
     .eq('organization_id', orgId)
     .filter(`channel_identifiers->>${channelIdentifierKey}`, 'eq', providerContactId)
     .maybeSingle()
 
-  if (byChannelId?.id) {
-    contactId = byChannelId.id
-  } else if (phone) {
-    // Phone fallback: works for GHL, Meta, Wati, or any future provider
-    const { data: byPhone } = await supabase
-      .from('contacts')
-      .select('id, channel_identifiers')
-      .eq('organization_id', orgId)
-      .eq('phone', phone)
-      .maybeSingle()
-
-    if (byPhone?.id) {
-      contactId = byPhone.id
-      // Merge provider ID into channel_identifiers so next message uses priority 1
-      const merged = {
-        ...((byPhone.channel_identifiers as Record<string, string>) ?? {}),
-        [channelIdentifierKey]: providerContactId,
-      }
-      await supabase.from('contacts').update({ channel_identifiers: merged }).eq('id', byPhone.id)
-    } else {
-      // Truly new contact — create it
-      const { data: newContact, error } = await supabase
-        .from('contacts')
-        .insert({
-          organization_id: orgId,
-          phone: phone || null,
-          channel_identifiers: {
-            [channelIdentifierKey]: providerContactId,
-            ...(phone ? { phone } : {}),
-          },
-          source_channel: channel,
-          status: 'new',
-        })
-        .select('id')
-        .single()
-
-      if (error || !newContact?.id) {
-        console.error('Contact insert failed:', error)
-        return
-      }
-      contactId = newContact.id
-      isNewContact = true
-    }
+  if (existingContact?.id) {
+    contactId = existingContact.id
   } else {
-    // No phone and no channel match — create contact without phone (e.g. Instagram DM)
     const { data: newContact, error } = await supabase
       .from('contacts')
       .insert({
         organization_id: orgId,
-        phone: null,
-        channel_identifiers: { [channelIdentifierKey]: providerContactId },
+        phone: phone || null,
+        channel_identifiers: {
+          [channelIdentifierKey]: providerContactId,
+          ...(phone ? { phone } : {}),
+        },
         source_channel: channel,
         status: 'new',
       })
@@ -764,7 +624,7 @@ export async function handleInboundMessage(opts: InboundMessageOptions): Promise
       console.error('Contact insert failed:', error)
       return
     }
-    contactId = newContact.id
+    contactId  = newContact.id
     isNewContact = true
   }
 
@@ -845,26 +705,6 @@ export async function handleInboundMessage(opts: InboundMessageOptions): Promise
     return
   }
 
-  // ── Human mode check: if conversation is taken over by a human, skip AI ──
-  const { data: convMode } = await supabase
-    .from('conversations')
-    .select('mode, taken_over_by')
-    .eq('id', conversationId)
-    .maybeSingle()
-
-  if (convMode?.mode === 'human') {
-    // Notify the assigned human agent
-    await supabase.from('notifications').insert({
-      organization_id: orgId,
-      user_id: convMode.taken_over_by ?? null,
-      type: 'new_message',
-      conversation_id: conversationId,
-      title: 'Yeni mesaj',
-      body: messageText.slice(0, 80),
-    }).catch(() => {})
-    return
-  }
-
   // ── Re-engagement: lead cevap verdi → kalan re_contact task'larını iptal et ──
   await supabase
     .from('follow_up_tasks')
@@ -891,48 +731,10 @@ export async function handleInboundMessage(opts: InboundMessageOptions): Promise
     const aggregated = await getPendingUserMessages(supabase, conversationId)
     if (!aggregated) return
 
-    const { handoff, optOut } = await runChatEngine(supabase, orgId, contactId, conversationId, aggregated, channel, sendReply)
-    const scoreResult = await updateLeadFromChat(supabase, orgId, contactId, conversationId, channel)
+    await runChatEngine(supabase, orgId, contactId, conversationId, aggregated, channel, sendReply)
 
-    // GHL stage + note callbacks (fire-and-forget, yanıt zaten gönderildi)
-    if (handoff && onHandoff) {
-      onHandoff({ collectedData: scoreResult?.collectedData ?? {}, lastMessage: aggregated }).catch(() => {})
-    } else if (optOut && onOptOut) {
-      onOptOut({ lastMessage: aggregated }).catch(() => {})
-    } else if (
-      scoreResult &&
-      scoreResult.prevScore < 70 &&
-      scoreResult.newScore >= 70 &&
-      onScoreThreshold
-    ) {
-      onScoreThreshold({ score: scoreResult.newScore, collectedData: scoreResult.collectedData }).catch(() => {})
-    }
-
-    // ── Notifications ──
-    const { data: notifLead } = await supabase.from('leads').select('id').eq('organization_id', orgId).eq('contact_id', contactId).maybeSingle()
-    const leadId = notifLead?.id ?? null
-
-    if (handoff && leadId) {
-      supabase.from('notifications').insert({
-        organization_id: orgId,
-        user_id: null,
-        type: 'handoff',
-        lead_id: leadId,
-        conversation_id: conversationId,
-        title: '🤝 Handoff talebi',
-        body: 'Müşteri insan temsilci istedi.',
-      }).catch(() => {})
-    } else if (scoreResult && scoreResult.prevScore < 70 && scoreResult.newScore >= 70 && leadId) {
-      supabase.from('notifications').insert({
-        organization_id: orgId,
-        user_id: null,
-        type: 'hot_lead',
-        lead_id: leadId,
-        conversation_id: conversationId,
-        title: '🔥 Hot Lead!',
-        body: `Skor ${scoreResult.newScore} oldu.`,
-      }).catch(() => {})
-    }
+    // Lead'i güncel konuşmadan çıkarılan yapılandırılmış veriyle güncelle
+    await updateLeadFromChat(supabase, orgId, contactId, conversationId, channel)
 
     if (isNewLead && onNewLead) {
       await onNewLead()

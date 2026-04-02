@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { t } from '@/lib/i18n'
 import TicketsClient from './TicketsClient'
 
 export default async function TicketsPage() {

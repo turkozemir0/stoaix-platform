@@ -18,7 +18,7 @@ export async function GET(request: NextRequest, { params }: { params: { token: s
 
   const { data: tokenRow, error: tokenErr } = await service
     .from('invite_tokens')
-    .select('id, organization_id, is_used, expires_at, clinic_type, role')
+    .select('id, organization_id, is_used, expires_at')
     .eq('token', token)
     .maybeSingle()
 
@@ -35,10 +35,5 @@ export async function GET(request: NextRequest, { params }: { params: { token: s
 
   if (orgErr || !org) return NextResponse.json({ error: 'Organizasyon bulunamadı' }, { status: 404 })
 
-  return NextResponse.json({
-    org_name: org.name,
-    sector: org.sector,
-    clinic_type: tokenRow.clinic_type ?? org.sector ?? 'other',
-    role: tokenRow.role ?? 'admin',
-  })
+  return NextResponse.json({ org_name: org.name, sector: org.sector })
 }

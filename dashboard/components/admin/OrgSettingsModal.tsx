@@ -112,19 +112,6 @@ const OUTBOUND_CONNECTION_TYPES = [
   { value: 'other',           label: 'Diğer',            desc: 'Başka provider' },
 ]
 
-const VOICE_LANGUAGES = [
-  { value: 'tr', label: 'Türkçe (tr)' },
-  { value: 'en', label: 'İngilizce (en)' },
-  { value: 'de', label: 'Almanca (de)' },
-  { value: 'fr', label: 'Fransızca (fr)' },
-  { value: 'es', label: 'İspanyolca (es)' },
-  { value: 'ar', label: 'Arapça (ar)' },
-  { value: 'nl', label: 'Hollandaca (nl)' },
-  { value: 'it', label: 'İtalyanca (it)' },
-  { value: 'pt', label: 'Portekizce (pt)' },
-  { value: 'pl', label: 'Lehçe (pl)' },
-]
-
 const TABS = [
   { key: 'channels', label: 'Kanallar & Mesajlaşma' },
   { key: 'sip',      label: 'Ses / SIP' },
@@ -210,10 +197,6 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
   const [inbLkDispatch, setInbLkDispatch]   = useState('')
   const [inbLkTrunk, setInbLkTrunk]         = useState('')
 
-  // ── Voice AI config ──
-  const [voiceLang, setVoiceLang]     = useState('')
-  const [ttsVoiceId, setTtsVoiceId]   = useState('')
-
   // ── Outbound SIP state ──
   const [outActive, setOutActive]           = useState(false)
   const [outConnType, setOutConnType]       = useState<string>('twilio')
@@ -249,12 +232,10 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
       setIgActive(cc.instagram?.active ?? false)
 
       // inbound
-      const inb = cc.voice_inbound as (VoiceInboundConfig & { voice_language?: string; tts_voice_id?: string }) | undefined
+      const inb = cc.voice_inbound as VoiceInboundConfig | undefined
       setInbActive(inb?.active ?? false)
       setInbNumber(inb?.inbound_number ?? '')
       setInbConnType(inb?.connection_type ?? 'direct_sip')
-      setVoiceLang(inb?.voice_language ?? '')
-      setTtsVoiceId(inb?.tts_voice_id ?? '')
       setInbSipProvider(inb?.sip_provider ?? '')
       setInbSipNote(inb?.sip_provider_note ?? '')
       setInbBridgeNumber(inb?.bridge_number ?? '')
@@ -295,10 +276,8 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
   async function handleSave() {
     setSaving(true); setError('')
 
-    const voiceInbound = {
+    const voiceInbound: VoiceInboundConfig = {
       active: inbActive,
-      ...(voiceLang.trim() && { voice_language: voiceLang.trim() }),
-      ...(ttsVoiceId.trim() && { tts_voice_id: ttsVoiceId.trim() }),
       ...(inbActive && {
         inbound_number: inbNumber.trim(),
         connection_type: inbConnType as VoiceInboundConfig['connection_type'],
@@ -531,40 +510,6 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
                           </div>
                         </div>
                       )}
-                    </div>
-                  </div>
-
-                  {/* Voice AI Config */}
-                  <div>
-                    <SectionLabel>Voice AI Ayarları</SectionLabel>
-                    <div className="border border-slate-100 rounded-xl p-4 space-y-4">
-                      <div>
-                        <label className="block text-xs text-slate-500 mb-1">Konuşma Dili (STT + TTS)</label>
-                        <select
-                          value={voiceLang}
-                          onChange={e => setVoiceLang(e.target.value)}
-                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
-                        >
-                          <option value="">Varsayılan (Türkçe)</option>
-                          {VOICE_LANGUAGES.map(l => (
-                            <option key={l.value} value={l.value}>{l.label}</option>
-                          ))}
-                        </select>
-                        <p className="text-xs text-slate-400 mt-1">Deepgram STT + Cartesia TTS için konuşma dili</p>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-500 mb-1">
-                          Cartesia TTS Voice ID
-                          <a href="https://play.cartesia.ai" target="_blank" rel="noreferrer" className="ml-2 text-brand-500 hover:underline">play.cartesia.ai →</a>
-                        </label>
-                        <input
-                          value={ttsVoiceId}
-                          onChange={e => setTtsVoiceId(e.target.value)}
-                          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
-                        />
-                        <p className="text-xs text-slate-400 mt-1">Boş bırakılırsa varsayılan dil sesi kullanılır</p>
-                      </div>
                     </div>
                   </div>
 

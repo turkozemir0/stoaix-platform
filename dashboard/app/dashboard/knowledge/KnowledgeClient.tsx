@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Search, Plus, Pencil, Trash2 } from 'lucide-react'
-import { useT } from '@/lib/lang-context'
+import { t } from '@/lib/i18n'
 import KBItemModal from '@/components/admin/KBItemModal'
 import type { KnowledgeItem } from '@/lib/types'
 
@@ -43,7 +43,6 @@ function getItemSubtitle(item: KnowledgeItem): string {
 }
 
 export default function KnowledgeClient({ items: initialItems, orgId, sector }: Props) {
-  const t = useT()
   const [items, setItems] = useState<KnowledgeItem[]>(initialItems)
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)

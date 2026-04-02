@@ -2,12 +2,9 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import LeadBadge from '@/components/LeadBadge'
-import { getT } from '@/lib/i18n'
-import { cookies } from 'next/headers'
+import { t } from '@/lib/i18n'
 
 export default async function ConversationsPage() {
-  const lang = cookies().get('lang')?.value === 'en' ? 'en' : 'tr'
-  const t = getT(lang)
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -74,7 +71,7 @@ export default async function ConversationsPage() {
                   <LeadBadge score={lead.qualification_score} />
                 </td>
                 <td className="px-5 py-3">
-                  <LeadStatusBadge status={lead.status} t={t} />
+                  <LeadStatusBadge status={lead.status} />
                 </td>
                 <td className="px-5 py-3 text-slate-500 capitalize">{lead.source_channel}</td>
                 <td className="px-5 py-3 text-slate-400 text-xs">
@@ -89,7 +86,7 @@ export default async function ConversationsPage() {
   )
 }
 
-function LeadStatusBadge({ status, t }: { status: string; t: any }) {
+function LeadStatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
     new: 'bg-slate-100 text-slate-600',
     in_progress: 'bg-blue-100 text-blue-700',

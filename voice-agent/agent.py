@@ -16,16 +16,12 @@ import logging
 import os
 from datetime import datetime, timezone
 from typing import Annotated
-from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from livekit.agents import (
     Agent,
     AgentSession,
-    AudioConfig,
     AutoSubscribe,
-    BackgroundAudioPlayer,
-    BuiltinAudioClip,
     JobContext,
     RoomInputOptions,
     WorkerOptions,
@@ -105,35 +101,8 @@ async def load_intake_schema(org_id: str, channel: str = "voice") -> list:
     return res2.data[0].get("fields", []) if res2.data else []
 
 
-# Ülke adı → KB tag eşlemesi (ülke ismi sorguda geçince tag filter uygula)
-_COUNTRY_TAG_MAP = {
-    "azerbaycan": "azerbaycan",
-    "bosna":      "bosna_hersek",
-    "kosova":     "kosova",
-    "bulgaristan":"bulgaristan",
-    "moldova":    "moldova",
-    "romanya":    "romanya",
-    "gürcistan":  "gurcistan",
-    "sırbistan":  "sirbistan",
-    "polonya":    "polonya",
-    "iran":       "iran",
-    "rusya":      "rusya",
-    "makedonya":  "kuzey_makedonya",
-}
-
-def _detect_country_tag(text: str) -> str | None:
-    """Metinde ülke ismi geçiyorsa ilgili KB tag'ini döner, yoksa None."""
-    text_lower = text.lower()
-    for keyword, tag in _COUNTRY_TAG_MAP.items():
-        if keyword in text_lower:
-            return tag
-    return None
-
-
-async def vector_search_kb(org_id: str, query: str, limit: int = 7) -> str:
-    """Kullanıcının sorusuna en yakın KB itemlarını döndür.
-    Sorguda ülke ismi varsa yalnızca o ülkenin item'larında arama yapar.
-    """
+async def vector_search_kb(org_id: str, query: str, limit: int = 5) -> str:
+    """Kullanıcının sorusuna en yakın KB itemlarını döndür."""
     try:
         from openai import OpenAI as OpenAIClient
         oa = OpenAIClient(api_key=os.environ["OPENAI_API_KEY"])
@@ -146,38 +115,20 @@ async def vector_search_kb(org_id: str, query: str, limit: int = 7) -> str:
         query_vector = embed_resp.data[0].embedding
         vec_str = "[" + ",".join(str(x) for x in query_vector) + "]"
 
-        country_tag = _detect_country_tag(query)
         sb = get_supabase()
-
-        if country_tag:
-            # Önce ülke filtreliyle dene
-            res = sb.rpc("match_knowledge_items", {
-                "org_id":       org_id,
-                "query_vector": vec_str,
-                "match_count":  limit * 3,
-                "filter_tags":  [country_tag],
-            }).execute()
-            # Sonuç boşsa (bu org'da country tag yok) filtresiz tekrar dene
-            if not res.data:
-                res = sb.rpc("match_knowledge_items", {
-                    "org_id":       org_id,
-                    "query_vector": vec_str,
-                    "match_count":  limit,
-                }).execute()
-        else:
-            res = sb.rpc("match_knowledge_items", {
-                "org_id":       org_id,
-                "query_vector": vec_str,
-                "match_count":  limit,
-            }).execute()
+        res = sb.rpc("match_knowledge_items", {
+            "org_id": org_id,
+            "query_vector": vec_str,
+            "match_count": limit
+        }).execute()
 
         if not res.data:
             return ""
 
         chunks = []
-        for item in res.data[:limit]:
+        for item in res.data:
             sim = item.get("similarity", 0)
-            if sim < 0.25:
+            if sim < 0.3:
                 continue
             chunks.append(f"[{item['title']}]\n{item['description_for_ai']}")
 
@@ -279,22 +230,8 @@ def build_system_prompt(
     persona_name = persona.get("persona_name", "Asistan")
     fallback_no_kb = persona.get("fallback_responses", {}).get(
         "no_kb_match",
-        "Bu konuyu not aldım, danışmanımız sizi en kısa sürede arayacak."
+        "Bu konuda elimde net bir bilgi yok. Danışmanımıza not alıyorum."
     )
-    tone = persona.get("tone", "warm-professional")
-    tone_line = f"\nİletişim tonu: {tone}. Kısa, doğal, samimi cümleler kullan."
-
-    few_shots = (playbook.get("few_shot_examples", []) or []) if playbook else []
-    few_shot_text = ""
-    if few_shots:
-        examples = "\n".join(
-            f'Kullanıcı: "{ex["user"]}"\nAsistan: "{ex["assistant"]}"'
-            for ex in few_shots[:3]
-        )
-        few_shot_text = (
-            "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"ÖRNEK DİYALOGLAR (konuşma tarzın için referans):\n{examples}"
-        )
 
     calendar_section = (
         "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -308,8 +245,10 @@ def build_system_prompt(
         f"- {f['label']}: \"{f.get('voice_prompt', f['label'])}\"" for f in must_fields
     )
 
-    # routing_rules artık programatik olarak işleniyor — sistem promptuna gerek yok
+    routing = playbook.get("routing_rules", []) if playbook else []
     routing_text = ""
+    for r in routing:
+        routing_text += f"\n- {r.get('description','')}: {r.get('response_template','')}"
 
     blocks = playbook.get("hard_blocks", []) if playbook else []
     blocks_text = ""
@@ -322,8 +261,8 @@ def build_system_prompt(
 
     base_prompt = playbook.get("system_prompt_template", "") if playbook else ""
 
-    # TTS format kuralı + RAG — her zaman eklenir
-    tts_and_rag = f"""
+    return f"""{base_prompt}
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KONUŞMA KURALLARI:
 - Sayıları HER ZAMAN yazıyla söyle: "1500" yerine "bin beş yüz", "05321234567" yerine "sıfır beş üç iki bir iki üç dört beş altı yedi"
@@ -332,36 +271,27 @@ KONUŞMA KURALLARI:
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BİLGİ TABANI (RAG — bu konuşma için ilgili içerik):
-{kb_context if kb_context else "(Henüz sorgu yapılmadı — kullanıcı soru sorunca KB'den çekilecek)"}"""
-
-    if base_prompt:
-        # Custom prompt var — ton + tek-soru kuralı + TTS + RAG ekle, geri kalanlar template'de
-        single_q = ""
-        if must_prompts:
-            single_q = (
-                "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "VERİ TOPLAMA KURALI:\n"
-                f"Zorunlu bilgiler (sırayla): {must_prompts}\n"
-                "Kural: Aynı mesajda birden fazla soru sormak YASAK. Birer birer, doğal şekilde sor."
-            )
-        return f"{base_prompt}{tone_line}{single_q}{few_shot_text}{tts_and_rag}{calendar_section}"
-
-    # Custom prompt YOK — generic org için tüm bölümleri ekle
-    return f"""Sen {persona_name} adlı bir AI asistansın.
-{tone_line}
-{tts_and_rag}{few_shot_text}
+{kb_context if kb_context else "(Henüz sorgu yapılmadı — kullanıcı soru sorunca KB'den çekilecek)"}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TOPLANMASI GEREKEN BİLGİLER (zorunlu):
 {must_prompts}
 
-VERİ TOPLAMA TARZI:
+VERİ TOPLAMA TARZI (ÇOK ÖNEMLİ):
 - Bu bilgileri SORMADAN ÖNCE kullanıcının sorusunu cevapla.
-- Bilgileri tek seferde sormak YASAK. Birer birer, doğal şekilde sor.
-- Kullanıcı zaten paylaştıysa tekrar sorma.
+- Bilgileri tek seferde sormak YASAK. Konuşma akışına göre, birer birer doğal şekilde sor.
+- Örnek: Kullanıcı ülke sorarsa önce ülkeyi anlat, ardından "Sizi daha iyi yönlendirebilmem için hangi şehirden arıyorsunuz?" şeklinde sadece 1 soru sor.
+- Kullanıcı zaten bir bilgiyi paylaştıysa (yaş, şehir vb.) tekrar sorma.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-KAPSAM DIŞI KONULAR:{blocks_text if blocks_text else " (tanımlı blok yok)"}
+YÖNLENDİRME KURALLARI:{routing_text if routing_text else " (tanımlı kural yok)"}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KAPSAM DIŞI KONULAR (bu tetiklenince aşağıdaki yanıtı ver):{blocks_text if blocks_text else " (tanımlı blok yok)"}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HANDOFF TETİKLEYİCİLER:
+Şu kelimeler duyulursa HEMEN danışmana aktar: {handoff_keywords}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 HALÜSİNASYON KURALI:
@@ -372,71 +302,28 @@ HALÜSİNASYON KURALI:
 # ── Agent sınıfı ───────────────────────────────────────────────────────────────
 
 class PlatformAgent(Agent):
-    def __init__(self, instructions: str, org_id: str, lang: str = "tr", on_route_check=None):
+    def __init__(self, instructions: str, org_id: str, lang: str = "tr"):
         super().__init__(instructions=instructions)
-        self.org_id               = org_id
-        self.lang                 = lang
-        self._kb_queried          = set()
-        self._kb_empty_count      = 0
-        self._ctx_country         = None   # konuşmada en son geçen ülke (query zenginleştirme için)
-        # async callable(user_text, kb_was_empty) -> bool
-        # True döndürürse routing gerçekleşti demek, LLM cevabı atlanır
-        self._on_route_check = on_route_check
+        self.org_id      = org_id
+        self.lang        = lang
+        self._kb_queried = set()
 
     async def on_user_turn_completed(self, turn_ctx, new_message):
-        # Routing + KB injection — hata olsa bile super() mutlaka çağrılmalı
-        try:
-            user_text = ""
-            if hasattr(new_message, "content"):
-                c = new_message.content
-                user_text = c if isinstance(c, str) else str(c)
+        user_text = ""
+        if hasattr(new_message, "content"):
+            c = new_message.content
+            user_text = c if isinstance(c, str) else str(c)
 
-            if user_text:
-                # Konuşmada geçen ülkeyi takip et (bağlam zenginleştirme için)
-                detected = _detect_country_tag(user_text)
-                if detected:
-                    self._ctx_country = detected
+        if not user_text or user_text in self._kb_queried:
+            return
 
-                # 1. Keyword/intent routing kontrolü — routing tetiklendiyse LLM atla
-                if self._on_route_check:
-                    was_routed = await self._on_route_check(user_text, False)
-                    if was_routed:
-                        return  # LLM cevabı üretme — routing kendi mesajını söyledi
-
-                # 2. KB injection
-                if user_text not in self._kb_queried:
-                    self._kb_queried.add(user_text)
-                    # Sorguda ülke geçmiyorsa ama daha önce bahsedilmişse query'ye ekle
-                    # Örnek: "ne kadar?" → "ne kadar? kosova" → çok daha iyi similarity
-                    kb_query = user_text
-                    if self._ctx_country and self._ctx_country not in user_text.lower():
-                        kb_query = f"{user_text} {self._ctx_country}"
-                    kb_result = await vector_search_kb(self.org_id, kb_query)
-                    if kb_result:
-                        self._kb_empty_count = 0
-                        # Kullanıcı fiyat sormadıysa KB içeriğindeki fiyat bilgilerini kullanma
-                        _price_kws = ["fiyat", "ücret", "kaç para", "ne kadar", "maliyet", "para", "euro", "dolar", "tl ", "tutar"]
-                        _user_asks_price = any(kw in user_text.lower() for kw in _price_kws)
-                        _price_note = "" if _user_asks_price else "\nÖNEMLİ: Kullanıcı fiyat/ücret sormadı — aşağıdaki içerikteki FİYAT ve ÜCRET bilgilerini KULLANMA."
-                        msg_content = f"[KB Bağlamı — Bu soruyla ilgili bilgi tabanı içeriği:]{_price_note}\n{kb_result}"
-                        try:
-                            turn_ctx.messages.append(
-                                llm.ChatMessage(role="system", content=msg_content)
-                            )
-                        except (AttributeError, TypeError):
-                            turn_ctx.add_message(role="system", content=msg_content)
-                    elif self._on_route_check:
-                        # KB boş geldi — 2. ardışık boşta kb_fallback tetikle
-                        self._kb_empty_count += 1
-                        if self._kb_empty_count >= 2:
-                            was_routed = await self._on_route_check(user_text, True)
-                            if was_routed:
-                                return  # LLM cevabı üretme
-        except Exception as e:
-            logger.warning(f"on_user_turn_completed error (non-fatal): {e}")
-
-        # Base class — LLM response'u tetikler (1.5.x'te zorunlu)
-        await super().on_user_turn_completed(turn_ctx, new_message)
+        self._kb_queried.add(user_text)
+        kb_result = await vector_search_kb(self.org_id, user_text)
+        if kb_result:
+            turn_ctx.add_message(
+                role="system",
+                content=f"[KB Bağlamı — Bu soruyla ilgili bilgi tabanı içeriği:]\n{kb_result}"
+            )
 
 
 # ── DB yazıcılar ───────────────────────────────────────────────────────────────
@@ -520,18 +407,13 @@ async def extract_collected_data(transcript: list, intake_fields: list) -> dict:
         )
 
         prompt = f"""Aşağıdaki sesli görüşme transkripsiyonundan şu bilgileri çıkar ve JSON formatında döndür.
-Her field için YALNIZCA kullanıcının açıkça söylediği değeri yaz. Söylemediyse null koy.
-
-ÖNEMLI KURALLAR:
-- "nationality" (uyruk): Kullanıcının hangi ülkede okumak istediğinden DEĞİL, bizzat söylediği uyruğundan çıkar. Söylemediyse null.
-- "city": Kullanıcının aradığı Türkiye'deki şehir, hedef ülkedeki şehir değil.
-- Çıkarım veya tahmin YAPMA — sadece kullanıcının açıkça belirttiği bilgileri yaz.
+Her field için kullanıcının verdiği değeri yaz, vermemişse null koy.
 
 Toplanacak bilgiler:
 {field_defs}
 
 Konuşma:
-{transcript_text[:6000]}
+{transcript_text[:4000]}
 
 Sadece JSON döndür. Örnek: {{"full_name": "Ali Veli", "phone": null, "budget": "50000"}}"""
 
@@ -547,16 +429,8 @@ Sadece JSON döndür. Örnek: {{"full_name": "Ali Veli", "phone": null, "budget"
         return {}
 
 
-INTENT_KEYWORDS = [
-    "randevu", "ne zaman gelebilirim", "ne zaman başlayabiliriz", "ne zaman gelsem",
-    "fiyat alabilir miyim", "teklif alabilir miyim", "teklif ver", "sipariş",
-    "başlamak istiyorum", "almak istiyorum", "satın almak", "satın almak istiyorum",
-    "görüşmek istiyorum", "geri arayın", "geri arar mısınız", "ara beni", "beni arayın",
-    "rezervasyon", "ayarlayabilir misiniz", "müsait misiniz", "ne zaman başlar",
-]
-
-def calculate_qualification_score(intake_fields: list, collected_data: dict, transcript: list = None) -> int:
-    """Toplanan veri doluluk oranına + niyet/etkileşim sinyallerine göre 0-100 skor hesapla."""
+def calculate_qualification_score(intake_fields: list, collected_data: dict) -> int:
+    """Toplanan veri doluluk oranına göre 0-100 qualification score hesapla."""
     if not intake_fields or not collected_data:
         return 0
 
@@ -569,25 +443,11 @@ def calculate_qualification_score(intake_fields: list, collected_data: dict, tra
     must_collected   = sum(1 for k in must_fields   if collected_data.get(k))
     should_collected = sum(1 for k in should_fields if collected_data.get(k))
 
+    # Must alanlar %70, should alanlar %30 ağırlık
     must_score   = (must_collected   / len(must_fields))   * 70 if must_fields   else 0
     should_score = (should_collected / len(should_fields)) * 30 if should_fields else 0
-    base = round(must_score + should_score)
 
-    if transcript:
-        user_texts = " ".join(
-            t.get("content", "") for t in transcript if t.get("role") == "user"
-        ).lower()
-
-        # Niyet bonusu +12: satın alma / randevu niyeti sinyali
-        if any(kw in user_texts for kw in INTENT_KEYWORDS):
-            base += 12
-
-        # Etkileşim bonusu +5: 3+ kullanıcı turu olan aktif konuşma
-        user_turns = sum(1 for t in transcript if t.get("role") == "user")
-        if user_turns >= 3:
-            base += 5
-
-    return min(100, base)
+    return min(100, round(must_score + should_score))
 
 
 async def generate_call_summary(transcript: list, collected_data: dict, org_name: str) -> str:
@@ -625,7 +485,7 @@ Konuşma:
         return ""
 
 
-async def update_lead_data(lead_id: str, intake_fields: list, collected_data: dict, summary: str = "", transcript: list = None):
+async def update_lead_data(lead_id: str, intake_fields: list, collected_data: dict, summary: str = ""):
     """collected_data, data_completeness, missing_fields, score ve özet güncelle."""
     if not lead_id:
         return
@@ -637,7 +497,7 @@ async def update_lead_data(lead_id: str, intake_fields: list, collected_data: di
             for f in intake_fields
         }
         missing = [k for k in must_keys if not collected_data.get(k)]
-        score   = calculate_qualification_score(intake_fields, collected_data, transcript)
+        score   = calculate_qualification_score(intake_fields, collected_data)
 
         update_payload = {
             "collected_data":      collected_data,
@@ -803,135 +663,6 @@ async def upsert_contact_and_lead(
         return None, None
 
 
-# ── Routing yardımcıları ───────────────────────────────────────────────────────
-
-def is_business_hours(working_hours: dict) -> bool:
-    """Şu anki zamanın mesai saatlerinde olup olmadığını kontrol eder."""
-    tz = ZoneInfo(working_hours.get("timezone", "Europe/Istanbul"))
-    now = datetime.now(tz)
-    weekday = now.weekday()  # 0=Pzt, 5=Cmt, 6=Paz
-
-    if weekday < 5:
-        hours_str = working_hours.get("weekdays")
-    elif weekday == 5:
-        hours_str = working_hours.get("saturday")
-    else:
-        hours_str = working_hours.get("sunday")
-
-    if not hours_str:
-        return False
-    start, end = hours_str.split("-")
-    sh, sm = map(int, start.split(":"))
-    eh, em = map(int, end.split(":"))
-    start_dt = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
-    end_dt   = now.replace(hour=eh, minute=em, second=0, microsecond=0)
-    return start_dt <= now <= end_dt
-
-
-async def do_sip_transfer(room_name: str, participant_identity: str, to_number: str):
-    """02122446600 formatındaki numarayı tel:+902122446600 olarak SIP transfer et."""
-    from livekit import api as lk_api
-    digits    = to_number.lstrip("0")
-    transfer_to = f"tel:+90{digits}"
-    lk = lk_api.LiveKitAPI(
-        os.environ.get("LIVEKIT_URL"),
-        os.environ.get("LIVEKIT_API_KEY"),
-        os.environ.get("LIVEKIT_API_SECRET"),
-    )
-    try:
-        await lk.sip.transfer_sip_participant(
-            lk_api.TransferSIPParticipantRequest(
-                room_name=room_name,
-                participant_identity=participant_identity,
-                transfer_to=transfer_to,
-                play_dialtone=True,
-            )
-        )
-        logger.info(f"SIP transfer → {transfer_to}")
-    finally:
-        await lk.aclose()
-
-
-async def evaluate_routing(user_text: str, kb_was_empty: bool, rules: list) -> dict | None:
-    """
-    Eşleşen ilk routing kuralını döner (priority sırasına göre sıralı bekler).
-    kb_was_empty=True ise kb_fallback kuralı da değerlendirilir.
-    Eşleşme yoksa None döner.
-    """
-    text_lower = user_text.lower()
-    for rule in rules:
-        if not rule.get("active"):
-            continue
-        rule_type = rule.get("type", "")
-
-        if rule_type == "kb_fallback" and kb_was_empty:
-            return rule
-
-        if rule_type in ("intent", "topic_note", "sentiment_note"):
-            for kw in rule.get("keywords", []):
-                if kw.lower() in text_lower:
-                    return rule
-    return None
-
-
-async def create_follow_up_task(
-    org_id: str,
-    lead_id: str | None,
-    contact_id: str | None,
-    rule_id: str,
-    note_text: str,
-):
-    """Geri arama görevi oluştur (voice_callback)."""
-    from datetime import timedelta
-    try:
-        scheduled = datetime.now(ZoneInfo("Europe/Istanbul")) + timedelta(hours=1)
-        sb = get_supabase()
-        sb.table("follow_up_tasks").insert({
-            "organization_id": org_id,
-            "lead_id":         lead_id,
-            "contact_id":      contact_id,
-            "task_type":       "voice_callback",
-            "scheduled_at":    scheduled.isoformat(),
-            "status":          "pending",
-            "variables":       {"rule_triggered": rule_id, "caller_note": note_text},
-        }).execute()
-        logger.info(f"follow_up_task created — rule: {rule_id}")
-    except Exception as e:
-        logger.warning(f"follow_up_task create failed: {e}")
-
-
-async def handle_routing(
-    rule: dict,
-    working_hours: dict,
-    transfer_numbers: dict,
-    room_name: str,
-    participant_identity: str,
-    org_id: str,
-    lead_id: str | None,
-    contact_id: str | None,
-    user_text: str,
-    agent_session,
-):
-    """Routing kuralını işle: Tier 1 → transfer veya callback vaadi; Tier 2 → not al."""
-    within_hours = is_business_hours(working_hours)
-    tier = rule.get("tier", 2)
-
-    if tier == 1 and within_hours:
-        msg = rule.get("transition_message", "Sizi aktarıyorum, lütfen bekleyin.")
-        await agent_session.say(msg, allow_interruptions=False)
-        primary_number = transfer_numbers.get("primary", "")
-        if primary_number and participant_identity:
-            await do_sip_transfer(room_name, participant_identity, primary_number)
-        await save_handoff(org_id, lead_id, None, "routing", f"Rule: {rule['id']}", {}, [])
-    else:
-        if tier == 1:
-            msg = rule.get("after_hours_message", "Mesai saatlerimiz dışındayız, sizi arayacağız.")
-        else:
-            msg = rule.get("note_message", "Notunuzu aldım, danışmanımız sizi arayacak.")
-        await agent_session.say(msg, allow_interruptions=False)
-        await create_follow_up_task(org_id, lead_id, contact_id, rule["id"], user_text)
-
-
 # ── SIP yardımcıları ───────────────────────────────────────────────────────────
 
 def _get_sip_caller_number(ctx: JobContext) -> str:
@@ -948,15 +679,6 @@ def _get_sip_caller_number(ctx: JobContext) -> str:
     return ""
 
 
-def _get_sip_participant_identity(ctx: JobContext) -> str:
-    """SIP katılımcısının LiveKit identity'sini döndür (transfer için gerekli)."""
-    for participant in ctx.room.remote_participants.values():
-        attrs = participant.attributes or {}
-        if attrs.get("sip.callFrom") or attrs.get("sip.callTo"):
-            return participant.identity
-    return ""
-
-
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 
 async def entrypoint(ctx: JobContext):
@@ -966,14 +688,6 @@ async def entrypoint(ctx: JobContext):
         meta = json.loads(ctx.room.metadata or "{}")
     except json.JSONDecodeError:
         meta = {}
-
-    # Dispatch (job) metadata'sına da bak — test token'larında room metadata boş gelir
-    if not meta.get("organization_id"):
-        try:
-            job_meta = json.loads(ctx.job.metadata or "{}")
-            meta = {**job_meta, **meta}
-        except (json.JSONDecodeError, AttributeError):
-            pass
 
     org_id   = meta.get("organization_id") or os.environ.get("PLATFORM_ORG_ID")
     scenario = meta.get("scenario")
@@ -990,16 +704,7 @@ async def entrypoint(ctx: JobContext):
     lang         = meta.get("lang") or persona.get("language", "tr")
     room_name    = ctx.room.name
 
-    # Routing config yükle
-    routing_cfg        = (playbook or {}).get("routing_rules", {}) if playbook else {}
-    transfer_numbers   = routing_cfg.get("transfer_numbers", {})
-    routing_rules_list = sorted(
-        routing_cfg.get("rules", []),
-        key=lambda r: r.get("priority", 99),
-    )
-    working_hours_cfg  = org.get("working_hours", {})
-
-    # Features (playbook) + channel config (admin) — her ikisinden de oku
+    # Calendar feature
     features         = (playbook or {}).get("features", {}) if playbook else {}
     calendar_enabled = features.get("calendar_booking", False)
     crm_config       = org.get("crm_config", {})
@@ -1007,13 +712,6 @@ async def entrypoint(ctx: JobContext):
     pit_token        = crm_config.get("pit_token", "")
     if not (calendar_id and pit_token):
         calendar_enabled = False
-
-    # Voice dil + ses ID: playbook features > channel_config.voice_inbound > ai_persona.language
-    vi_cfg           = org.get("channel_config", {}).get("voice_inbound", {})
-    voice_lang_cfg   = features.get("voice_language") or vi_cfg.get("voice_language")
-    tts_voice_id_cfg = features.get("tts_voice_id")  or vi_cfg.get("tts_voice_id")
-    if voice_lang_cfg:
-        lang = voice_lang_cfg
 
     logger.info(f"{'Outbound' if scenario else 'Inbound'} — org: {org['name']} | lang: {lang} | scenario: {scenario}")
 
@@ -1024,15 +722,9 @@ async def entrypoint(ctx: JobContext):
 
     # ── İnbound ───────────────────────────────────────────────────────────────
     if not scenario:
-        kb_genel   = await vector_search_kb(org_id, "genel bilgi hizmetler ülkeler programlar")
-        kb_ofisler = await vector_search_kb(org_id, "temsilcilik ofis şube iletişim telefon")
-        initial_kb = kb_genel + "\n\n" + kb_ofisler if kb_ofisler else kb_genel
+        initial_kb = await vector_search_kb(org_id, "genel bilgi hizmetler")
         system_prompt = build_system_prompt(org, playbook, intake, initial_kb, calendar_enabled)
-        opening    = (
-            playbook.get("opening_message")
-            if playbook and playbook.get("opening_message")
-            else f"Merhaba! {org['name']}'ı aradınız, ben {persona_name}. Hangi ilden arıyorsunuz?"
-        )
+        opening    = f"Merhaba, {org['name']}, ben {persona_name} — buyurun, sizi dinliyorum."
         direction  = "inbound"
         phone_from = _get_sip_caller_number(ctx) or meta.get("phone_from", "")
         phone_to   = os.environ.get("PLATFORM_INBOUND_NUMBER", "")
@@ -1109,69 +801,24 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
     VOICE_IDS = {
         "tr": os.environ.get("CARTESIA_VOICE_ID_TR", "c1cfee3d-532d-47f8-8dd2-8e5b2b66bf1d"),
         "en": os.environ.get("CARTESIA_VOICE_ID_EN", "b7d50908-b17c-442d-ad8d-810c63997ed9"),
-        "de": os.environ.get("CARTESIA_VOICE_ID_DE", ""),
-        "fr": os.environ.get("CARTESIA_VOICE_ID_FR", ""),
-        "es": os.environ.get("CARTESIA_VOICE_ID_ES", ""),
-        "ar": os.environ.get("CARTESIA_VOICE_ID_AR", ""),
-        "nl": os.environ.get("CARTESIA_VOICE_ID_NL", ""),
-        "it": os.environ.get("CARTESIA_VOICE_ID_IT", ""),
-        "pt": os.environ.get("CARTESIA_VOICE_ID_PT", ""),
-        "pl": os.environ.get("CARTESIA_VOICE_ID_PL", ""),
     }
-    # Dil kodu normalize: "de-DE" → "de"
-    lang_code = lang.split("-")[0].lower() if lang else "tr"
-    tts_lang  = lang_code if lang_code in VOICE_IDS else "tr"
-
-    # Ses ID: önce config'den gelen override, yoksa VOICE_IDS dict, yoksa TR default
-    effective_voice_id = (
-        tts_voice_id_cfg
-        or VOICE_IDS.get(tts_lang)
-        or VOICE_IDS["tr"]
-    )
-
-    logger.info(f"Voice config — lang: {tts_lang} | voice_id: {effective_voice_id[:12] if effective_voice_id else 'default'}...")
+    tts_lang = lang if lang in VOICE_IDS else "tr"
 
     session = AgentSession(
         stt=deepgram.STT(model="nova-2", language=tts_lang),
-        llm=openai.LLM(model="gpt-4o-mini", temperature=0.4),
+        llm=openai.LLM(model="gpt-4o-mini"),
         tts=cartesia.TTS(
             model="sonic-3",
-            voice=effective_voice_id,
+            voice=VOICE_IDS[tts_lang],
             language=tts_lang,
         ),
         vad=silero.VAD.load(),
         **({"fnc_ctx": fnc_ctx} if fnc_ctx else {}),
     )
 
-    call_start        = datetime.utcnow()
-    transcript        = []
-    handoff_reason    = None   # handoff tetiklendiyse sebebi
-    routing_triggered = False  # routing kuralı tetiklendiyse True
-
-    async def _check_and_route(user_text: str, kb_was_empty: bool = False) -> bool:
-        """Routing kuralını değerlendir. True → routing tetiklendi (LLM cevabı atlanmalı)."""
-        nonlocal routing_triggered
-        if routing_triggered or not routing_rules_list:
-            return False
-        rule = await evaluate_routing(user_text, kb_was_empty, routing_rules_list)
-        if rule:
-            routing_triggered = True
-            logger.info(f"Routing rule triggered: {rule['id']} (kb_empty={kb_was_empty})")
-            participant_identity = _get_sip_participant_identity(ctx)
-            await handle_routing(
-                rule=rule,
-                working_hours=working_hours_cfg,
-                transfer_numbers=transfer_numbers,
-                room_name=room_name,
-                participant_identity=participant_identity,
-                org_id=org_id,
-                lead_id=lead_id,
-                contact_id=contact_id,
-                user_text=user_text,
-                agent_session=session,
-            )
-            return True
-        return False
+    call_start     = datetime.utcnow()
+    transcript     = []
+    handoff_reason = None   # handoff tetiklendiyse sebebi
 
     @session.on("conversation_item_added")
     def on_item(ev):
@@ -1183,53 +830,26 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
             text = content if isinstance(content, str) else str(content)
             transcript.append({"role": role, "content": text})
 
-            if role == "user":
-                # Handoff keyword kontrolü (routing dışı — sadece log için)
-                if handoff_keywords and handoff_reason is None:
-                    text_lower = text.lower()
-                    for kw in handoff_keywords:
-                        if kw.lower() in text_lower:
-                            handoff_reason = "user_requested"
-                            logger.info(f"Handoff triggered by keyword: {kw}")
-                            break
-                # NOT: routing kontrolü artık on_user_turn_completed içinde (await, LLM öncesi)
-
-    background_audio = BackgroundAudioPlayer(
-        ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.15),
-        thinking_sound=AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.5),
-    )
+            # Handoff keyword kontrolü (user mesajlarında)
+            if role == "user" and handoff_keywords and handoff_reason is None:
+                text_lower = text.lower()
+                for kw in handoff_keywords:
+                    if kw.lower() in text_lower:
+                        handoff_reason = "user_requested"
+                        logger.info(f"Handoff triggered by keyword: {kw}")
+                        break
 
     await session.start(
-        agent=PlatformAgent(
-            instructions=system_prompt,
-            org_id=org_id,
-            lang=tts_lang,
-            on_route_check=_check_and_route if routing_rules_list else None,
-        ),
+        agent=PlatformAgent(instructions=system_prompt, org_id=org_id, lang=tts_lang),
         room=ctx.room,
         room_input_options=RoomInputOptions(noise_cancellation=True),
     )
 
-    await background_audio.start(room=ctx.room, agent_session=session)
+    await session.generate_reply(instructions=opening)
 
-    # Opening mesajı: LLM'e ekstra talimat vererek verbatim söylenmesini sağla
-    await session.generate_reply(
-        instructions=f"AÇILIŞ MESAJIN: Bu metni KELIMESI KELIMESINE söyle, hiçbir şey ekleme, hiçbir soru sorma: «{opening}»"
-    )
-
-    MAX_CALL_SECONDS = 1800  # 30 dakika hard limit
-
-    # Room "disconnected" event'ini bekle — CancelledError sorunu olmaz
-    room_disconnected = asyncio.Event()
-    ctx.room.on("disconnected", lambda: room_disconnected.set())
-
-    try:
-        await asyncio.wait_for(room_disconnected.wait(), timeout=MAX_CALL_SECONDS)
-    except asyncio.TimeoutError:
-        logger.warning(f"Max call duration ({MAX_CALL_SECONDS}s) reached — ending session")
-        await session.aclose()
-    finally:
-        await _save_all(
+    @ctx.room.on("disconnected")
+    def on_disconnected():
+        asyncio.create_task(_save_all(
             org_id=org_id,
             direction=direction,
             call_start=call_start,
@@ -1242,7 +862,7 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
             intake=intake,
             handoff_reason=handoff_reason,
             room_name=room_name,
-        )
+        ))
 
 
 async def _save_all(
@@ -1263,7 +883,7 @@ async def _save_all(
     if lead_id and intake:
         collected_data = await extract_collected_data(transcript, intake)
         summary        = await generate_call_summary(transcript, collected_data, org_id)
-        await update_lead_data(lead_id, intake, collected_data, summary, transcript)
+        await update_lead_data(lead_id, intake, collected_data, summary)
         must_keys      = {f["key"] for f in intake if f.get("priority") == "must"}
         missing_fields = [k for k in must_keys if not collected_data.get(k)]
 

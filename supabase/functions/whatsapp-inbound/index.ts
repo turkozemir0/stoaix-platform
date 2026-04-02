@@ -90,50 +90,6 @@ async function updateGHLPipelineStage(
   }
 }
 
-// ─── Phone normalization ──────────────────────────────────────────────────────
-
-/**
- * Normalize a phone number to digits-only format for comparison.
- * Only strips non-digit characters (including leading +).
- * No country-specific logic — enter with full country code.
- * Examples:
- *   +4915123456789  → 4915123456789
- *   +905555555555   → 905555555555
- *   49 151 234 567  → 49151234567
- */
-function normalizePhone(raw: string): string {
-  return raw.replace(/\D/g, '')
-}
-
-async function addGHLNote(
-  pitToken: string,
-  ghlContactId: string,
-  title: string,
-  body: string,
-  pinned = false
-): Promise<void> {
-  try {
-    await fetch(`https://services.leadconnectorhq.com/contacts/${ghlContactId}/notes`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${pitToken}`,
-        'Version': '2021-04-15',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ title, body, pinned }),
-    })
-  } catch (err) {
-    console.error('addGHLNote failed:', err)
-  }
-}
-
-function formatCollectedData(data: Record<string, unknown>): string {
-  return Object.entries(data)
-    .filter(([, v]) => v !== null && v !== undefined && v !== '')
-    .map(([k, v]) => `• ${k}: ${v}`)
-    .join('\n') || '—'
-}
-
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 async function handleInbound(payload: GHLWebhookPayload): Promise<void> {
@@ -148,7 +104,7 @@ async function handleInbound(payload: GHLWebhookPayload): Promise<void> {
   // Find org by GHL location_id
   const { data: orgs } = await supabase
     .from('organizations')
-    .select('id, crm_config, excluded_phones')
+    .select('id, crm_config')
     .eq('status', 'active')
 
   const org = orgs?.find((o: any) => {
@@ -159,16 +115,6 @@ async function handleInbound(payload: GHLWebhookPayload): Promise<void> {
   if (!org) {
     console.error(`No active org for GHL location_id: ${locationId}`)
     return
-  }
-
-  // Excluded phones check — skip message entirely if sender is on the list
-  const excludedPhones = (org.excluded_phones ?? []) as string[]
-  if (excludedPhones.length > 0 && payload.phone) {
-    const normalizedIncoming = normalizePhone(payload.phone)
-    if (excludedPhones.includes(normalizedIncoming)) {
-      console.log(`Excluded phone ${normalizedIncoming} — skipping`)
-      return
-    }
   }
 
   const crm                        = org.crm_config as Record<string, string>
@@ -193,35 +139,6 @@ async function handleInbound(payload: GHLWebhookPayload): Promise<void> {
           stageMapping['ai_qualifying'] ?? stageMapping['in_progress'],
           locationId, ghlContactId, replyType
         )
-      : undefined,
-    onHandoff: stageMapping?.['hot_lead']
-      ? async ({ collectedData, lastMessage }) => {
-          await updateGHLPipelineStage(pitToken, pipelineId, stageMapping['hot_lead'], locationId, ghlContactId, replyType)
-          await addGHLNote(pitToken, ghlContactId,
-            '🤝 İnsan Temsilci Talep Edildi',
-            `Müşteri insan temsilci talep etti.\n\nToplanan bilgiler:\n${formatCollectedData(collectedData)}\n\nSon mesaj: "${lastMessage}"`,
-            true
-          )
-        }
-      : undefined,
-    onOptOut: stageMapping?.['lost']
-      ? async ({ lastMessage }) => {
-          await updateGHLPipelineStage(pitToken, pipelineId, stageMapping['lost'], locationId, ghlContactId, replyType)
-          await addGHLNote(pitToken, ghlContactId,
-            '⛔ İletişimi Durdurdu',
-            `Müşteri iletişimi durdurmak istedi.\n\nSon mesaj: "${lastMessage}"`,
-            true
-          )
-        }
-      : undefined,
-    onScoreThreshold: stageMapping?.['hot_lead']
-      ? async ({ score, collectedData }) => {
-          await updateGHLPipelineStage(pitToken, pipelineId, stageMapping['hot_lead'], locationId, ghlContactId, replyType)
-          await addGHLNote(pitToken, ghlContactId,
-            `🔥 Hot Lead — Skor ${score}/100`,
-            `Lead skoru ${score}/100 seviyesine ulaştı.\n\nToplanan bilgiler:\n${formatCollectedData(collectedData)}`
-          )
-        }
       : undefined,
   })
 }

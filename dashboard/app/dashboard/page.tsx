@@ -4,8 +4,7 @@ import { Users, Flame, TrendingUp, ArrowRight, Star, CalendarDays } from 'lucide
 import StatCard from '@/components/StatCard'
 import TrendChart from '@/components/TrendChart'
 import LeadBadge from '@/components/LeadBadge'
-import { getT } from '@/lib/i18n'
-import { cookies } from 'next/headers'
+import { t } from '@/lib/i18n'
 import { formatDuration } from '@/lib/types'
 import type { DailyTrend } from '@/lib/types'
 import Link from 'next/link'
@@ -38,8 +37,6 @@ async function getOrgId(supabase: any, userId: string) {
 }
 
 export default async function DashboardPage() {
-  const lang = cookies().get('lang')?.value === 'en' ? 'en' : 'tr'
-  const t = getT(lang)
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -55,7 +52,7 @@ export default async function DashboardPage() {
   const [leadsResult, handoffResult, todayResult, trendResult, recentLeadsResult, recentCallsResult] = await Promise.all([
     supabase
       .from('leads')
-      .select('id, qualification_score, status, created_at', { count: 'exact' })
+      .select('id, qualification_score, status, created_at')
       .eq('organization_id', orgId),
     supabase
       .from('handoff_logs')
@@ -85,7 +82,7 @@ export default async function DashboardPage() {
   ])
 
   const leads = leadsResult.data ?? []
-  const totalLeads = leadsResult.count ?? leads.length
+  const totalLeads = leads.length
   const hotLeads = leads.filter(l => l.qualification_score >= 70).length
   const warmLeads = leads.filter(l => l.qualification_score >= 40 && l.qualification_score < 70).length
   const coldLeads = leads.filter(l => l.qualification_score < 40).length
