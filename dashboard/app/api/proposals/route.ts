@@ -26,25 +26,73 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Bu işlem için yetkiniz yok' }, { status: 403 })
   }
 
-  const body = await request.json()
-  const { lead_id, title, description, total_amount, currency, status, notes, payments } = body
+  const orgId = orgUser?.organization_id ?? null
 
-  if (!lead_id || !title) {
-    return NextResponse.json({ error: 'lead_id ve title zorunlu' }, { status: 400 })
+  const body = await request.json()
+  const { title, description, total_amount, currency, status, notes, payments } = body
+  let { lead_id, client_name, client_phone } = body
+
+  if (!title) {
+    return NextResponse.json({ error: 'title zorunlu' }, { status: 400 })
   }
 
-  const orgId = orgUser?.organization_id
+  // lead_id yoksa yeni contact + lead oluştur
+  if (!lead_id && orgId) {
+    const phone = client_phone?.trim() || null
+    const name = client_name?.trim() || null
 
-  // Verify lead belongs to org
+    const { data: newContact, error: contactErr } = await supabase
+      .from('contacts')
+      .insert({
+        organization_id: orgId,
+        full_name: name,
+        phone: phone,
+        status: 'new',
+        source_channel: 'manual',
+      })
+      .select('id')
+      .single()
+
+    if (contactErr) return NextResponse.json({ error: contactErr.message }, { status: 500 })
+
+    const { data: newLead, error: leadErr } = await supabase
+      .from('leads')
+      .insert({
+        organization_id: orgId,
+        contact_id: newContact.id,
+        status: 'new',
+        source_channel: 'voice',
+      })
+      .select('id')
+      .single()
+
+    if (leadErr) return NextResponse.json({ error: leadErr.message }, { status: 500 })
+
+    lead_id = newLead.id
+  }
+
+  if (!lead_id) {
+    return NextResponse.json({ error: 'lead_id zorunlu veya müşteri bilgisi eksik' }, { status: 400 })
+  }
+
+  // Lead'in org'a ait olduğunu doğrula + isim değiştiyse contacts güncelle
   if (orgId) {
     const { data: lead } = await supabase
       .from('leads')
-      .select('organization_id')
+      .select('organization_id, contact_id')
       .eq('id', lead_id)
       .maybeSingle()
 
     if (!lead || lead.organization_id !== orgId) {
       return NextResponse.json({ error: 'Lead bulunamadı' }, { status: 404 })
+    }
+
+    if (client_name?.trim() && lead.contact_id) {
+      await supabase
+        .from('contacts')
+        .update({ full_name: client_name.trim() })
+        .eq('id', lead.contact_id)
+        .eq('organization_id', orgId)
     }
   }
 
@@ -60,13 +108,15 @@ export async function POST(request: NextRequest) {
       currency: currency || 'TRY',
       status: status || 'draft',
       notes: notes || null,
+      client_name: client_name?.trim() || null,
+      client_phone: client_phone?.trim() || null,
     })
     .select('id')
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Insert payment schedules if provided
+  // Ödeme takvimi
   if (payments?.length && proposal?.id) {
     const paymentRows = payments.map((p: any) => ({
       organization_id: orgId,

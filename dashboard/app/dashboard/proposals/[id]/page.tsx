@@ -32,7 +32,7 @@ export default function ProposalDetailPage() {
   const [proposal, setProposal] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [statusLoading, setStatusLoading] = useState(false)
-  // Ödeme "al" butonu kaldırıldı — sistem üzerinden tahsilat yapılmıyor, sadece takip
+  const [payingId, setPayingId] = useState<string | null>(null)
 
   useEffect(() => {
     fetch(`/api/proposals/${params.id}`)
@@ -40,6 +40,27 @@ export default function ProposalDetailPage() {
       .then(data => { setProposal(data); setLoading(false) })
       .catch(() => setLoading(false))
   }, [params.id])
+
+  async function markPaid(pid: string) {
+    setPayingId(pid)
+    try {
+      const res = await fetch(`/api/proposals/${params.id}/payments/${pid}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'paid' }),
+      })
+      if (res.ok) {
+        setProposal((p: any) => ({
+          ...p,
+          payment_schedules: p.payment_schedules.map((ps: any) =>
+            ps.id === pid ? { ...ps, status: 'paid', paid_at: new Date().toISOString() } : ps
+          ),
+        }))
+      }
+    } finally {
+      setPayingId(null)
+    }
+  }
 
   async function updateStatus(newStatus: string) {
     setStatusLoading(true)
@@ -131,9 +152,20 @@ export default function ProposalDetailPage() {
                       {ps.paid_at && ` · Ödendi: ${new Date(ps.paid_at).toLocaleDateString('tr-TR')}`}
                     </p>
                   </div>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLORS[displayStatus] ?? PAYMENT_STATUS_COLORS.pending}`}>
-                    {displayStatus === 'paid' ? 'Ödendi' : displayStatus === 'overdue' ? 'Gecikmiş' : 'Bekliyor'}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {ps.status === 'pending' && (
+                      <button
+                        onClick={() => markPaid(ps.id)}
+                        disabled={payingId === ps.id}
+                        className="text-xs text-emerald-600 hover:text-emerald-700 border border-emerald-200 hover:border-emerald-300 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {payingId === ps.id ? '...' : 'Ödendi İşaretle'}
+                      </button>
+                    )}
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLORS[displayStatus] ?? PAYMENT_STATUS_COLORS.pending}`}>
+                      {displayStatus === 'paid' ? 'Ödendi' : displayStatus === 'overdue' ? 'Gecikmiş' : 'Bekliyor'}
+                    </span>
+                  </div>
                 </div>
               )
             })}

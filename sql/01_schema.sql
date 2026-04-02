@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS public.organizations (
 
   crm_config      jsonb       NOT NULL DEFAULT '{"provider": "none"}'::jsonb,
   -- GHL: {"provider":"ghl","location_id":"...","pit_token":"...","pipeline_id":"...","stage_mapping":{}}
+  timezone        text        NOT NULL DEFAULT 'Europe/Berlin',
+  -- IANA timezone, e.g. Europe/Berlin, Europe/Istanbul, Asia/Dubai
 
   working_hours   jsonb       DEFAULT '{"weekdays":"09:00-18:00","saturday":"10:00-16:00","sunday":"Kapalı"}'::jsonb,
 
@@ -408,3 +410,4 @@ CREATE TRIGGER trg_kb_updated
 CREATE TRIGGER trg_playbooks_updated
   BEFORE UPDATE ON public.agent_playbooks
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+

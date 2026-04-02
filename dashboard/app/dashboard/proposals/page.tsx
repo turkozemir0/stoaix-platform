@@ -51,6 +51,14 @@ export default async function ProposalsPage() {
           <h1 className="text-xl font-bold text-slate-900">Teklifler</h1>
           <p className="text-sm text-slate-500 mt-0.5">{proposals?.length ?? 0} teklif</p>
         </div>
+        {canCreate && (
+          <Link
+            href="/dashboard/proposals/new"
+            className="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors"
+          >
+            <Plus size={15} /> Yeni Teklif
+          </Link>
+        )}
       </div>
 
       <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
