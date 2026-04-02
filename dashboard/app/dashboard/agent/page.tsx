@@ -39,7 +39,15 @@ interface PlaybookState {
   blocks: { keywords: string; response: string }[]
   features: { calendar_booking: boolean; voice_language?: string; tts_voice_id?: string }
   fewShots: { user: string; assistant: string }[]
+  noKbMatch: string
 }
+
+const TONE_OPTIONS = [
+  { value: 'warm-professional', label: 'Sıcak & Profesyonel' },
+  { value: 'formal',            label: 'Resmi' },
+  { value: 'friendly',          label: 'Samimi & Arkadaşça' },
+  { value: 'energetic',         label: 'Enerjik' },
+]
 
 interface IntakeField {
   key: string
@@ -49,7 +57,7 @@ interface IntakeField {
   voice_prompt?: string
 }
 
-const EMPTY: PlaybookState = { systemPrompt: '', openingMessage: '', blocks: [], features: { calendar_booking: false, voice_language: '', tts_voice_id: '' }, fewShots: [] }
+const EMPTY: PlaybookState = { systemPrompt: '', openingMessage: '', blocks: [], features: { calendar_booking: false, voice_language: '', tts_voice_id: '' }, fewShots: [], noKbMatch: '' }
 
 const VOICE_LANGUAGES = [
   { value: '',   label: 'Varsayılan (ai_persona dilinden alınır)' },
@@ -106,6 +114,7 @@ export default function AgentPage() {
   const [savedChannel, setSavedChannel] = useState<Channel | null>(null)
   const [voiceActive, setVoiceActive] = useState(false)
   const [error, setError] = useState('')
+  const [persona, setPersona] = useState({ name: '', tone: 'warm-professional' })
   const [pageTab, setPageTab] = useState<PageTab>('settings')
 
   // Routing state
@@ -153,7 +162,7 @@ export default function AgentPage() {
       // Her iki kanalı da yükle
       const { data: playbooks } = await supabase
         .from('agent_playbooks')
-        .select('id, channel, system_prompt_template, opening_message, hard_blocks, features, few_shot_examples')
+        .select('id, channel, system_prompt_template, opening_message, hard_blocks, features, few_shot_examples, fallback_responses')
         .eq('organization_id', resolvedOrgId)
         .eq('is_active', true)
         .in('channel', ['voice', 'whatsapp', 'chat', 'all'])
@@ -172,6 +181,7 @@ export default function AgentPage() {
           user: ex.user || '',
           assistant: ex.assistant || '',
         })),
+        noKbMatch: (pb.fallback_responses as any)?.no_kb_match || '',
       })
 
       if (playbooks) {
@@ -205,14 +215,16 @@ export default function AgentPage() {
         .eq('is_active', true)
       setKbCount(count ?? 0)
 
-      // Voice aktif mi?
+      // Voice aktif mi? + ai_persona yükle
       const { data: orgData } = await supabase
         .from('organizations')
-        .select('channel_config')
+        .select('channel_config, ai_persona')
         .eq('id', resolvedOrgId)
         .single()
       const cc = (orgData?.channel_config ?? {}) as Record<string, any>
       setVoiceActive(cc?.voice_inbound?.active === true || cc?.voice_outbound?.active === true)
+      const ap = (orgData?.ai_persona ?? {}) as Record<string, any>
+      setPersona({ name: ap.persona_name || '', tone: ap.tone || 'warm-professional' })
 
       // Routing config yükle
       try {
@@ -265,7 +277,21 @@ export default function AgentPage() {
       .filter(ex => ex.user.trim() && ex.assistant.trim())
       .map(ex => ({ user: ex.user.trim(), assistant: ex.assistant.trim() }))
 
+    const fallback_responses = { no_kb_match: current.noKbMatch.trim() || null }
+
     const supabase = createClient()
+
+    // Persona (org-level) kaydet
+    const { data: orgRow } = await supabase
+      .from('organizations')
+      .select('ai_persona')
+      .eq('id', orgId)
+      .single()
+    const existingPersona = (orgRow?.ai_persona ?? {}) as Record<string, any>
+    await supabase
+      .from('organizations')
+      .update({ ai_persona: { ...existingPersona, persona_name: persona.name, tone: persona.tone } })
+      .eq('id', orgId)
 
     if (current.id) {
       const { error: err } = await supabase
@@ -276,6 +302,7 @@ export default function AgentPage() {
           hard_blocks,
           features: current.features,
           few_shot_examples,
+          fallback_responses,
           updated_at: new Date().toISOString(),
         })
         .eq('id', current.id)
@@ -292,6 +319,7 @@ export default function AgentPage() {
           hard_blocks,
           features: current.features,
           few_shot_examples,
+          fallback_responses,
           version: 1,
           is_active: true,
         })
@@ -841,6 +869,40 @@ export default function AgentPage() {
       {/* Settings Panel */}
       {pageTab === 'settings' && (
         <>
+      {/* Asistan Kimliği — org-level, kanaldan bağımsız */}
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+            <Bot size={15} className="text-brand-500" />
+            Asistan Kimliği
+          </h2>
+          <p className="text-xs text-slate-400 mt-0.5">Tüm kanallar için geçerli. Sesli ve mesajlaşma asistanı aynı kimliği kullanır.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Asistan adı</label>
+            <input
+              value={persona.name}
+              onChange={e => setPersona(p => ({ ...p, name: e.target.value }))}
+              placeholder="örn: Elif, Arda, AI Asistan"
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Konuşma tonu</label>
+            <select
+              value={persona.tone}
+              onChange={e => setPersona(p => ({ ...p, tone: e.target.value }))}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+            >
+              {TONE_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
       {/* Channel Tabs */}
       <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-fit">
         <button
@@ -1187,6 +1249,23 @@ export default function AgentPage() {
           <Plus size={15} />
           Kural Ekle
         </button>
+      </div>
+
+      {/* KB Boş Yanıtı */}
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-800">Bilgi Bulunamadığında Yanıt</h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Bilgi tabanında eşleşme bulunamazsa asistanın söyleyeceği mesaj. Boş bırakılırsa varsayılan kullanılır.
+          </p>
+        </div>
+        <textarea
+          value={current.noKbMatch}
+          onChange={e => setCurrent(prev => ({ ...prev, noKbMatch: e.target.value }))}
+          placeholder="örn: Bu konuda elimde net bilgi yok. Uzman ekibimiz en kısa sürede sizinle iletişime geçecek."
+          rows={2}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+        />
       </div>
 
       {/* Few-shot Examples */}
