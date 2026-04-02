@@ -1291,7 +1291,7 @@ export default function AgentPage() {
                     <input
                       value={ex.user}
                       onChange={e => updateFewShot(i, 'user', e.target.value)}
-                      placeholder="örn: Polonya hakkında bilgi alabilir miyim?"
+                      placeholder=""
                       className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                     />
                   </div>
@@ -1300,7 +1300,7 @@ export default function AgentPage() {
                     <textarea
                       value={ex.assistant}
                       onChange={e => updateFewShot(i, 'assistant', e.target.value)}
-                      placeholder="örn: Tabii! Polonya'da üniversite eğitimi hem kaliteli hem uygun fiyatlı..."
+                      placeholder=""
                       rows={2}
                       className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
                     />
