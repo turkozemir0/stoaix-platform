@@ -281,6 +281,20 @@ def build_system_prompt(
         "no_kb_match",
         "Bu konuyu not aldım, danışmanımız sizi en kısa sürede arayacak."
     )
+    tone = persona.get("tone", "warm-professional")
+    tone_line = f"\nİletişim tonu: {tone}. Kısa, doğal, samimi cümleler kullan."
+
+    few_shots = (playbook.get("few_shot_examples", []) or []) if playbook else []
+    few_shot_text = ""
+    if few_shots:
+        examples = "\n".join(
+            f'Kullanıcı: "{ex["user"]}"\nAsistan: "{ex["assistant"]}"'
+            for ex in few_shots[:3]
+        )
+        few_shot_text = (
+            "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"ÖRNEK DİYALOGLAR (konuşma tarzın için referans):\n{examples}"
+        )
 
     calendar_section = (
         "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -321,13 +335,21 @@ BİLGİ TABANI (RAG — bu konuşma için ilgili içerik):
 {kb_context if kb_context else "(Henüz sorgu yapılmadı — kullanıcı soru sorunca KB'den çekilecek)"}"""
 
     if base_prompt:
-        # Custom prompt var — sadece TTS kuralı + RAG ekle, geri kalanlar template'de
-        return f"{base_prompt}{tts_and_rag}{calendar_section}"
+        # Custom prompt var — ton + tek-soru kuralı + TTS + RAG ekle, geri kalanlar template'de
+        single_q = ""
+        if must_prompts:
+            single_q = (
+                "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "VERİ TOPLAMA KURALI:\n"
+                f"Zorunlu bilgiler (sırayla): {must_prompts}\n"
+                "Kural: Aynı mesajda birden fazla soru sormak YASAK. Birer birer, doğal şekilde sor."
+            )
+        return f"{base_prompt}{tone_line}{single_q}{few_shot_text}{tts_and_rag}{calendar_section}"
 
     # Custom prompt YOK — generic org için tüm bölümleri ekle
     return f"""Sen {persona_name} adlı bir AI asistansın.
-
-{tts_and_rag}
+{tone_line}
+{tts_and_rag}{few_shot_text}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TOPLANMASI GEREKEN BİLGİLER (zorunlu):

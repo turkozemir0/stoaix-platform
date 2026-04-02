@@ -265,7 +265,7 @@ async function runChatEngine(
   // Load channel-specific playbook; fall back to 'whatsapp' if no dedicated one exists
   let { data: playbook } = await supabase
     .from('agent_playbooks')
-    .select('system_prompt_template, fallback_responses, hard_blocks, features')
+    .select('system_prompt_template, fallback_responses, hard_blocks, features, few_shot_examples')
     .eq('organization_id', orgId)
     .eq('channel', channel)
     .order('version', { ascending: false })
@@ -275,7 +275,7 @@ async function runChatEngine(
   if (!playbook && channel !== 'whatsapp') {
     const { data: fallback } = await supabase
       .from('agent_playbooks')
-      .select('system_prompt_template, fallback_responses, hard_blocks, features')
+      .select('system_prompt_template, fallback_responses, hard_blocks, features, few_shot_examples')
       .eq('organization_id', orgId)
       .eq('channel', 'whatsapp')
       .order('version', { ascending: false })
@@ -349,7 +349,7 @@ async function runChatEngine(
   let profileSection = ''
   const { data: leadRow } = await supabase
     .from('leads')
-    .select('id, collected_data')
+    .select('id, collected_data, missing_fields')
     .eq('organization_id', orgId)
     .eq('contact_id', contactId)
     .maybeSingle()
@@ -363,17 +363,49 @@ async function runChatEngine(
 
   // Build system prompt
   const persona      = org.ai_persona as Record<string, string>
+
+  // Persona tonu (ai_persona.tone varsa kullan)
+  const personaTone = (persona as any)?.tone
+    ? `\n\nKonuşma tonu: ${(persona as any).tone}.` : ''
+  const fallbackInstruction = (persona as any)?.fallback_instruction
+    ? `\n${(persona as any).fallback_instruction}` : ''
+
+  // KB boşsa hallüsinasyon önleme
+  const noKbFallback = (fallbackResponses as any)?.['no_kb_match']
+    ?? 'Bu konuda elimde net bilgi yok. Uzman ekibimiz en kısa sürede dönecek.'
+  const kbFallbackNote = !kbContext
+    ? `\n\n━━━ KAPSAM UYARISI ━━━\nBu soru için bilgi tabanında eşleşen içerik bulunamadı. Kesin bilgiye dayanmayan bir yanıt VERME. Bunun yerine şunu söyle: "${noKbFallback}"`
+    : ''
+
+  // Missing fields — AI hangi bilgileri toplaması gerektiğini bilsin
+  const missingFields = ((leadRow as any)?.missing_fields ?? []) as string[]
+  const missingSection = missingFields.length > 0
+    ? `\n\n━━━ TOPLANMASI GEREKEN BİLGİLER ━━━\nHenüz alınmayan zorunlu alanlar: ${missingFields.join(', ')}\nKural: Konuşmanın doğal akışında bu bilgileri SIRAYLA ve TEK TEK sor. Aynı mesajda birden fazla soru YASAK.`
+    : ''
+
   const systemPrompt = [
     playbook.system_prompt_template,
     kbContext ? `\n\n[BİLGİ TABANI]\n${kbContext}` : '',
     profileSection,
+    personaTone,
+    fallbackInstruction,
+    kbFallbackNote,
+    missingSection,
     calendarSection,
     `\nOrganizasyon: ${org.name}`,
     persona?.persona_name ? `\nSenin adın: ${persona.persona_name}` : '',
     `\n\nEtiket kuralları (yanıtının EN SONUNA, ayrı satıra ekle):\n- Müşteri insan temsilci/müdür/yetkili talep ediyorsa veya şikayet bildiriyorsa → [HANDOFF]\n- Müşteri iletişimi açıkça durdurmak istiyorsa ("bana yazma", "istemiyorum", "kaldır" vb.) → [OPT_OUT]\nBaşka hiçbir durumda bu etiketleri kullanma.`,
   ].filter(Boolean).join('')
 
+  // Few-shot examples — varsa konuşma geçmişinden ÖNCE eklenir
+  const fewShots = ((playbook as any).few_shot_examples ?? []) as Array<{ user: string; assistant: string }>
+  const fewShotMessages = fewShots.slice(0, 5).flatMap(ex => [
+    { role: 'user' as const, content: ex.user },
+    { role: 'assistant' as const, content: ex.assistant },
+  ])
+
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+    ...fewShotMessages,
     ...history.slice(-(MAX_HISTORY * 2 - 1)),
     { role: 'user', content: messageText },
   ]
