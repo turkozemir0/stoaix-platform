@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 
-const serviceClient = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getServiceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 /**
  * Normalize a phone number to digits-only format for storage/comparison.
@@ -17,7 +19,7 @@ function normalizePhone(raw: string): string {
 }
 
 async function getOrgId(userId: string): Promise<string | null> {
-  const { data } = await serviceClient
+  const { data } = await getServiceClient()
     .from('org_users')
     .select('organization_id')
     .eq('user_id', userId)
@@ -33,7 +35,7 @@ export async function GET() {
   const orgId = await getOrgId(user.id)
   if (!orgId) return NextResponse.json({ error: 'No org' }, { status: 403 })
 
-  const { data } = await serviceClient
+  const { data } = await getServiceClient()
     .from('organizations')
     .select('excluded_phones')
     .eq('id', orgId)
@@ -56,7 +58,7 @@ export async function PATCH(request: NextRequest) {
     .map((p) => normalizePhone(p))
     .filter((p) => p.length >= 10)
 
-  const { error } = await serviceClient
+  const { error } = await getServiceClient()
     .from('organizations')
     .update({ excluded_phones: normalized })
     .eq('id', orgId)
