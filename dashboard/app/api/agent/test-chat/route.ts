@@ -7,9 +7,8 @@ const service = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
-
 export async function POST(req: NextRequest) {
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
   const { message, history = [], channel = 'whatsapp', orgId } = await req.json()
 
   if (!message || !orgId) {

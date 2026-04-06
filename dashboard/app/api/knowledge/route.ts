@@ -4,9 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import OpenAI from 'openai'
 import { getSchema } from '@/lib/kb-schemas'
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-
 async function generateEmbedding(text: string): Promise<number[]> {
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   const response = await openai.embeddings.create({
     model: 'text-embedding-3-small',
     input: text,
@@ -16,6 +15,7 @@ async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 async function generateDescriptionForAI(item_type: string, data: Record<string, any>): Promise<string> {
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   const schema = getSchema(item_type)
   if (!schema) return JSON.stringify(data)
   const prompt = schema.llmPrompt(data)

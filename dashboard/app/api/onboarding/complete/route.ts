@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import OpenAI from 'openai'
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-
 async function getKbSummary(service: any, orgId: string): Promise<string> {
   const { data: kbItems } = await service
     .from('knowledge_items')
@@ -24,6 +22,7 @@ async function getKbSummary(service: any, orgId: string): Promise<string> {
 }
 
 async function generateSystemPrompt(service: any, orgId: string, org: any, channel: 'voice' | 'whatsapp'): Promise<string> {
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   try {
     const kbSummary = await getKbSummary(service, orgId)
 
