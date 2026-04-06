@@ -281,7 +281,8 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
 
       // crm
       const crm = (data.crm_config ?? { provider: 'none' }) as CrmConfig
-      const provider = crm.provider === 'ghl' ? 'none' : (crm.provider ?? 'none')
+      const rawProvider = (crm as any).provider as string
+      const provider = rawProvider === 'ghl' ? 'none' : (rawProvider ?? 'none')
       setCrmProvider(provider as CrmConfig['provider'])
       setCrmWebhookUrl(crm.webhook_url ?? '')
       setCrmWebhookSecret(crm.webhook_secret ?? '')
