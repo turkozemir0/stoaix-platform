@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import OpenAI from 'openai'
 
+function getOpenAI() { return new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) }
+
 async function getKbSummary(service: any, orgId: string): Promise<string> {
   const { data: kbItems } = await service
     .from('knowledge_items')
@@ -22,7 +24,6 @@ async function getKbSummary(service: any, orgId: string): Promise<string> {
 }
 
 async function generateSystemPrompt(service: any, orgId: string, org: any, channel: 'voice' | 'whatsapp'): Promise<string> {
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   try {
     const kbSummary = await getKbSummary(service, orgId)
 
@@ -47,7 +48,7 @@ FORMAT (max 200 kelime):
 
 Sadece sistem promptunu yaz — başlık veya açıklama ekleme.`
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: 'gpt-4o-mini',
       max_tokens: 400,
       messages: [{ role: 'user', content: metaPrompt }],
@@ -131,21 +132,13 @@ export async function POST(_request: NextRequest) {
   const existingSchemaChannels = new Set((existingSchemas || []).map((s: any) => s.channel))
   const schemaInserts: any[] = []
 
-  const minimalFields = [
-    {
-      key: 'full_name',
-      label: 'Ad Soyad',
-      type: 'text',
-      priority: 'must',
-      voice_prompt: 'Adınızı ve soyadınızı öğrenebilir miyim?',
-    },
-    {
-      key: 'phone',
-      label: 'Telefon',
-      type: 'phone',
-      priority: 'must',
-      voice_prompt: 'Sizi daha sonra arayabilmemiz için telefon numaranızı alabilir miyim?',
-    },
+  const voiceDefaultFields = [
+    { key: 'full_name', label: 'Ad Soyad', type: 'text', priority: 'must', voice_prompt: 'Adınızı ve soyadınızı öğrenebilir miyim?' },
+    { key: 'phone', label: 'Telefon', type: 'phone', priority: 'must', voice_prompt: 'Sizi daha sonra arayabilmemiz için telefon numaranızı alabilir miyim?' },
+  ]
+  // WhatsApp'ta telefon payload'dan otomatik geliyor, sohbetten extract etmeye gerek yok
+  const whatsappDefaultFields = [
+    { key: 'full_name', label: 'Ad Soyad', type: 'text', priority: 'must' },
   ]
 
   if (!existingSchemaChannels.has('voice')) {
@@ -153,7 +146,7 @@ export async function POST(_request: NextRequest) {
       organization_id: orgId,
       channel: 'voice',
       name: `${org?.name ?? 'İşletme'} Voice Başvuru Formu`,
-      fields: minimalFields,
+      fields: voiceDefaultFields,
     })
   }
   if (!existingSchemaChannels.has('whatsapp')) {
@@ -161,7 +154,7 @@ export async function POST(_request: NextRequest) {
       organization_id: orgId,
       channel: 'whatsapp',
       name: `${org?.name ?? 'İşletme'} WhatsApp Başvuru Formu`,
-      fields: minimalFields,
+      fields: whatsappDefaultFields,
     })
   }
   if (schemaInserts.length > 0) {

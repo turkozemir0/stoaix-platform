@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, ChevronDown, LifeBuoy } from 'lucide-react'
-import { t } from '@/lib/i18n'
+import { useT } from '@/lib/lang-context'
 
 const statusColors: Record<string, string> = {
   open: 'bg-amber-100 text-amber-700',
@@ -29,6 +29,7 @@ interface Ticket {
 }
 
 export default function SupportPage() {
+  const t = useT()
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [orgId, setOrgId] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
