@@ -1,6 +1,6 @@
 """
 stoaix Platform Voice Agent — Multi-Tenant Inbound
-LiveKit Cloud + Deepgram STT + GPT-4o Mini + Cartesia TTS
+LiveKit Cloud + Deepgram STT + Claude Sonnet 4.6 (default, metadata override ile değiştirilebilir) + Cartesia TTS
 
 Her işletme aynı agent kodu — davranış DB config'inden gelir.
 
@@ -31,7 +31,7 @@ from livekit.agents import (
     cli,
     llm,
 )
-from livekit.plugins import cartesia, deepgram, openai, silero
+from livekit.plugins import cartesia, deepgram, openai, anthropic, silero
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -705,6 +705,13 @@ async def entrypoint(ctx: JobContext):
     if not org_id:
         raise ValueError("organization_id missing in room metadata and PLATFORM_ORG_ID env not set")
 
+    # metadata'dan model oku, default Claude Sonnet 4.6
+    llm_model = meta.get("model", "claude-sonnet-4-6")
+    if llm_model.startswith("claude-"):
+        llm_instance = anthropic.LLM(model=llm_model)
+    else:
+        llm_instance = openai.LLM(model=llm_model)
+
     org      = await load_org(org_id)
     playbook = await load_playbook(org_id, channel="voice")
     intake   = await load_intake_schema(org_id, channel="voice")
@@ -816,7 +823,7 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
 
     session = AgentSession(
         stt=deepgram.STT(model="nova-2", language=tts_lang),
-        llm=openai.LLM(model="gpt-4o-mini"),
+        llm=llm_instance,
         tts=cartesia.TTS(
             model="sonic-3",
             voice=VOICE_IDS[tts_lang],
