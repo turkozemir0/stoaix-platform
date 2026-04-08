@@ -18,22 +18,23 @@ export async function GET(req: NextRequest) {
   const state       = searchParams.get('state')
   const oauthError  = searchParams.get('error')
 
-  const adminBase = '/admin'
-
-  // User denied or Google returned an error
+  // User denied or Google returned an error (state may be missing, fall back to settings)
+  const fallbackBase = '/dashboard/settings'
   if (oauthError || !code || !state) {
     const reason = oauthError ?? 'cancelled'
-    return NextResponse.redirect(new URL(`${adminBase}?calendar_error=${reason}`, req.url))
+    return NextResponse.redirect(new URL(`${fallbackBase}?calendar_error=${reason}`, req.url))
   }
 
-  // Decode state to get org_id
+  // Decode state to get org_id + redirect_to
   let orgId: string
+  let redirectBase: string = fallbackBase
   try {
     const decoded = JSON.parse(Buffer.from(state, 'base64url').toString('utf8'))
     orgId = decoded.org_id
     if (!orgId) throw new Error('no org_id in state')
+    if (decoded.redirect_to) redirectBase = decoded.redirect_to
   } catch {
-    return NextResponse.redirect(new URL(`${adminBase}?calendar_error=invalid_state`, req.url))
+    return NextResponse.redirect(new URL(`${fallbackBase}?calendar_error=invalid_state`, req.url))
   }
 
   const clientId     = process.env.GOOGLE_CLIENT_ID!
@@ -61,7 +62,7 @@ export async function GET(req: NextRequest) {
 
     if (!tokenRes.ok) {
       console.error('[calendar/callback] token exchange failed:', await tokenRes.text())
-      return NextResponse.redirect(new URL(`${adminBase}?calendar_error=token_exchange`, req.url))
+      return NextResponse.redirect(new URL(`${redirectBase}?calendar_error=token_exchange`, req.url))
     }
 
     const tokenData = await tokenRes.json()
@@ -72,7 +73,7 @@ export async function GET(req: NextRequest) {
       : undefined
   } catch (err) {
     console.error('[calendar/callback] fetch error:', err)
-    return NextResponse.redirect(new URL(`${adminBase}?calendar_error=token_exchange`, req.url))
+    return NextResponse.redirect(new URL(`${redirectBase}?calendar_error=token_exchange`, req.url))
   }
 
   // Merge tokens into channel_config.calendar (preserve existing fields like calendar_id)
@@ -85,7 +86,7 @@ export async function GET(req: NextRequest) {
     .single()
 
   if (!org) {
-    return NextResponse.redirect(new URL(`${adminBase}?calendar_error=org_not_found`, req.url))
+    return NextResponse.redirect(new URL(`${redirectBase}?calendar_error=org_not_found`, req.url))
   }
 
   const channelConfig  = (org.channel_config ?? {}) as Record<string, unknown>
@@ -106,9 +107,9 @@ export async function GET(req: NextRequest) {
 
   if (updateErr) {
     console.error('[calendar/callback] db update failed:', updateErr)
-    return NextResponse.redirect(new URL(`${adminBase}?calendar_error=save_failed`, req.url))
+    return NextResponse.redirect(new URL(`${redirectBase}?calendar_error=save_failed`, req.url))
   }
 
   // Redirect back to admin — modal will show "Google Takvim bağlı" on next open
-  return NextResponse.redirect(new URL(`${adminBase}?calendar_connected=${orgId}`, req.url))
+  return NextResponse.redirect(new URL(`${redirectBase}?calendar_connected=${orgId}`, req.url))
 }

@@ -19,17 +19,35 @@ async function isSuperAdmin(userId: string): Promise<boolean> {
   return !!data
 }
 
-// GET /api/calendar/auth?org_id=<uuid>
+// GET /api/calendar/auth?org_id=<uuid>  (super admin — any org)
+// GET /api/calendar/auth                 (org user — own org)
 // Redirects to Google OAuth consent screen.
 // Required env vars: GOOGLE_CLIENT_ID, NEXT_PUBLIC_APP_URL
 export async function GET(req: NextRequest) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(new URL('/login', req.url))
-  if (!await isSuperAdmin(user.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const orgId = req.nextUrl.searchParams.get('org_id')
-  if (!orgId) return NextResponse.json({ error: 'org_id gerekli' }, { status: 400 })
+  const service = getServiceClient()
+  const paramOrgId = req.nextUrl.searchParams.get('org_id')
+
+  let orgId: string | null = null
+  const isAdmin = await isSuperAdmin(user.id)
+
+  if (isAdmin) {
+    // Super admin: use org_id from query param
+    orgId = paramOrgId
+  } else {
+    // Org user: use their own org
+    const { data: orgUser } = await service
+      .from('org_users')
+      .select('organization_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    orgId = orgUser?.organization_id ?? null
+  }
+
+  if (!orgId) return NextResponse.json({ error: 'org_id bulunamadı' }, { status: 400 })
 
   const clientId = process.env.GOOGLE_CLIENT_ID
   if (!clientId) return NextResponse.json({ error: 'GOOGLE_CLIENT_ID yapılandırılmamış' }, { status: 500 })
@@ -37,8 +55,9 @@ export async function GET(req: NextRequest) {
   const appUrl     = process.env.NEXT_PUBLIC_APP_URL ?? `https://${req.headers.get('host')}`
   const redirectUri = `${appUrl}/api/calendar/callback`
 
-  // state = base64url(JSON) — callback uses this to know which org to update
-  const state = Buffer.from(JSON.stringify({ org_id: orgId })).toString('base64url')
+  // state = base64url(JSON) — callback uses this to know which org to update + where to redirect
+  const redirectTo = isAdmin ? '/admin' : '/dashboard/settings'
+  const state = Buffer.from(JSON.stringify({ org_id: orgId, redirect_to: redirectTo })).toString('base64url')
 
   const authParams = new URLSearchParams({
     client_id:     clientId,
