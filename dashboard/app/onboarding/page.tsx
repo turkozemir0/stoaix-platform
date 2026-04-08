@@ -308,6 +308,9 @@ function OnboardingForm() {
   const [selectedFaqIndices, setSelectedFaqIndices] = useState<number[]>(
     config.suggestedFaqs.map((f, i) => (f.preSelected ? i : -1)).filter(i => i >= 0)
   )
+  const [customFaqs, setCustomFaqs] = useState<Array<{ q: string; a: string }>>([])
+  const [newFaqQ, setNewFaqQ] = useState('')
+  const [newFaqA, setNewFaqA] = useState('')
   const [pricingValues, setPricingValues] = useState<Record<string, string>>({})
   const [pricingExpanded, setPricingExpanded] = useState(true)
 
@@ -410,6 +413,20 @@ function OnboardingForm() {
       for (const idx of selectedFaqIndices) {
         const faq = config.suggestedFaqs[idx]
         if (!faq) continue
+        kbCalls.push(fetch('/api/knowledge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: faq.q,
+            data: { question: faq.q, answer: faq.a },
+            item_type: 'faq',
+            organization_id: orgId,
+          }),
+        }))
+      }
+
+      // Custom FAQs
+      for (const faq of customFaqs) {
         kbCalls.push(fetch('/api/knowledge', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -734,8 +751,59 @@ function OnboardingForm() {
         </div>
 
         <p className="text-xs text-slate-400 mt-2">
-          {selectedFaqIndices.length} / {config.suggestedFaqs.length} soru seçildi
+          {selectedFaqIndices.length + customFaqs.length} / {config.suggestedFaqs.length + customFaqs.length} soru seçildi
         </p>
+
+        {/* Custom FAQ entry */}
+        <div className="mt-4 border-t border-slate-200 pt-4">
+          <p className="text-xs font-semibold text-slate-600 mb-2">Kendi sorunuzu ekleyin</p>
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={newFaqQ}
+              onChange={e => setNewFaqQ(e.target.value)}
+              placeholder="Soru (ör. Randevumu nasıl iptal ederim?)"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-400"
+            />
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newFaqA}
+                onChange={e => setNewFaqA(e.target.value)}
+                placeholder="Cevap"
+                className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-400"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (newFaqQ.trim() && newFaqA.trim()) {
+                    setCustomFaqs(prev => [...prev, { q: newFaqQ.trim(), a: newFaqA.trim() }])
+                    setNewFaqQ('')
+                    setNewFaqA('')
+                  }
+                }}
+                className="px-3 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          {customFaqs.length > 0 && (
+            <div className="mt-2 space-y-1.5">
+              {customFaqs.map((faq, i) => (
+                <div key={i} className="flex items-start gap-2 px-3 py-2 bg-brand-50 border border-brand-200 rounded-lg">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-slate-800 truncate">{faq.q}</p>
+                    <p className="text-xs text-slate-500 line-clamp-1">{faq.a}</p>
+                  </div>
+                  <button type="button" onClick={() => setCustomFaqs(prev => prev.filter((_, idx) => idx !== i))}>
+                    <X className="w-3.5 h-3.5 text-slate-400 hover:text-red-500 flex-shrink-0 mt-0.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Fiyatlandırma */}
