@@ -63,9 +63,14 @@ export async function GET(req: NextRequest) {
       .maybeSingle(),
   ])
 
+  const raw = pb?.routing_rules
+  const routing_rules = Array.isArray(raw) || !raw
+    ? { transfer_numbers: {}, rules: Array.isArray(raw) ? raw : [] }
+    : raw
+
   return NextResponse.json({
-    playbook_id:   pb?.id ?? null,
-    routing_rules: pb?.routing_rules ?? { transfer_numbers: {}, rules: [] },
+    playbook_id: pb?.id ?? null,
+    routing_rules,
     working_hours: org?.working_hours ?? {},
   })
 }

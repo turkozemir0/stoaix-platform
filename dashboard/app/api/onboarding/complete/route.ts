@@ -103,7 +103,7 @@ export async function POST(_request: NextRequest) {
       channel: 'voice',
       system_prompt_template: systemPrompt,
       hard_blocks: [],
-      routing_rules: [],
+      routing_rules: { transfer_numbers: {}, rules: [] },
       is_active: true,
     })
   }
@@ -115,7 +115,7 @@ export async function POST(_request: NextRequest) {
       channel: 'whatsapp',
       system_prompt_template: systemPrompt,
       hard_blocks: [],
-      routing_rules: [],
+      routing_rules: { transfer_numbers: {}, rules: [] },
       is_active: true,
     })
   }

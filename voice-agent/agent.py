@@ -228,6 +228,7 @@ def build_system_prompt(
     intake_fields: list,
     kb_context: str,
     calendar_enabled: bool = False,
+    lang: str = "tr",
 ) -> str:
     persona      = org.get("ai_persona", {})
     persona_name = persona.get("persona_name", "Asistan")
@@ -291,7 +292,7 @@ VERİ TOPLAMA TARZI (ÇOK ÖNEMLİ):
 - Detaylı program açıklaması yapma — sadece doğrudan sorulursa, 1-2 cümle ile kısa yanıt ver.
 - Bilgileri tek seferde sormak YASAK. Birer birer, sırayla sor.
 - Kullanıcı zaten bir bilgiyi paylaştıysa tekrar sorma.
-- Tüm zorunlu bilgiler toplandığında: "Bilgilerinizi not aldım, bir danışmanımız sizi en kısa sürede arayacak." de ve görüşmeyi nazikçe sonlandır.
+- Tüm zorunlu bilgiler toplandığında: "{"I've noted your information, one of our consultants will reach out to you shortly." if lang == "en" else "Bilgilerinizi not aldım, bir danışmanımız sizi en kısa sürede arayacak."}" de ve görüşmeyi nazikçe sonlandır.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 YÖNLENDİRME KURALLARI:{routing_text if routing_text else " (tanımlı kural yok)"}
@@ -699,6 +700,14 @@ async def entrypoint(ctx: JobContext):
     except json.JSONDecodeError:
         meta = {}
 
+    # AgentDispatch metadata'sı ctx.job.metadata'da gelir (room.metadata değil)
+    if not meta.get("organization_id"):
+        try:
+            job_meta = json.loads(ctx.job.metadata or "{}")
+            meta.update(job_meta)
+        except (json.JSONDecodeError, AttributeError):
+            pass
+
     org_id   = meta.get("organization_id") or os.environ.get("PLATFORM_ORG_ID")
     scenario = meta.get("scenario")
 
@@ -740,7 +749,7 @@ async def entrypoint(ctx: JobContext):
     # ── İnbound ───────────────────────────────────────────────────────────────
     if not scenario:
         initial_kb = ""  # Başlangıçta KB yükleme — şehir/ofis varsayımını önler, sorular gelince dinamik yüklenir
-        system_prompt = build_system_prompt(org, playbook, intake, initial_kb, calendar_enabled)
+        system_prompt = build_system_prompt(org, playbook, intake, initial_kb, calendar_enabled, lang)
         opening    = (playbook or {}).get("opening_message") or f"Merhaba, {org['name']}."
         direction  = "inbound"
         phone_from = _get_sip_caller_number(ctx) or meta.get("phone_from", "")
@@ -817,12 +826,12 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
     # ── Session ───────────────────────────────────────────────────────────────
     VOICE_IDS = {
         "tr": os.environ.get("CARTESIA_VOICE_ID_TR", "c1cfee3d-532d-47f8-8dd2-8e5b2b66bf1d"),
-        "en": os.environ.get("CARTESIA_VOICE_ID_EN", "b7d50908-b17c-442d-ad8d-810c63997ed9"),
+        "en": os.environ.get("CARTESIA_VOICE_ID_EN", "62ae83ad-4f6a-430b-af41-a9bede9286ca"),
     }
     tts_lang = lang if lang in VOICE_IDS else "tr"
 
     session = AgentSession(
-        stt=deepgram.STT(model="nova-2", language=tts_lang),
+        stt=deepgram.STT(model="nova-3", language=tts_lang),
         llm=llm_instance,
         tts=cartesia.TTS(
             model="sonic-3",
