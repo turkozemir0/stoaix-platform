@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, MessageSquare, Phone, BookOpen, Settings, LogOut, ShieldCheck, LifeBuoy, Bot, RefreshCw, ClipboardList, Menu, X, Target, HeartHandshake, FileText, Wallet } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Phone, BookOpen, Settings, LogOut, ShieldCheck, LifeBuoy, Bot, RefreshCw, ClipboardList, Menu, X, Target, HeartHandshake, FileText, Wallet, Calendar } from 'lucide-react'
 import { useT, useLang } from '@/lib/lang-context'
 import { createClient } from '@/lib/supabase/client'
 import NotificationBell from './NotificationBell'
@@ -33,6 +33,7 @@ export default function Sidebar({ orgName, isSuperAdmin, userRole, userId, orgId
     { href: '/dashboard/knowledge',     label: t.knowledge,      icon: BookOpen,        roles: ['admin','viewer','yönetici','satisci'] },
     { href: '/dashboard/agent',         label: 'AI Assistant',   icon: Bot,             roles: ['admin','yönetici','satisci'] },
     { href: '/dashboard/followup',      label: 'Follow-up',      icon: RefreshCw,       roles: ['admin','yönetici','satisci'] },
+    { href: '/dashboard/calendar',      label: lang === 'tr' ? 'Takvim' : 'Calendar', icon: Calendar, roles: ['admin','yönetici','satisci'] },
     { href: '/dashboard/support',       label: t.tickets,        icon: LifeBuoy,        roles: ['admin','viewer','yönetici'] },
     { href: '/dashboard/settings',      label: lang === 'tr' ? 'Ayarlar' : 'Settings', icon: Settings, roles: ['admin','yönetici','satisci'] },
   ]
