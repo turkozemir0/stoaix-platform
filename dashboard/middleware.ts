@@ -32,7 +32,10 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/login') ||
     pathname.startsWith('/register') ||
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/api/')
+    pathname.startsWith('/api/') ||
+    pathname === '/privacy' ||
+    pathname === '/terms' ||
+    pathname === '/'
   ) {
     return supabaseResponse
   }
