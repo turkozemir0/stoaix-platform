@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, Suspense } from 'react'
-import { Settings, Trash2, Plus, Loader2, Calendar, CheckCircle2, ExternalLink } from 'lucide-react'
+import { Settings, Trash2, Plus, Loader2, Calendar, CheckCircle2, ExternalLink, Instagram, X } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -72,6 +72,103 @@ function CalendarSection() {
           >
             <Calendar size={14} />
             Google Takvim Bağla
+            <ExternalLink size={13} className="opacity-70" />
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
+function InstagramSection() {
+  const searchParams = useSearchParams()
+  const [igState, setIgState] = useState<{ connected: boolean; username?: string } | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [disconnecting, setDisconnecting] = useState(false)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      const { data: orgUser } = await supabase
+        .from('org_users')
+        .select('organization_id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (!orgUser) { setLoading(false); return }
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('channel_config')
+        .eq('id', orgUser.organization_id)
+        .single()
+      const ig = (org?.channel_config as any)?.instagram
+      const creds = ig?.credentials
+      setIgState({
+        connected: !!(ig?.active && creds?.page_id),
+        username: creds?.username,
+      })
+      setLoading(false)
+    })
+  }, [searchParams.get('instagram')])
+
+  const justConnected = searchParams.get('instagram') === 'connected'
+  const error = searchParams.get('instagram_error')
+  const connected = justConnected || igState?.connected
+
+  async function disconnect() {
+    setDisconnecting(true)
+    try {
+      await fetch('/api/instagram/disconnect', { method: 'DELETE' })
+      setIgState({ connected: false })
+      // Remove query param without full reload
+      window.history.replaceState({}, '', '/dashboard/settings')
+    } finally {
+      setDisconnecting(false)
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-6">
+      <div className="flex items-center gap-2 mb-1">
+        <Instagram size={16} className="text-pink-500" />
+        <h2 className="font-semibold text-slate-800">Instagram DM</h2>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">
+        Instagram hesabınızı bağlayın, gelen DM&apos;ler otomatik yönetilsin.
+      </p>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-slate-400 text-sm">
+          <Loader2 size={14} className="animate-spin" /> Yükleniyor...
+        </div>
+      ) : connected ? (
+        <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm">
+          <CheckCircle2 size={16} />
+          <span className="font-medium">
+            Bağlı{igState?.username ? ` — @${igState.username}` : ''}
+          </span>
+          <button
+            onClick={disconnect}
+            disabled={disconnecting}
+            className="ml-auto flex items-center gap-1 text-xs text-slate-500 hover:text-red-500 transition-colors"
+          >
+            {disconnecting ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
+            Bağlantıyı Kes
+          </button>
+        </div>
+      ) : (
+        <>
+          {error && (
+            <p className="text-sm text-red-500 mb-3">
+              Bağlantı başarısız: {error}
+            </p>
+          )}
+          <button
+            onClick={() => { window.location.href = '/api/instagram/auth' }}
+            className="flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
+          >
+            <Instagram size={14} />
+            Instagram&apos;ı Bağla
             <ExternalLink size={13} className="opacity-70" />
           </button>
         </>
@@ -198,6 +295,9 @@ export default function SettingsPage() {
       <div className="space-y-6">
         <Suspense fallback={<div className="bg-white rounded-xl border border-slate-200 p-6 text-sm text-slate-400">Yükleniyor...</div>}>
           <CalendarSection />
+        </Suspense>
+        <Suspense fallback={<div className="bg-white rounded-xl border border-slate-200 p-6 text-sm text-slate-400">Yükleniyor...</div>}>
+          <InstagramSection />
         </Suspense>
         <ExcludedPhonesSection />
       </div>
