@@ -144,18 +144,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL(`${redirectBase}?instagram_error=save_failed`, req.url))
   }
 
-  // Step 5: Auto-subscribe page to webhook messages
-  try {
-    const appUrl2 = process.env.NEXT_PUBLIC_APP_URL ?? `https://${req.headers.get('host')}`
-    await fetch(`${appUrl2}/api/admin/instagram/subscribe`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ org_id: orgId }),
-    })
-  } catch (err) {
-    // Non-fatal — subscription can be retried manually
-    console.warn('[instagram/callback] auto-subscribe failed (non-fatal):', err)
-  }
+  // Note: page-level /subscribed_apps subscription requires pages_messaging permission.
+  // App-level webhook subscription (configured in Meta App Dashboard) may be sufficient.
+  // Manual subscribe available at: POST /api/admin/instagram/subscribe
 
   return NextResponse.redirect(new URL(`${redirectBase}?instagram=connected`, req.url))
 }
