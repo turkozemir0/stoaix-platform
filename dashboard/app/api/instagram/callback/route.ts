@@ -79,6 +79,7 @@ export async function GET(req: NextRequest) {
 
   // Step 3: Get pages + linked Instagram business account
   let igUserId: string
+  let fbPageId: string
   let pageToken: string
   let username: string
   try {
@@ -98,7 +99,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(new URL(`${redirectBase}?instagram_error=no_instagram_account`, req.url))
     }
 
-    igUserId  = page.instagram_business_account.id
+    igUserId  = page.instagram_business_account.id  // Instagram Business Account ID (for webhook matching)
+    fbPageId  = page.id                             // Facebook Page ID (for /subscribed_apps)
     pageToken = page.access_token   // page token fetched via long-lived user token — never expires
     username  = page.instagram_business_account.username ?? ''
   } catch (err) {
@@ -124,7 +126,8 @@ export async function GET(req: NextRequest) {
   const updatedInstagram = {
     active: true,
     credentials: {
-      page_id:      igUserId,
+      page_id:      igUserId,   // Instagram Business Account ID — used for webhook matching
+      fb_page_id:   fbPageId,   // Facebook Page ID — used for subscribed_apps subscription
       access_token: pageToken,
       username,
       connected_at: new Date().toISOString(),
