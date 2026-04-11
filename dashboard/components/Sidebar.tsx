@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, MessageSquare, Phone, BookOpen, Settings, LogOut, ShieldCheck, LifeBuoy, Bot, RefreshCw, ClipboardList, Menu, X, Target, HeartHandshake, FileText, Wallet, Calendar } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Phone, BookOpen, Settings, LogOut, ShieldCheck, LifeBuoy, Bot, RefreshCw, ClipboardList, Menu, X, Target, HeartHandshake, FileText, Wallet, Calendar, Inbox } from 'lucide-react'
 import { useT, useLang } from '@/lib/lang-context'
 import { createClient } from '@/lib/supabase/client'
 import NotificationBell from './NotificationBell'
@@ -26,6 +26,7 @@ export default function Sidebar({ orgName, isSuperAdmin, userRole, userId, orgId
   const allNavItems = [
     { href: '/dashboard',               label: t.overview,       icon: LayoutDashboard, roles: null },
     { href: '/dashboard/leads',         label: 'Leads',          icon: Target,          roles: null },
+    { href: '/dashboard/inbox',         label: lang === 'tr' ? 'Gelen Kutusu' : 'Inbox', icon: Inbox, roles: ['admin','viewer','yönetici','satisci'] },
     { href: '/dashboard/conversations', label: t.conversations,  icon: MessageSquare,   roles: ['admin','viewer','yönetici','satisci'] },
     { href: '/dashboard/calls',         label: t.calls,          icon: Phone,           roles: ['admin','viewer','yönetici','satisci'] },
     { href: '/dashboard/proposals',     label: lang === 'tr' ? 'Teklifler' : 'Proposals', icon: FileText, roles: ['admin','yönetici','satisci','muhasebe'] },
