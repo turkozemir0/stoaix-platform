@@ -44,12 +44,12 @@ export async function GET(request: NextRequest) {
   let query = service
     .from('conversations')
     .select(`
-      id, channel, mode, status, updated_at,
+      id, channel, mode, status, started_at,
       contact:contacts(id, full_name, phone, channel_identifiers),
       lead:leads(id, qualification_score, status)
     `)
     .eq('organization_id', orgId)
-    .order('updated_at', { ascending: false })
+    .order('started_at', { ascending: false })
     .limit(50)
 
   if (channel && channel !== 'all') {

@@ -31,7 +31,7 @@ interface Conversation {
   channel: 'whatsapp' | 'instagram' | 'voice' | string
   mode: 'ai' | 'human' | string
   status: string
-  updated_at: string
+  started_at: string
   contact: Contact | null
   lead: Lead | null
   last_message: LastMessage | null
@@ -199,10 +199,15 @@ export default function InboxClient({ orgId, lang }: Props) {
     return () => { supabase.removeChannel(channel) }
   }, [selectedId, supabase])
 
-  // ─── Realtime: conversation list updates ────────────────────────────────
+  // ─── Realtime: conversation list updates (INSERT + UPDATE) ─────────────
   useEffect(() => {
     const channel = supabase
       .channel(`inbox-convs-${orgId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'conversations', filter: `organization_id=eq.${orgId}` },
+        () => { void fetchConversations() }
+      )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'conversations', filter: `organization_id=eq.${orgId}` },
@@ -322,7 +327,7 @@ export default function InboxClient({ orgId, lang }: Props) {
                     {conv.contact?.full_name ?? conv.contact?.phone ?? '—'}
                   </p>
                   <span className="text-[11px] text-slate-400 shrink-0">
-                    {timeAgo(conv.updated_at, lang)}
+                    {timeAgo(conv.started_at, lang)}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 mb-1">
