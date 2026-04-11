@@ -1,9 +1,28 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
-import { Settings, Trash2, Plus, Loader2, Calendar, CheckCircle2, ExternalLink, Instagram, X } from 'lucide-react'
+import { useState, useEffect, useRef, Suspense } from 'react'
+import { Settings, Trash2, Plus, Loader2, Calendar, CheckCircle2, ExternalLink, Instagram, X, MessageCircle } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+
+// ─── Facebook SDK type shim ───────────────────────────────────────────────────
+declare global {
+  interface Window {
+    FB: any
+    fbAsyncInit: () => void
+  }
+}
+
+function loadFbSdk(appId: string) {
+  if (document.getElementById('facebook-jssdk')) return
+  window.fbAsyncInit = function () {
+    window.FB.init({ appId, cookie: true, xfbml: false, version: 'v19.0' })
+  }
+  const script = document.createElement('script')
+  script.id  = 'facebook-jssdk'
+  script.src = 'https://connect.facebook.net/en_US/sdk.js'
+  document.body.appendChild(script)
+}
 
 function CalendarSection() {
   const searchParams = useSearchParams()
@@ -177,6 +196,164 @@ function InstagramSection() {
   )
 }
 
+function WhatsAppSection() {
+  const [waState, setWaState]       = useState<{ connected: boolean; phone?: string } | null>(null)
+  const [loading, setLoading]       = useState(true)
+  const [connecting, setConnecting] = useState(false)
+  const [disconnecting, setDisconnecting] = useState(false)
+  const [error, setError]           = useState('')
+  const waSessionInfo = useRef<{ phone_number_id?: string; waba_id?: string } | null>(null)
+
+  useEffect(() => {
+    const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID
+    if (appId) loadFbSdk(appId)
+
+    const supabase = createClient()
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      const { data: orgUser } = await supabase
+        .from('org_users')
+        .select('organization_id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (!orgUser) { setLoading(false); return }
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('channel_config')
+        .eq('id', orgUser.organization_id)
+        .single()
+      const wa    = (org?.channel_config as any)?.whatsapp
+      const creds = wa?.credentials
+      setWaState({
+        connected: !!(wa?.active && creds?.phone_number_id),
+        phone:     creds?.phone_number,
+      })
+      setLoading(false)
+    })
+  }, [])
+
+  // Listen for Embedded Signup session info (WABA + phone_number_id from Meta popup)
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== 'https://www.facebook.com') return
+      try {
+        const data = JSON.parse(event.data)
+        if (data.type === 'WA_EMBEDDED_SIGNUP' && data.event === 'FINISH') {
+          waSessionInfo.current = {
+            phone_number_id: data.data?.phone_number_id,
+            waba_id:         data.data?.waba_id,
+          }
+        }
+      } catch {}
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+
+  async function connect() {
+    if (!window.FB) {
+      setError('Facebook SDK yüklenemedi, sayfayı yenileyin.')
+      return
+    }
+    setConnecting(true)
+    setError('')
+    waSessionInfo.current = null
+
+    window.FB.login(async (response: any) => {
+      try {
+        if (!response?.authResponse?.code) {
+          setError('Bağlantı iptal edildi veya yetki verilmedi.')
+          return
+        }
+        const sessionInfo = waSessionInfo.current ?? {}
+        const res = await fetch('/api/whatsapp/callback', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code:            response.authResponse.code,
+            phone_number_id: sessionInfo.phone_number_id,
+            waba_id:         sessionInfo.waba_id,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error ?? 'Bağlantı başarısız')
+        setWaState({ connected: true, phone: data.phone_number })
+      } catch (e: any) {
+        setError(e.message ?? 'Bağlantı başarısız')
+      } finally {
+        setConnecting(false)
+      }
+    }, {
+      config_id:                    process.env.NEXT_PUBLIC_META_WA_CONFIG_ID,
+      response_type:                'code',
+      override_default_response_type: true,
+      extras: { sessionInfoVersion: '3' },
+    })
+  }
+
+  async function disconnect() {
+    setDisconnecting(true)
+    try {
+      await fetch('/api/whatsapp/disconnect', { method: 'DELETE' })
+      setWaState({ connected: false })
+    } finally {
+      setDisconnecting(false)
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-6">
+      <div className="flex items-center gap-2 mb-1">
+        <MessageCircle size={16} className="text-green-500" />
+        <h2 className="font-semibold text-slate-800">WhatsApp</h2>
+        <span className="ml-1 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+          Yakında
+        </span>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">
+        WhatsApp Business hesabınızı bağlayın, gelen mesajlar otomatik yönetilsin.
+      </p>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-slate-400 text-sm">
+          <Loader2 size={14} className="animate-spin" /> Yükleniyor...
+        </div>
+      ) : waState?.connected ? (
+        <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm">
+          <CheckCircle2 size={16} />
+          <span className="font-medium">
+            Bağlı{waState.phone ? ` — ${waState.phone}` : ''}
+          </span>
+          <button
+            onClick={disconnect}
+            disabled={disconnecting}
+            className="ml-auto flex items-center gap-1 text-xs text-slate-500 hover:text-red-500 transition-colors"
+          >
+            {disconnecting ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
+            Bağlantıyı Kes
+          </button>
+        </div>
+      ) : (
+        <>
+          {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
+          <button
+            onClick={connect}
+            disabled={connecting}
+            className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-60 transition-colors"
+          >
+            {connecting
+              ? <Loader2 size={14} className="animate-spin" />
+              : <MessageCircle size={14} />
+            }
+            WhatsApp Bağla
+            <ExternalLink size={13} className="opacity-70" />
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 function ExcludedPhonesSection() {
   const [phones, setPhones] = useState<string[]>([])
   const [input, setInput] = useState('')
@@ -294,10 +471,13 @@ export default function SettingsPage() {
 
       <div className="space-y-6">
         <Suspense fallback={<div className="bg-white rounded-xl border border-slate-200 p-6 text-sm text-slate-400">Yükleniyor...</div>}>
-          <CalendarSection />
+          <WhatsAppSection />
         </Suspense>
         <Suspense fallback={<div className="bg-white rounded-xl border border-slate-200 p-6 text-sm text-slate-400">Yükleniyor...</div>}>
           <InstagramSection />
+        </Suspense>
+        <Suspense fallback={<div className="bg-white rounded-xl border border-slate-200 p-6 text-sm text-slate-400">Yükleniyor...</div>}>
+          <CalendarSection />
         </Suspense>
         <ExcludedPhonesSection />
       </div>

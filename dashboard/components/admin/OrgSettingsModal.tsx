@@ -322,6 +322,7 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
   // ── Save ──
   async function handleSave() {
     setSaving(true); setError('')
+    try {
 
     const voiceInbound: VoiceInboundConfig = {
       active: inbActive,
@@ -375,12 +376,31 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
       }
     }
 
+    // Fetch current channel_config to preserve OAuth tokens (Instagram credentials, Google Calendar tokens)
+    // that are set via separate OAuth flows and not managed by this modal.
+    const currentRes = await fetch(`/api/admin/orgs/${orgId}`)
+    if (!currentRes.ok) {
+      setError('Mevcut ayarlar alınamadı, lütfen tekrar deneyin.')
+      setSaving(false)
+      return
+    }
+    const currentData = await currentRes.json()
+    const existingCC = (currentData.channel_config ?? {}) as any
+
     const channelConfig: ChannelConfig = {
       voice_inbound:  voiceInbound,
       voice_outbound: voiceOutbound,
       whatsapp: waActive ? { active: true, provider: waProvider, credentials: waCreds } : { active: false },
-      instagram: { active: igActive },
-      calendar: calendarConfig,
+      // Preserve Instagram OAuth credentials — only toggle active flag here
+      instagram: { ...existingCC.instagram, active: igActive },
+      // Preserve Google Calendar OAuth tokens — UI only changes provider/calendar_id
+      calendar: calProvider === 'google'
+        ? {
+            ...existingCC.calendar,
+            provider:    'google',
+            calendar_id: calCalendarId.trim() || 'primary',
+          }
+        : calendarConfig,
     }
 
     let crmConfig: CrmConfig = { provider: 'none' }
@@ -406,8 +426,13 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
       body: JSON.stringify({ channel_config: channelConfig, crm_config: crmConfig }),
     })
 
-    if (!res.ok) { const d = await res.json(); setError(d.error || 'Kayıt başarısız'); setSaving(false); return }
-    setSaving(false); onSaved(); onClose()
+      if (!res.ok) { const d = await res.json(); setError(d.error || 'Kayıt başarısız'); return }
+      onSaved(); onClose()
+    } catch (e: any) {
+      setError(e.message ?? 'Beklenmeyen hata oluştu')
+    } finally {
+      setSaving(false)
+    }
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -480,9 +505,13 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
                           )}
                           {waProvider === 'whatsapp_cloud' && (
                             <div className="space-y-3">
-                              <Field label="Phone Number ID" value={waCreds.phone_number_id ?? ''} onChange={v => setWaCreds(c => ({ ...c, phone_number_id: v }))} placeholder="123456789012345" />
-                              <Field label="Access Token" value={waCreds.access_token ?? ''} onChange={v => setWaCreds(c => ({ ...c, access_token: v }))} placeholder="EAAx..." />
-                              <Field label="Webhook Verify Token" value={waCreds.verify_token ?? ''} onChange={v => setWaCreds(c => ({ ...c, verify_token: v }))} placeholder="stoaix_verify_xyz" />
+                              <div className="bg-green-50 border border-green-100 rounded-lg px-3 py-2.5 text-xs text-green-700">
+                                <strong>Webhook URL:</strong>{' '}
+                                <code className="font-mono break-all">https://ablntzdbsrzbqyrnfwpl.supabase.co/functions/v1/meta-whatsapp-inbound</code>
+                                <p className="mt-1 text-green-600">Meta App Dashboard → WhatsApp → Configuration → Webhook URL olarak girin. Verify Token: Supabase Edge Function env <code>META_WEBHOOK_VERIFY_TOKEN</code> değeri.</p>
+                              </div>
+                              <Field label="Phone Number ID" value={waCreds.phone_number_id ?? ''} onChange={v => setWaCreds(c => ({ ...c, phone_number_id: v }))} placeholder="123456789012345" hint="Meta App → WhatsApp → Phone Numbers'dan alın" />
+                              <Field label="Access Token (System User Token)" value={waCreds.access_token ?? ''} onChange={v => setWaCreds(c => ({ ...c, access_token: v }))} placeholder="EAAx..." hint="Meta Business Suite → System Users → Generate Token" />
                             </div>
                           )}
                           {waProvider === 'wati' && (

@@ -86,28 +86,49 @@ export async function POST(request: NextRequest) {
   const text = content.trim()
 
   if (conv.channel === 'whatsapp') {
+    const waProvider = channelConfig?.whatsapp?.provider ?? '360dialog'
     const creds = channelConfig?.whatsapp?.credentials
-    if (!creds?.client_token) {
-      return NextResponse.json({ error: '360dialog credentials eksik' }, { status: 400 })
-    }
     const waId = (contact.phone ?? '').replace(/^\+/, '')
     if (!waId) return NextResponse.json({ error: 'Telefon numarası bulunamadı' }, { status: 400 })
 
-    const res = await fetch('https://waba.360dialog.io/v1/messages', {
-      method: 'POST',
-      headers: { 'D360-API-KEY': creds.client_token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: waId,
-        type: 'text',
-        text: { body: text },
-      }),
-    })
-    if (!res.ok) {
-      const errText = await res.text()
-      console.error(`[inbox/reply] 360dialog send failed ${res.status}: ${errText}`)
-      return NextResponse.json({ error: 'Mesaj gönderilemedi' }, { status: 502 })
+    if (waProvider === 'whatsapp_cloud') {
+      if (!creds?.access_token || !creds?.phone_number_id) {
+        return NextResponse.json({ error: 'WhatsApp Cloud credentials eksik' }, { status: 400 })
+      }
+      const res = await fetch(
+        `https://graph.facebook.com/v19.0/${creds.phone_number_id}/messages`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${creds.access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messaging_product: 'whatsapp', to: waId, type: 'text', text: { body: text } }),
+        }
+      )
+      if (!res.ok) {
+        const errText = await res.text()
+        console.error(`[inbox/reply] Meta WA send failed ${res.status}: ${errText}`)
+        return NextResponse.json({ error: 'Mesaj gönderilemedi' }, { status: 502 })
+      }
+    } else {
+      // 360dialog (default)
+      if (!creds?.client_token) {
+        return NextResponse.json({ error: '360dialog credentials eksik' }, { status: 400 })
+      }
+      const res = await fetch('https://waba.360dialog.io/v1/messages', {
+        method: 'POST',
+        headers: { 'D360-API-KEY': creds.client_token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: waId,
+          type: 'text',
+          text: { body: text },
+        }),
+      })
+      if (!res.ok) {
+        const errText = await res.text()
+        console.error(`[inbox/reply] 360dialog send failed ${res.status}: ${errText}`)
+        return NextResponse.json({ error: 'Mesaj gönderilemedi' }, { status: 502 })
+      }
     }
 
   } else if (conv.channel === 'instagram') {
