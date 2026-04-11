@@ -101,3 +101,12 @@ button, a {
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.06);
   backdrop-filter: blur(14px);
 }
+
+/* Scrollbar utilities */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

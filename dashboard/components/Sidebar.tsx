@@ -3,7 +3,12 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, MessageSquare, Phone, BookOpen, Settings, LogOut, ShieldCheck, LifeBuoy, Bot, RefreshCw, ClipboardList, Menu, X, Target, HeartHandshake, FileText, Wallet, Calendar, Inbox } from 'lucide-react'
+import {
+  LayoutDashboard, MessageSquare, Phone, BookOpen, Settings, LogOut,
+  ShieldCheck, LifeBuoy, Bot, RefreshCw, ClipboardList, Menu, X,
+  Target, HeartHandshake, FileText, Wallet, Calendar, Inbox,
+  ChevronLeft, ChevronRight,
+} from 'lucide-react'
 import { useT, useLang } from '@/lib/lang-context'
 import { createClient } from '@/lib/supabase/client'
 import NotificationBell from './NotificationBell'
@@ -20,33 +25,45 @@ export default function Sidebar({ orgName, isSuperAdmin, userRole, userId, orgId
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const t = useT()
   const { lang, setLang } = useLang()
 
+  // Persist collapsed state
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('sidebar-collapsed')
+      if (saved === 'true') setCollapsed(true)
+    } catch {}
+  }, [])
+
+  function toggleCollapsed() {
+    const next = !collapsed
+    setCollapsed(next)
+    try { localStorage.setItem('sidebar-collapsed', String(next)) } catch {}
+  }
+
   const allNavItems = [
-    { href: '/dashboard',               label: t.overview,       icon: LayoutDashboard, roles: null },
-    { href: '/dashboard/leads',         label: 'Leads',          icon: Target,          roles: null },
-    { href: '/dashboard/inbox',         label: lang === 'tr' ? 'Gelen Kutusu' : 'Inbox', icon: Inbox, roles: ['admin','viewer','yönetici','satisci'] },
-    { href: '/dashboard/conversations', label: t.conversations,  icon: MessageSquare,   roles: ['admin','viewer','yönetici','satisci'] },
-    { href: '/dashboard/calls',         label: t.calls,          icon: Phone,           roles: ['admin','viewer','yönetici','satisci'] },
-    { href: '/dashboard/proposals',     label: lang === 'tr' ? 'Teklifler' : 'Proposals', icon: FileText, roles: ['admin','yönetici','satisci','muhasebe'] },
-    { href: '/dashboard/payments',      label: lang === 'tr' ? 'Ödemeler' : 'Payments',   icon: Wallet,   roles: ['admin','yönetici','muhasebe'] },
-    { href: '/dashboard/knowledge',     label: t.knowledge,      icon: BookOpen,        roles: ['admin','viewer','yönetici','satisci'] },
-    { href: '/dashboard/agent',         label: 'AI Assistant',   icon: Bot,             roles: ['admin','yönetici','satisci'] },
-    { href: '/dashboard/followup',      label: 'Follow-up',      icon: RefreshCw,       roles: ['admin','yönetici','satisci'] },
-    { href: '/dashboard/calendar',      label: lang === 'tr' ? 'Takvim' : 'Calendar', icon: Calendar, roles: ['admin','yönetici','satisci'] },
-    { href: '/dashboard/support',       label: t.tickets,        icon: LifeBuoy,        roles: ['admin','viewer','yönetici'] },
-    { href: '/dashboard/settings',      label: lang === 'tr' ? 'Ayarlar' : 'Settings', icon: Settings, roles: ['admin','yönetici','satisci'] },
+    { href: '/dashboard',               label: t.overview,                                  icon: LayoutDashboard, roles: null },
+    { href: '/dashboard/leads',         label: 'Leads',                                     icon: Target,          roles: null },
+    { href: '/dashboard/inbox',         label: lang === 'tr' ? 'Gelen Kutusu' : 'Inbox',   icon: Inbox,           roles: ['admin','viewer','yönetici','satisci'] },
+    { href: '/dashboard/conversations', label: t.conversations,                             icon: MessageSquare,   roles: ['admin','viewer','yönetici','satisci'] },
+    { href: '/dashboard/calls',         label: t.calls,                                     icon: Phone,           roles: ['admin','viewer','yönetici','satisci'] },
+    { href: '/dashboard/proposals',     label: lang === 'tr' ? 'Teklifler' : 'Proposals',  icon: FileText,        roles: ['admin','yönetici','satisci','muhasebe'] },
+    { href: '/dashboard/payments',      label: lang === 'tr' ? 'Ödemeler' : 'Payments',    icon: Wallet,          roles: ['admin','yönetici','muhasebe'] },
+    { href: '/dashboard/knowledge',     label: t.knowledge,                                 icon: BookOpen,        roles: ['admin','viewer','yönetici','satisci'] },
+    { href: '/dashboard/agent',         label: 'AI Assistant',                              icon: Bot,             roles: ['admin','yönetici','satisci'] },
+    { href: '/dashboard/followup',      label: 'Follow-up',                                 icon: RefreshCw,       roles: ['admin','yönetici','satisci'] },
+    { href: '/dashboard/calendar',      label: lang === 'tr' ? 'Takvim' : 'Calendar',      icon: Calendar,        roles: ['admin','yönetici','satisci'] },
+    { href: '/dashboard/support',       label: t.tickets,                                   icon: LifeBuoy,        roles: ['admin','viewer','yönetici'] },
+    { href: '/dashboard/settings',      label: lang === 'tr' ? 'Ayarlar' : 'Settings',     icon: Settings,        roles: ['admin','yönetici','satisci'] },
   ]
 
   const navItems = allNavItems.filter(item =>
     isSuperAdmin || item.roles === null || (userRole && item.roles.includes(userRole))
   )
 
-  // Sayfa değişince mobil menüyü kapat
-  useEffect(() => {
-    setMobileOpen(false)
-  }, [pathname])
+  useEffect(() => { setMobileOpen(false) }, [pathname])
 
   async function handleLogout() {
     const supabase = createClient()
@@ -56,7 +73,7 @@ export default function Sidebar({ orgName, isSuperAdmin, userRole, userId, orgId
 
   return (
     <>
-      {/* Mobil hamburger butonu */}
+      {/* Mobil hamburger */}
       <button
         className="md:hidden fixed top-4 left-4 z-50 rounded-xl border border-slate-200/80 bg-white/90 p-2.5 shadow-lg backdrop-blur"
         onClick={() => setMobileOpen(true)}
@@ -75,182 +92,191 @@ export default function Sidebar({ orgName, isSuperAdmin, userRole, userId, orgId
 
       {/* Sidebar */}
       <aside className={`
-        w-72 flex-shrink-0 border-r border-slate-800/80 bg-slate-950 text-white flex flex-col
-        fixed inset-y-0 left-0 z-50 transition-transform duration-200
+        flex-shrink-0 border-r border-slate-800/80 bg-slate-950 text-white flex flex-col
+        fixed inset-y-0 left-0 z-50
+        transition-[width,transform] duration-200 ease-in-out
         md:sticky md:top-0 md:h-screen md:translate-x-0
-        ${mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+        ${mobileOpen ? 'translate-x-0 w-72' : '-translate-x-full w-72 md:translate-x-0'}
+        ${collapsed ? 'md:w-16' : 'md:w-[220px]'}
       `}>
         <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.24),_transparent_70%)]" />
 
-        {/* Logo + Notification Bell */}
-        <div className="relative border-b border-white/10 px-4 py-5 flex items-start justify-between">
-          <div className="flex-1">
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur">
-              <div className="flex items-center gap-3">
-                <div className="shrink-0 rounded-2xl bg-gradient-to-br from-brand-400 via-brand-500 to-accent-500 px-3 py-2 shadow-lg shadow-brand-500/20">
-                  <img src="/stoaixlogo-tight.png" alt="stoaix" className="h-7 w-auto brightness-0 invert" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Platform</p>
-                  <p className="text-sm font-medium text-white truncate">{orgName}</p>
-                </div>
+        {/* Header — Logo + Bell */}
+        <div className={`relative border-b border-white/10 py-4 flex items-center transition-all duration-200 ${collapsed ? 'px-3 justify-center' : 'px-4 justify-between'}`}>
+          {collapsed ? (
+            /* Collapsed: sadece logo ikonu */
+            <div className="flex flex-col items-center gap-2">
+              <div className="rounded-xl bg-gradient-to-br from-brand-400 via-brand-500 to-accent-500 p-2 shadow-lg shadow-brand-500/20">
+                <img src="/stoaixlogo-tight.png" alt="stoaix" className="h-5 w-auto brightness-0 invert" />
               </div>
+              {userId && orgId && <NotificationBell userId={userId} orgId={orgId} />}
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Workspace</p>
-                <p className="mt-1 text-xs font-medium text-slate-200">Active</p>
+          ) : (
+            /* Expanded: tam header */
+            <>
+              <div className="flex-1 min-w-0">
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5 backdrop-blur">
+                  <div className="flex items-center gap-2.5">
+                    <div className="shrink-0 rounded-xl bg-gradient-to-br from-brand-400 via-brand-500 to-accent-500 px-2.5 py-1.5 shadow-lg shadow-brand-500/20">
+                      <img src="/stoaixlogo-tight.png" alt="stoaix" className="h-5 w-auto brightness-0 invert" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Platform</p>
+                      <p className="text-xs font-medium text-white truncate">{orgName}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Mode</p>
-                <p className="mt-1 text-xs font-medium text-slate-200">Managed AI</p>
+              <div className="flex items-center gap-1.5 ml-2 shrink-0">
+                {userId && orgId && <NotificationBell userId={userId} orgId={orgId} />}
+                <button
+                  className="md:hidden p-1 text-slate-400 hover:text-white"
+                  onClick={() => setMobileOpen(false)}
+                  aria-label="Menüyü kapat"
+                >
+                  <X size={18} />
+                </button>
               </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 ml-2 mt-1">
-            {/* Notification Bell — only for org users */}
-            {userId && orgId && (
-              <NotificationBell userId={userId} orgId={orgId} />
-            )}
-            {/* Mobil kapat butonu */}
-            <button
-              className="md:hidden p-1 text-slate-400 hover:text-white"
-              onClick={() => setMobileOpen(false)}
-              aria-label="Menüyü kapat"
-            >
-              <X size={18} />
-            </button>
-          </div>
+            </>
+          )}
         </div>
 
         {/* Nav */}
-        <nav className="relative flex-1 overflow-y-auto px-3 py-5">
-          <div className="px-3 pb-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Workspace</p>
-          </div>
+        <nav className="relative flex-1 overflow-y-auto overflow-x-hidden py-4 px-2">
+          {!collapsed && (
+            <div className="px-2 pb-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Workspace</p>
+            </div>
+          )}
+
           {navItems.map(({ href, label, icon: Icon }) => {
             const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
             return (
               <Link
                 key={href}
                 href={href}
-                className={`group mb-1.5 flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-all ${
+                title={collapsed ? label : undefined}
+                className={`group mb-1 flex items-center rounded-xl transition-all ${
+                  collapsed ? 'justify-center p-2.5' : 'gap-2.5 px-2.5 py-2.5'
+                } ${
                   active
-                    ? 'bg-gradient-to-r from-brand-500/22 to-accent-400/12 text-white shadow-lg shadow-brand-900/20 ring-1 ring-inset ring-brand-400/25'
+                    ? 'bg-gradient-to-r from-brand-500/22 to-accent-400/12 text-white ring-1 ring-inset ring-brand-400/25'
                     : 'text-slate-300 hover:bg-white/5 hover:text-white'
                 }`}
               >
-                <span className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-all ${
+                <span className={`flex shrink-0 items-center justify-center rounded-lg border transition-all ${
+                  collapsed ? 'h-8 w-8' : 'h-7 w-7'
+                } ${
                   active
                     ? 'border-brand-300/30 bg-brand-400/15 text-brand-100'
                     : 'border-white/10 bg-white/5 text-slate-400 group-hover:border-white/15 group-hover:text-white'
                 }`}>
-                  <Icon size={16} />
+                  <Icon size={15} />
                 </span>
-                {label}
-                {active && <span className="ml-auto h-2 w-2 rounded-full bg-brand-300 shadow-[0_0_12px_rgba(125,211,252,0.9)]" />}
+                {!collapsed && (
+                  <>
+                    <span className="text-[13px] font-medium truncate">{label}</span>
+                    {active && <span className="ml-auto shrink-0 h-1.5 w-1.5 rounded-full bg-brand-300 shadow-[0_0_10px_rgba(125,211,252,0.9)]" />}
+                  </>
+                )}
               </Link>
             )
           })}
 
           {isSuperAdmin && (
             <>
-              <div className="px-3 pb-2 pt-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Admin</p>
-              </div>
-              <Link
-                href="/admin"
-                className={`group mb-1.5 flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-all ${
-                  pathname.startsWith('/admin')
-                    ? 'bg-gradient-to-r from-brand-500/22 to-accent-400/12 text-white shadow-lg shadow-brand-900/20 ring-1 ring-inset ring-brand-400/25'
-                    : 'text-slate-300 hover:bg-white/5 hover:text-white'
-                }`}
-              >
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-400 transition-all group-hover:border-white/15 group-hover:text-white">
-                  <ShieldCheck size={16} />
-                </span>
-                {t.admin}
-              </Link>
-              <Link
-                href="/admin/tickets"
-                className={`group mb-1.5 flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-all ${
-                  pathname === '/admin/tickets'
-                    ? 'bg-gradient-to-r from-brand-500/22 to-accent-400/12 text-white shadow-lg shadow-brand-900/20 ring-1 ring-inset ring-brand-400/25'
-                    : 'text-slate-300 hover:bg-white/5 hover:text-white'
-                }`}
-              >
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-400 transition-all group-hover:border-white/15 group-hover:text-white">
-                  <Settings size={16} />
-                </span>
-                {t.tickets}
-              </Link>
-              <Link
-                href="/admin/checklist"
-                className={`group mb-1.5 flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-all ${
-                  pathname === '/admin/checklist'
-                    ? 'bg-gradient-to-r from-brand-500/22 to-accent-400/12 text-white shadow-lg shadow-brand-900/20 ring-1 ring-inset ring-brand-400/25'
-                    : 'text-slate-300 hover:bg-white/5 hover:text-white'
-                }`}
-              >
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-400 transition-all group-hover:border-white/15 group-hover:text-white">
-                  <ClipboardList size={16} />
-                </span>
-                Kurulum Checklist
-              </Link>
-              <Link
-                href="/admin/customer-success"
-                className={`group mb-1.5 flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-all ${
-                  pathname === '/admin/customer-success'
-                    ? 'bg-gradient-to-r from-brand-500/22 to-accent-400/12 text-white shadow-lg shadow-brand-900/20 ring-1 ring-inset ring-brand-400/25'
-                    : 'text-slate-300 hover:bg-white/5 hover:text-white'
-                }`}
-              >
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-400 transition-all group-hover:border-white/15 group-hover:text-white">
-                  <HeartHandshake size={16} />
-                </span>
-                Customer Success
-              </Link>
+              {!collapsed && (
+                <div className="px-2 pb-2 pt-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Admin</p>
+                </div>
+              )}
+              {[
+                { href: '/admin',                   label: t.admin,             icon: ShieldCheck },
+                { href: '/admin/tickets',           label: t.tickets,           icon: Settings },
+                { href: '/admin/checklist',         label: 'Kurulum Checklist', icon: ClipboardList },
+                { href: '/admin/customer-success',  label: 'Customer Success',  icon: HeartHandshake },
+              ].map(({ href, label, icon: Icon }) => {
+                const active = pathname === href || (href !== '/admin' && pathname.startsWith(href))
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    title={collapsed ? label : undefined}
+                    className={`group mb-1 flex items-center rounded-xl transition-all ${
+                      collapsed ? 'justify-center p-2.5' : 'gap-2.5 px-2.5 py-2.5'
+                    } ${
+                      active
+                        ? 'bg-gradient-to-r from-brand-500/22 to-accent-400/12 text-white ring-1 ring-inset ring-brand-400/25'
+                        : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                    }`}
+                  >
+                    <span className={`flex shrink-0 items-center justify-center rounded-lg border transition-all ${
+                      collapsed ? 'h-8 w-8' : 'h-7 w-7'
+                    } ${
+                      active
+                        ? 'border-brand-300/30 bg-brand-400/15 text-brand-100'
+                        : 'border-white/10 bg-white/5 text-slate-400 group-hover:border-white/15 group-hover:text-white'
+                    }`}>
+                      <Icon size={15} />
+                    </span>
+                    {!collapsed && <span className="text-[13px] font-medium truncate">{label}</span>}
+                  </Link>
+                )
+              })}
             </>
           )}
         </nav>
 
-        {/* Language toggle + Logout */}
-        <div className="relative space-y-3 border-t border-white/10 px-3 pb-4 pt-4">
-          {/* TR / EN toggle */}
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-2">
-            <div className="mb-2 px-1">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Language</p>
-            </div>
-            <div className="flex items-center gap-1">
-            <button
-              onClick={() => { setLang('tr'); router.refresh() }}
-              className={`flex-1 min-h-[44px] rounded-xl py-2.5 text-xs font-medium transition-colors ${
-                lang === 'tr'
-                  ? 'bg-white text-slate-950 shadow-sm'
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              TR
-            </button>
-            <button
-              onClick={() => { setLang('en'); router.refresh() }}
-              className={`flex-1 min-h-[44px] rounded-xl py-2.5 text-xs font-medium transition-colors ${
-                lang === 'en'
-                  ? 'bg-white text-slate-950 shadow-sm'
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              EN
-            </button>
-            </div>
-          </div>
+        {/* Footer — Lang + Logout + Collapse toggle */}
+        <div className={`relative border-t border-white/10 pt-3 pb-3 space-y-1.5 ${collapsed ? 'px-2' : 'px-2'}`}>
 
+          {/* Collapse toggle — desktop only */}
+          <button
+            onClick={toggleCollapsed}
+            className="hidden md:flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-2 text-xs text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+            title={collapsed ? (lang === 'tr' ? 'Genişlet' : 'Expand') : (lang === 'tr' ? 'Küçült' : 'Collapse')}
+          >
+            {collapsed ? <ChevronRight size={15} /> : <><ChevronLeft size={15} /><span className="text-[11px]">{lang === 'tr' ? 'Küçült' : 'Collapse'}</span></>}
+          </button>
+
+          {/* Language toggle */}
+          {collapsed ? (
+            <div className="flex flex-col gap-1">
+              <button
+                onClick={() => { setLang('tr'); router.refresh() }}
+                className={`w-full rounded-lg py-1.5 text-[10px] font-semibold transition-colors ${lang === 'tr' ? 'bg-white text-slate-950' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+              >TR</button>
+              <button
+                onClick={() => { setLang('en'); router.refresh() }}
+                className={`w-full rounded-lg py-1.5 text-[10px] font-semibold transition-colors ${lang === 'en' ? 'bg-white text-slate-950' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+              >EN</button>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-white/5 p-1.5">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500 px-1 mb-1.5">Language</p>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => { setLang('tr'); router.refresh() }}
+                  className={`flex-1 rounded-lg py-2 text-xs font-medium transition-colors ${lang === 'tr' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+                >TR</button>
+                <button
+                  onClick={() => { setLang('en'); router.refresh() }}
+                  className={`flex-1 rounded-lg py-2 text-xs font-medium transition-colors ${lang === 'en' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+                >EN</button>
+              </div>
+            </div>
+          )}
+
+          {/* Logout */}
           <button
             onClick={handleLogout}
-            className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+            title={collapsed ? (lang === 'tr' ? 'Çıkış' : 'Logout') : undefined}
+            className={`flex w-full items-center rounded-xl border border-white/10 bg-white/5 text-[13px] font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white ${
+              collapsed ? 'justify-center p-2.5' : 'gap-2.5 px-2.5 py-2.5'
+            }`}
           >
-            <LogOut size={16} />
-            {t.logout}
+            <LogOut size={15} />
+            {!collapsed && t.logout}
           </button>
         </div>
       </aside>

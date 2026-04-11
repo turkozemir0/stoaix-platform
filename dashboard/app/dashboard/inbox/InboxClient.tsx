@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { MessageSquare, Phone, Instagram, Send, RefreshCw, ChevronDown } from 'lucide-react'
+import { MessageSquare, Phone, Instagram, Send, RefreshCw } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -103,10 +103,23 @@ interface Props {
 }
 
 const CHANNELS = ['all', 'whatsapp', 'instagram', 'voice']
-const LEAD_STATUSES = ['all', 'new', 'in_progress', 'qualified', 'handed_off', 'nurturing', 'converted', 'lost']
+
+// Pipeline stages — status value + display label (emoji dahil)
+const PIPELINE_STAGES: { value: string; label: Record<string, string> }[] = [
+  { value: 'all',         label: { tr: 'Tümü',        en: 'All' } },
+  { value: 'new',         label: { tr: '🆕 Yeni',     en: '🆕 New' } },
+  { value: 'in_progress', label: { tr: '🤖 Qualifying', en: '🤖 Qualifying' } },
+  { value: 'handed_off',  label: { tr: '🔥 Hot Lead',  en: '🔥 Hot Lead' } },
+  { value: 'nurturing',   label: { tr: '⏳ Takipte',   en: '⏳ Nurturing' } },
+  { value: 'qualified',   label: { tr: '📅 Randevu',   en: '📅 Appt.' } },
+  { value: 'converted',   label: { tr: '✅ Kazanıldı', en: '✅ Won' } },
+  { value: 'lost',        label: { tr: '❌ Kayıp',     en: '❌ Lost' } },
+]
+
+// For display in conversation list items
 const LEAD_STATUS_LABELS: Record<string, Record<string, string>> = {
-  tr: { all: 'Tümü', new: 'Yeni', in_progress: 'Süreçte', qualified: 'Randevu', handed_off: 'Devredildi', nurturing: 'Takipte', converted: 'Kazanıldı', lost: 'Kayıp' },
-  en: { all: 'All', new: 'New', in_progress: 'In Progress', qualified: 'Appt.', handed_off: 'Handed Off', nurturing: 'Nurturing', converted: 'Won', lost: 'Lost' },
+  tr: { all: 'Tümü', new: 'Yeni', in_progress: 'Qualifying', qualified: 'Randevu', handed_off: 'Hot Lead', nurturing: 'Takipte', converted: 'Kazanıldı', lost: 'Kayıp' },
+  en: { all: 'All', new: 'New', in_progress: 'Qualifying', qualified: 'Appt.', handed_off: 'Hot Lead', nurturing: 'Nurturing', converted: 'Won', lost: 'Lost' },
 }
 
 export default function InboxClient({ orgId, lang }: Props) {
@@ -267,18 +280,21 @@ export default function InboxClient({ orgId, lang }: Props) {
             ))}
           </div>
 
-          {/* Lead status filter */}
-          <div className="relative">
-            <select
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
-              className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 text-slate-600 bg-white appearance-none pr-6 focus:outline-none focus:ring-1 focus:ring-brand-400"
-            >
-              {LEAD_STATUSES.map(s => (
-                <option key={s} value={s}>{sl[s] ?? s}</option>
-              ))}
-            </select>
-            <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          {/* Pipeline stage filter — yatay scroll */}
+          <div className="flex gap-1 overflow-x-auto pb-0.5 scrollbar-hide -mx-1 px-1">
+            {PIPELINE_STAGES.map(stage => (
+              <button
+                key={stage.value}
+                onClick={() => setStatusFilter(stage.value)}
+                className={`shrink-0 px-2 py-1 rounded text-[11px] font-medium transition-colors whitespace-nowrap ${
+                  statusFilter === stage.value
+                    ? 'bg-slate-800 text-white'
+                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                }`}
+              >
+                {stage.label[lang] ?? stage.label.tr}
+              </button>
+            ))}
           </div>
         </div>
 
