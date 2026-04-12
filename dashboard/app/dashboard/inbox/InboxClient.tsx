@@ -176,6 +176,23 @@ export default function InboxClient({ orgId, lang }: Props) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // ─── Fallback: poll messages every 15s (silent, no loading spinner) ─────────
+  useEffect(() => {
+    if (!selectedId) return
+    const interval = setInterval(async () => {
+      const res = await fetch(`/api/inbox/${selectedId}/messages`)
+      const json = await res.json()
+      if (!json.messages) return
+      setMessages(prev => {
+        const prevIds = new Set(prev.map(m => m.id))
+        const newMsgs = (json.messages as Message[]).filter(m => !prevIds.has(m.id) && !m.id.startsWith('sent-'))
+        if (!newMsgs.length) return prev
+        return [...prev, ...newMsgs]
+      })
+    }, 15_000)
+    return () => clearInterval(interval)
+  }, [selectedId])
+
   // ─── Realtime: new message in selected conversation ──────────────────────
   useEffect(() => {
     if (!selectedId) return
@@ -189,11 +206,23 @@ export default function InboxClient({ orgId, lang }: Props) {
           const msg = payload.new as Message
           setMessages(prev => {
             if (prev.some(m => m.id === msg.id)) return prev
-            return [...prev, msg]
+            // Remove optimistic placeholder for assistant messages when real one arrives
+            const withoutOptimistic = msg.role === 'assistant'
+              ? prev.filter(m => !m.id.startsWith('sent-'))
+              : prev
+            return [...withoutOptimistic, msg]
           })
+          // Also update the conversation's last_message preview in the list
+          setConversations(prev => prev.map(c =>
+            c.id === selectedId
+              ? { ...c, last_message: { conversation_id: selectedId, content: msg.content, role: msg.role, created_at: msg.created_at } }
+              : c
+          ))
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log(`[inbox-realtime] messages channel status: ${status}`)
+      })
 
     return () => { supabase.removeChannel(channel) }
   }, [selectedId, supabase])
@@ -217,6 +246,12 @@ export default function InboxClient({ orgId, lang }: Props) {
     return () => { supabase.removeChannel(channel) }
   }, [orgId, supabase, fetchConversations])
 
+  // ─── Fallback: poll conversation list every 30s (silent) ─────────────────
+  useEffect(() => {
+    const interval = setInterval(() => void fetchConversations(), 30_000)
+    return () => clearInterval(interval)
+  }, [fetchConversations])
+
   // ─── Send reply ──────────────────────────────────────────────────────────
   async function handleSend() {
     if (!replyText.trim() || !selectedId || sending) return
@@ -230,8 +265,16 @@ export default function InboxClient({ orgId, lang }: Props) {
       })
       const json = await res.json()
       if (!res.ok) { setSendError(json.error ?? 'Gönderilemedi'); return }
+      const sentContent = replyText.trim()
       setReplyText('')
-      // Optimistic: message will arrive via realtime; also refresh list
+      // Add sent message immediately (realtime may have latency)
+      const sentAt = new Date().toISOString()
+      setMessages(prev => [...prev, { id: `sent-${Date.now()}`, role: 'assistant', content: sentContent, created_at: sentAt }])
+      setConversations(prev => prev.map(c =>
+        c.id === selectedId
+          ? { ...c, last_message: { conversation_id: selectedId, content: sentContent, role: 'assistant', created_at: sentAt } }
+          : c
+      ))
       void fetchConversations()
     } finally {
       setSending(false)
