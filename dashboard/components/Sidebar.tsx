@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, MessageSquare, Phone, BookOpen, Settings, LogOut,
   ShieldCheck, LifeBuoy, Bot, RefreshCw, ClipboardList, Menu, X,
-  Target, HeartHandshake, FileText, Wallet, Calendar, Inbox,
+  Target, HeartHandshake, FileText, Wallet, Calendar, Inbox, LayoutTemplate,
   ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { useT, useLang } from '@/lib/lang-context'
@@ -56,6 +56,7 @@ export default function Sidebar({ orgName, isSuperAdmin, userRole, userId, orgId
     { href: '/dashboard/followup',      label: 'Follow-up',                                 icon: RefreshCw,       roles: ['admin','yönetici','satisci'] },
     { href: '/dashboard/calendar',      label: lang === 'tr' ? 'Takvim' : 'Calendar',      icon: Calendar,        roles: ['admin','yönetici','satisci'] },
     { href: '/dashboard/support',       label: t.tickets,                                   icon: LifeBuoy,        roles: ['admin','viewer','yönetici'] },
+    { href: '/dashboard/templates',      label: lang === 'tr' ? 'Templateler' : 'Templates', icon: LayoutTemplate,  roles: ['admin','yönetici','satisci'] },
     { href: '/dashboard/settings',      label: lang === 'tr' ? 'Ayarlar' : 'Settings',     icon: Settings,        roles: ['admin','yönetici','satisci'] },
   ]
 

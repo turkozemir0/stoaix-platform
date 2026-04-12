@@ -35,8 +35,18 @@ interface MetaWebhookPayload {
           status: 'sent' | 'delivered' | 'read' | 'failed'
           recipient_id?: string
         }>
+        // Template status update events
+        message_template?: {
+          name:             string
+          status:           'APPROVED' | 'REJECTED' | 'PENDING' | 'PAUSED' | 'DISABLED'
+          id?:              string
+          rejection_reason?: string
+          category?:        string
+          language?:        string
+        }
+        waba_id?: string
       }
-      field: string  // 'messages'
+      field: string  // 'messages' | 'message_template_status_update'
     }>
   }>
 }
@@ -301,6 +311,64 @@ async function handleInbound(
   }
 }
 
+// ─── Template status update handler ──────────────────────────────────────────
+// Called when Meta approves or rejects a submitted template.
+
+async function handleTemplateStatusUpdate(
+  supabase:        ReturnType<typeof getSupabase>,
+  templateEvent:   NonNullable<MetaWebhookPayload['entry'][0]['changes'][0]['value']['message_template']>,
+  wabaId?:         string
+): Promise<void> {
+  const { name, status, id: metaTemplateId, rejection_reason } = templateEvent
+
+  // Map Meta status to our DB status
+  const statusMap: Record<string, string> = {
+    APPROVED: 'approved',
+    REJECTED: 'rejected',
+    PENDING:  'pending',
+    PAUSED:   'rejected',
+    DISABLED: 'rejected',
+  }
+  const dbStatus = statusMap[status]
+  if (!dbStatus) return
+
+  // Find the template in DB — match by name + waba_id (via org's channel_config)
+  // First try to find the org by waba_id, then find the template
+  let orgId: string | null = null
+  if (wabaId) {
+    const { data: orgs } = await supabase
+      .from('organizations')
+      .select('id, channel_config')
+      .eq('status', 'active')
+    const matchOrg = orgs?.find((o: any) => {
+      const waCreds = (o.channel_config as any)?.whatsapp?.credentials
+      return waCreds?.waba_id === wabaId
+    })
+    orgId = matchOrg?.id ?? null
+  }
+
+  const query = supabase
+    .from('message_templates')
+    .update({
+      status:           dbStatus,
+      meta_template_id: metaTemplateId ?? null,
+      rejection_reason: rejection_reason ?? null,
+      updated_at:       new Date().toISOString(),
+    })
+    .eq('name', name)
+
+  if (orgId) {
+    query.eq('organization_id', orgId)
+  }
+
+  const { error } = await query
+  if (error) {
+    console.error(`Template status update failed for "${name}":`, error.message)
+  } else {
+    console.log(`Template "${name}" status updated → ${dbStatus}`)
+  }
+}
+
 // ─── HMAC-SHA256 signature verification ───────────────────────────────────────
 // Meta signs every webhook POST with X-Hub-Signature-256: sha256=<hmac>
 // using the Meta App Secret as the key.
@@ -384,6 +452,15 @@ serve(async (req) => {
 
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
+      // ── Template approval/rejection events ──
+      if (change.field === 'message_template_status_update') {
+        const { message_template, waba_id } = change.value as any
+        if (message_template) {
+          tasks.push(handleTemplateStatusUpdate(supabase, message_template, waba_id))
+        }
+        continue
+      }
+
       if (change.field !== 'messages') continue
 
       const { metadata, messages: msgs, statuses } = change.value

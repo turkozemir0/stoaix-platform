@@ -196,13 +196,23 @@ function InstagramSection() {
   )
 }
 
+type WaConnectMode = 'embedded' | 'manual'
+
 function WhatsAppSection() {
   const [waState, setWaState]       = useState<{ connected: boolean; phone?: string } | null>(null)
   const [loading, setLoading]       = useState(true)
   const [connecting, setConnecting] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
   const [error, setError]           = useState('')
+  const [mode, setMode]             = useState<WaConnectMode>('embedded')
+
+  // Manual form fields
+  const [manualPhoneId, setManualPhoneId]   = useState('')
+  const [manualToken, setManualToken]       = useState('')
+  const [manualWabaId, setManualWabaId]     = useState('')
+
   const waSessionInfo = useRef<{ phone_number_id?: string; waba_id?: string } | null>(null)
+  const hasEmbeddedSignup = !!process.env.NEXT_PUBLIC_META_WA_CONFIG_ID
 
   useEffect(() => {
     const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID
@@ -250,11 +260,7 @@ function WhatsAppSection() {
     return () => window.removeEventListener('message', onMessage)
   }, [])
 
-  async function connect() {
-    if (!process.env.NEXT_PUBLIC_META_WA_CONFIG_ID) {
-      setError('WhatsApp Embedded Signup henüz yapılandırılmamış (Config ID eksik). Lütfen admin ile iletişime geçin.')
-      return
-    }
+  async function connectEmbedded() {
     if (!window.FB) {
       setError('Facebook SDK yüklenemedi, sayfayı yenileyin.')
       return
@@ -295,6 +301,36 @@ function WhatsAppSection() {
     })
   }
 
+  async function connectManual() {
+    if (!manualPhoneId.trim() || !manualToken.trim()) {
+      setError('Phone Number ID ve Access Token zorunlu.')
+      return
+    }
+    setConnecting(true)
+    setError('')
+    try {
+      const res = await fetch('/api/whatsapp/manual-connect', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone_number_id: manualPhoneId.trim(),
+          access_token:    manualToken.trim(),
+          waba_id:         manualWabaId.trim() || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Bağlantı başarısız')
+      setWaState({ connected: true, phone: data.phone_number })
+      setManualPhoneId('')
+      setManualToken('')
+      setManualWabaId('')
+    } catch (e: any) {
+      setError(e.message ?? 'Bağlantı başarısız')
+    } finally {
+      setConnecting(false)
+    }
+  }
+
   async function disconnect() {
     setDisconnecting(true)
     try {
@@ -310,9 +346,6 @@ function WhatsAppSection() {
       <div className="flex items-center gap-2 mb-1">
         <MessageCircle size={16} className="text-green-500" />
         <h2 className="font-semibold text-slate-800">WhatsApp</h2>
-        <span className="ml-1 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
-          Yakında
-        </span>
       </div>
       <p className="text-sm text-slate-500 mb-4">
         WhatsApp Business hesabınızı bağlayın, gelen mesajlar otomatik yönetilsin.
@@ -339,19 +372,95 @@ function WhatsAppSection() {
         </div>
       ) : (
         <>
+          {/* Mode toggle — only show if Embedded Signup is configured */}
+          {hasEmbeddedSignup && (
+            <div className="flex gap-1 mb-4 bg-slate-100 p-1 rounded-lg w-fit">
+              <button
+                onClick={() => { setMode('embedded'); setError('') }}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  mode === 'embedded' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Embedded Signup
+              </button>
+              <button
+                onClick={() => { setMode('manual'); setError('') }}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  mode === 'manual' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Manuel Bağla
+              </button>
+            </div>
+          )}
+
           {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
-          <button
-            onClick={connect}
-            disabled={connecting}
-            className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-60 transition-colors"
-          >
-            {connecting
-              ? <Loader2 size={14} className="animate-spin" />
-              : <MessageCircle size={14} />
-            }
-            WhatsApp Bağla
-            <ExternalLink size={13} className="opacity-70" />
-          </button>
+
+          {/* Embedded Signup button */}
+          {(mode === 'embedded' && hasEmbeddedSignup) && (
+            <button
+              onClick={connectEmbedded}
+              disabled={connecting}
+              className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-60 transition-colors"
+            >
+              {connecting ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />}
+              WhatsApp Bağla
+              <ExternalLink size={13} className="opacity-70" />
+            </button>
+          )}
+
+          {/* Manual connect form */}
+          {(mode === 'manual' || !hasEmbeddedSignup) && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Phone Number ID <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={manualPhoneId}
+                  onChange={(e) => setManualPhoneId(e.target.value)}
+                  placeholder="Meta App → WhatsApp → Phone Numbers"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  System User Access Token <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="password"
+                  value={manualToken}
+                  onChange={(e) => setManualToken(e.target.value)}
+                  placeholder="EAAx..."
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  WABA ID <span className="text-slate-400 font-normal">(isteğe bağlı)</span>
+                </label>
+                <input
+                  type="text"
+                  value={manualWabaId}
+                  onChange={(e) => setManualWabaId(e.target.value)}
+                  placeholder="WhatsApp Business Account ID"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+              <button
+                onClick={connectManual}
+                disabled={connecting || !manualPhoneId.trim() || !manualToken.trim()}
+                className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-60 transition-colors"
+              >
+                {connecting ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />}
+                Bağlan &amp; Doğrula
+              </button>
+              <p className="text-xs text-slate-400">
+                Meta Business Suite → System Users → "Generate Token" ile token alabilirsiniz.
+              </p>
+            </div>
+          )}
         </>
       )}
     </div>
