@@ -45,7 +45,7 @@ export async function GET(
 
   const { data: messages, error } = await service
     .from('messages')
-    .select('id, role, content, created_at, metadata')
+    .select('id, role, content, created_at')
     .eq('conversation_id', params.conversationId)
     .order('created_at', { ascending: true })
     .limit(100)

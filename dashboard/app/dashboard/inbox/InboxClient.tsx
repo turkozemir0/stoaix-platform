@@ -42,7 +42,6 @@ interface Message {
   role: 'user' | 'assistant' | 'system'
   content: string
   created_at: string
-  metadata: Record<string, any> | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
