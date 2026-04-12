@@ -251,6 +251,10 @@ function WhatsAppSection() {
   }, [])
 
   async function connect() {
+    if (!process.env.NEXT_PUBLIC_META_WA_CONFIG_ID) {
+      setError('WhatsApp Embedded Signup henüz yapılandırılmamış (Config ID eksik). Lütfen admin ile iletişime geçin.')
+      return
+    }
     if (!window.FB) {
       setError('Facebook SDK yüklenemedi, sayfayı yenileyin.')
       return
