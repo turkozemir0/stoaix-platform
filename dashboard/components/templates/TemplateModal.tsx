@@ -19,10 +19,19 @@ const LANG_LABELS: Record<string, string> = {
   en: 'İngilizce (en)',
 }
 
+const PURPOSE_LABELS: Record<string, string> = {
+  followup:             'Takip Mesajı',
+  reengagement:         'Yeniden Bağlama',
+  unsubscribe:          'Listeden Çıkma',
+  appointment_reminder: 'Randevu Hatırlatma',
+  other:                'Diğer',
+}
+
 export default function TemplateModal({ onClose, onSaved }: Props) {
   const [name, setName]           = useState('')
   const [language, setLanguage]   = useState('tr')
-  const [category, setCategory]   = useState('MARKETING')
+  const [category, setCategory]   = useState('UTILITY')
+  const [purpose, setPurpose]     = useState('followup')
   const [bodyText, setBodyText]   = useState('')
   const [saving, setSaving]       = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -32,7 +41,6 @@ export default function TemplateModal({ onClose, onSaved }: Props) {
     ? 'Sadece küçük harf, rakam ve alt çizgi (_) kullanılabilir'
     : ''
 
-  // Build Meta components array from body text
   function buildComponents() {
     return [{ type: 'BODY', text: bodyText.trim() }]
   }
@@ -49,7 +57,6 @@ export default function TemplateModal({ onClose, onSaved }: Props) {
     setError('')
 
     try {
-      // 1. Create the template (draft)
       const res = await fetch('/api/templates', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -57,6 +64,7 @@ export default function TemplateModal({ onClose, onSaved }: Props) {
           name:       name.trim(),
           language,
           category,
+          purpose,
           components: buildComponents(),
         }),
       })
@@ -66,7 +74,6 @@ export default function TemplateModal({ onClose, onSaved }: Props) {
       const template = data.template
 
       if (andSubmit) {
-        // 2. Submit to Meta
         const submitRes = await fetch(`/api/templates/${template.id}/submit`, { method: 'POST' })
         const submitData = await submitRes.json()
         if (!submitRes.ok) throw new Error(submitData.error ?? 'Meta gönderimi başarısız')
@@ -82,7 +89,6 @@ export default function TemplateModal({ onClose, onSaved }: Props) {
     }
   }
 
-  // Preview: replace {{1}}, {{2}} with placeholder values
   const preview = bodyText.replace(/\{\{(\d+)\}\}/g, (_, n) => `[Değişken ${n}]`)
 
   return (
@@ -113,6 +119,20 @@ export default function TemplateModal({ onClose, onSaved }: Props) {
               }`}
             />
             {nameError && <p className="text-xs text-red-500 mt-1">{nameError}</p>}
+          </div>
+
+          {/* Purpose */}
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Kullanım Amacı</label>
+            <select
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            >
+              {Object.entries(PURPOSE_LABELS).map(([val, label]) => (
+                <option key={val} value={val}>{label}</option>
+              ))}
+            </select>
           </div>
 
           {/* Language + Category row */}

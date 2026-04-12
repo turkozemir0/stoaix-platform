@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Geçersiz istek' }, { status: 400 })
   }
 
-  const { name, language = 'tr', category, components } = body ?? {}
+  const { name, language = 'tr', category, components, purpose } = body ?? {}
   if (!name || !category || !components) {
     return NextResponse.json({ error: 'name, category ve components zorunlu' }, { status: 400 })
   }
@@ -82,7 +82,9 @@ export async function POST(req: NextRequest) {
       language,
       category,
       components,
-      status: 'draft',
+      purpose:   purpose ?? null,
+      is_preset: false,
+      status:    'draft',
     })
     .select()
     .single()
