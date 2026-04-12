@@ -132,16 +132,16 @@ export async function POST(request: NextRequest) {
     }
 
   } else if (conv.channel === 'instagram') {
-    const igConfig = channelConfig?.instagram
-    if (!igConfig?.access_token || !igConfig?.fb_page_id) {
+    const igCreds = channelConfig?.instagram?.credentials
+    if (!igCreds?.access_token || !igCreds?.fb_page_id) {
       return NextResponse.json({ error: 'Instagram config eksik' }, { status: 400 })
     }
-    const recipientId = (contact.channel_identifiers as any)?.instagram
+    const recipientId = (contact.channel_identifiers as any)?.instagram_id
     if (!recipientId) return NextResponse.json({ error: 'Instagram ID bulunamadı' }, { status: 400 })
 
-    const res = await fetch(`https://graph.facebook.com/v19.0/${igConfig.fb_page_id}/messages`, {
+    const res = await fetch(`https://graph.facebook.com/v19.0/${igCreds.fb_page_id}/messages`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${igConfig.access_token}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${igCreds.access_token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ recipient: { id: recipientId }, message: { text }, messaging_type: 'RESPONSE' }),
     })
     if (!res.ok) {
@@ -162,18 +162,12 @@ export async function POST(request: NextRequest) {
       organization_id: conv.organization_id,
       role: 'assistant',
       content: text,
-      metadata: { sent_by: user.id, source: 'inbox_reply' },
+      channel: conv.channel,
     })
     .select('id, role, content, created_at')
     .single()
 
   if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 })
-
-  // Bump conversation updated_at so inbox list re-sorts
-  await service
-    .from('conversations')
-    .update({ updated_at: new Date().toISOString() })
-    .eq('id', conversationId)
 
   return NextResponse.json({ message: newMsg })
 }
