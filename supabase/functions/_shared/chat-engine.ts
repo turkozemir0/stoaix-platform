@@ -521,6 +521,16 @@ async function updateLeadFromChat(
       })
       .eq('id', lead.id)
 
+    // Sync full_name to contacts table so inbox + leads page show real name
+    const extractedName = merged.full_name as string | undefined
+    if (extractedName) {
+      await supabase
+        .from('contacts')
+        .update({ full_name: extractedName })
+        .eq('id', contactId)
+        .is('full_name', null)  // only set if not already manually assigned
+    }
+
     if (newStatus !== lead.status) {
       await sendCrmEvent(supabase, orgId, {
         event:          'lead_status_change',
