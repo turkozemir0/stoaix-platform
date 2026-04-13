@@ -102,6 +102,13 @@ export default function OrgBillingPage() {
   const [saving, setSaving] = useState(false)
   const [deletingKey, setDeletingKey] = useState<string | null>(null)
 
+  // Offer modal state
+  const [showOfferModal, setShowOfferModal] = useState(false)
+  const [offerForm, setOfferForm] = useState({ plan_id: 'plus', interval: 'monthly', discount_percent: '' })
+  const [offerLoading, setOfferLoading] = useState(false)
+  const [offerUrl, setOfferUrl] = useState<string | null>(null)
+  const [offerCopied, setOfferCopied] = useState(false)
+
   const fetchData = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -180,6 +187,37 @@ export default function OrgBillingPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  async function handleOffer() {
+    setOfferLoading(true)
+    setOfferUrl(null)
+    try {
+      const body: any = { plan_id: offerForm.plan_id, interval: offerForm.interval }
+      if (offerForm.discount_percent !== '') {
+        body.discount_percent = Number(offerForm.discount_percent)
+      }
+      const res = await fetch(`/api/admin/billing/${orgId}/offer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const j = await res.json()
+      if (!res.ok) throw new Error(j.error ?? 'Link oluşturulamadı')
+      setOfferUrl(j.checkout_url)
+    } catch (e: any) {
+      alert(e.message)
+    } finally {
+      setOfferLoading(false)
+    }
+  }
+
+  function copyOfferUrl() {
+    if (!offerUrl) return
+    navigator.clipboard.writeText(offerUrl).then(() => {
+      setOfferCopied(true)
+      setTimeout(() => setOfferCopied(false), 2000)
+    })
   }
 
   async function handleDelete(featureKey: string) {
@@ -267,12 +305,22 @@ export default function OrgBillingPage() {
           </div>
           <p className="text-slate-500 text-sm mt-0.5">{org.slug} · {org.sector}</p>
         </div>
-        <button
-          onClick={openAddModal}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-        >
-          + Override Ekle
-        </button>
+        <div className="flex items-center gap-2">
+          {planId === 'legacy' && (
+            <button
+              onClick={() => { setOfferUrl(null); setOfferForm({ plan_id: 'plus', interval: 'monthly', discount_percent: '' }); setShowOfferModal(true) }}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors"
+            >
+              Plan Teklifi Gönder
+            </button>
+          )}
+          <button
+            onClick={openAddModal}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+          >
+            + Override Ekle
+          </button>
+        </div>
       </div>
 
       {/* Stripe Bilgi */}
@@ -388,6 +436,117 @@ export default function OrgBillingPage() {
           </div>
         )}
       </div>
+
+      {/* Offer Modal */}
+      {showOfferModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-slate-900">Plan Teklifi Oluştur</h2>
+              <button
+                onClick={() => setShowOfferModal(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Plan</label>
+                <select
+                  value={offerForm.plan_id}
+                  onChange={e => setOfferForm(f => ({ ...f, plan_id: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="lite">Lite — $79/ay</option>
+                  <option value="plus">Plus — $149/ay</option>
+                  <option value="advanced">Advanced — $299/ay</option>
+                  <option value="agency">Agency — $499/ay</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Ödeme Periyodu</label>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setOfferForm(f => ({ ...f, interval: 'monthly' }))}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                      offerForm.interval === 'monthly'
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    Aylık
+                  </button>
+                  <button
+                    onClick={() => setOfferForm(f => ({ ...f, interval: 'annual' }))}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                      offerForm.interval === 'annual'
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    Yıllık (%20 indirim)
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Ek İndirim <span className="text-slate-400">(% — boş bırakılabilir)</span>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={offerForm.discount_percent}
+                  onChange={e => setOfferForm(f => ({ ...f, discount_percent: e.target.value }))}
+                  placeholder="ör: 20"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <p className="mt-1 text-xs text-slate-400">Girilirse Stripe'ta tek kullanımlık bir kupon oluşturulur.</p>
+              </div>
+
+              {offerUrl && (
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-slate-600">Ödeme Linki</label>
+                  <div className="flex gap-2">
+                    <input
+                      readOnly
+                      value={offerUrl}
+                      className="flex-1 px-3 py-2 rounded-lg border border-slate-200 text-xs text-slate-700 bg-slate-50 font-mono truncate"
+                    />
+                    <button
+                      onClick={copyOfferUrl}
+                      className="px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium hover:bg-slate-200 transition-colors whitespace-nowrap"
+                    >
+                      {offerCopied ? '✓ Kopyalandı' : 'Kopyala'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-400">Bu link müşteriye iletilecek. 24 saat geçerlidir.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowOfferModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors"
+              >
+                Kapat
+              </button>
+              <button
+                onClick={handleOffer}
+                disabled={offerLoading}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50"
+              >
+                {offerLoading ? 'Oluşturuluyor...' : 'Link Oluştur'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Override Modal */}
       {showModal && (
