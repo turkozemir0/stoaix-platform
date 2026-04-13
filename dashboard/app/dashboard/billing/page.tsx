@@ -103,10 +103,11 @@ export default function BillingPage() {
   const [selectingPlan, setSelectingPlan] = useState<string | null>(null)
   const [portalLoading, setPortalLoading] = useState(false)
 
-  const currentPlanId: string = limitsData?.plan_id ?? ''
+  const currentPlanId: string | null = limitsData?.plan_id ?? null
   const status: string = limitsData?.status ?? ''
   const trialEndsAt: string | null = limitsData?.trial_ends_at ?? null
   const isLegacy = currentPlanId === 'legacy'
+  const hasNoPlan = currentPlanId === null
 
   useEffect(() => {
     async function load() {
@@ -192,7 +193,7 @@ export default function BillingPage() {
       )}
 
       {/* Interval toggle */}
-      {!isLegacy && (
+      {(!isLegacy || hasNoPlan) && (
         <div className="flex items-center justify-center gap-2">
           <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
             <button
@@ -223,7 +224,7 @@ export default function BillingPage() {
       )}
 
       {/* Plans grid */}
-      {!isLegacy && (
+      {(!isLegacy || hasNoPlan) && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {PLANS.map(plan => {
             const isCurrent = plan.id === currentPlanId
@@ -307,7 +308,7 @@ export default function BillingPage() {
       )}
 
       {/* Manage subscription */}
-      {!loading && currentPlanId && !isLegacy && (
+      {!loading && currentPlanId && !isLegacy && !hasNoPlan && (
         <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-5">
           <div>
             <p className="text-sm font-semibold text-slate-800">Mevcut aboneliği yönet</p>

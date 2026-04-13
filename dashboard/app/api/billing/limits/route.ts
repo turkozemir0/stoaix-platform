@@ -43,8 +43,8 @@ export async function GET() {
   )
 
   return NextResponse.json({
-    plan_id: sub?.plan_id ?? 'legacy',
-    status: sub?.status ?? 'legacy',
+    plan_id: sub?.plan_id ?? null,       // null = henüz plan seçilmemiş (legacy değil)
+    status: sub?.status ?? 'no_plan',
     trial_ends_at: sub?.trial_ends_at ?? null,
     current_period_end: sub?.current_period_end ?? null,
     grace_period_ends_at: sub?.grace_period_ends_at ?? null,
