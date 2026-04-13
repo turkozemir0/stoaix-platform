@@ -75,21 +75,9 @@ export async function POST(req: NextRequest) {
     line_items: [{ price: priceId, quantity: 1 }],
     subscription_data: {
       trial_period_days: 7,
-      // $1 aktivasyon ücreti — trial başlarken hemen çekilir, kart doğrulama
-      // add_invoice_items Stripe API'de geçerli, v22 TS tiplerinde eksik → any cast
-      ...({
-        add_invoice_items: [
-          {
-            price_data: {
-              currency: 'usd',
-              product_data: { name: 'Aktivasyon ücreti (7 günlük deneme)' },
-              unit_amount: 100, // $1.00
-            },
-          },
-        ],
-      } as any),
       metadata: { organization_id: orgId, plan_id: planId },
     },
+    payment_method_collection: 'always', // trial'da da kart zorunlu
     success_url: `${appUrl}/dashboard/billing?session_id={CHECKOUT_SESSION_ID}&success=1`,
     cancel_url: `${appUrl}/dashboard/billing?canceled=1`,
     metadata: { organization_id: orgId, plan_id: planId },
