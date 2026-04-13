@@ -27,5 +27,16 @@ venv/
 .DS_Store
 Thumbs.db
 
+# Supabase temp
+supabase/.temp/
+
+# Repomix output
+repomix-output*.xml
+
+# Temp / scratch
+.tmp-ata-review/
+Export_Contacts_*.csv
+
 # Logs
 *.log
+.vercel

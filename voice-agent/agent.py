@@ -14,7 +14,8 @@ import asyncio
 import json
 import logging
 import os
-from datetime import datetime, timezone
+import urllib.parse
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from dotenv import load_dotenv
@@ -144,14 +145,13 @@ async def vector_search_kb(org_id: str, query: str, limit: int = 5) -> str:
 
 # ── Calendar API helpers ───────────────────────────────────────────────────────
 
-async def fetch_free_slots_ghl(calendar_id: str, pit_token: str) -> str:
-    """GHL free-slots API'sinden sonraki 3 günün müsait saatlerini çek."""
+async def fetch_free_slots_ghl(calendar_id: str, pit_token: str, days: int = 3) -> str:
+    """GHL free-slots API'sinden sonraki N günün müsait saatlerini çek."""
     import urllib.request
     try:
-        from datetime import timedelta
         now = datetime.now(timezone.utc)
         start_date = now.strftime("%Y-%m-%d")
-        end_date = (now + timedelta(days=3)).strftime("%Y-%m-%d")
+        end_date = (now + timedelta(days=days)).strftime("%Y-%m-%d")
 
         url = (
             f"https://services.leadconnectorhq.com/calendars/{calendar_id}/free-slots"
@@ -218,6 +218,157 @@ async def create_appointment_ghl(
     except Exception as e:
         logger.warning(f"create_appointment failed: {e}")
         return False
+
+
+# ── Calendar Adapters ──────────────────────────────────────────────────────────
+
+class CalendarAdapter:
+    """Base class — all adapters must implement these methods."""
+
+    async def get_free_slots(self, days: int = 3) -> str:
+        """Returns a formatted multi-line string of available slots, or '' if unavailable."""
+        raise NotImplementedError
+
+    async def create_appointment(
+        self, name: str, phone: str, datetime_str: str, notes: str = ""
+    ) -> dict:
+        """Returns {'success': bool, 'appointment_id': str|None, 'error': str|None}."""
+        raise NotImplementedError
+
+
+class GHLCalendarAdapter(CalendarAdapter):
+    def __init__(self, calendar_id: str, pit_token: str):
+        self.calendar_id = calendar_id
+        self.pit_token   = pit_token
+
+    async def get_free_slots(self, days: int = 3) -> str:
+        return await fetch_free_slots_ghl(self.calendar_id, self.pit_token, days)
+
+    async def create_appointment(self, name, phone, datetime_str, notes="") -> dict:
+        ok = await create_appointment_ghl(self.calendar_id, self.pit_token, name, phone, datetime_str, notes)
+        return {"success": ok, "appointment_id": None, "error": None if ok else "GHL appointment creation failed"}
+
+
+class GoogleCalendarAdapter(CalendarAdapter):
+    """Google Calendar adapter — getFreeSlots not supported for voice (no slots API)."""
+
+    def __init__(self, cal_config: dict):
+        self.cal_config = cal_config
+
+    async def get_free_slots(self, days: int = 3) -> str:
+        # Google Calendar has no "available slots" API without a scheduling layer.
+        return ""
+
+    async def create_appointment(self, name, phone, datetime_str, notes="") -> dict:
+        import urllib.request
+        try:
+            cal_id   = urllib.parse.quote(self.cal_config.get("calendar_id", "primary"), safe="")
+            token    = self.cal_config.get("access_token", "")
+            end_dt   = (datetime.fromisoformat(datetime_str) + timedelta(hours=1)).isoformat()
+            payload  = json.dumps({
+                "summary":     f"Randevu — {name}",
+                "description": notes,
+                "start":       {"dateTime": datetime_str, "timeZone": "Europe/Istanbul"},
+                "end":         {"dateTime": end_dt,       "timeZone": "Europe/Istanbul"},
+            }).encode()
+            req = urllib.request.Request(
+                f"https://www.googleapis.com/calendar/v3/calendars/{cal_id}/events",
+                data=payload,
+                method="POST",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type":  "application/json",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read())
+                return {"success": True, "appointment_id": data.get("id"), "error": None}
+        except Exception as e:
+            logger.warning(f"GoogleCalendarAdapter.create_appointment failed: {e}")
+            return {"success": False, "appointment_id": None, "error": str(e)}
+
+
+def get_calendar_adapter(org: dict) -> CalendarAdapter | None:
+    """
+    Returns the appropriate CalendarAdapter for the org, or None if not configured.
+
+    Resolution order:
+    1. channel_config.calendar.provider = 'google'    → GoogleCalendarAdapter
+    2. channel_config.calendar.provider = 'dentsoft'  → None (skeleton, API docs pending)
+    3. crm_config.calendar_id + pit_token present     → GHLCalendarAdapter (legacy)
+    4. otherwise → None
+    """
+    channel_config = org.get("channel_config") or {}
+    cal_config     = channel_config.get("calendar") or {}
+    provider       = cal_config.get("provider", "none")
+
+    if provider == "google":
+        if not cal_config.get("access_token"):
+            return None
+        return GoogleCalendarAdapter(cal_config)
+
+    if provider == "dentsoft":
+        # Dentsoft adapter not yet implemented — API docs pending
+        return None
+
+    # Legacy GHL: crm_config.calendar_id + crm_config.pit_token
+    crm_config   = org.get("crm_config") or {}
+    calendar_id  = crm_config.get("calendar_id", "")
+    pit_token    = crm_config.get("pit_token", "")
+    if calendar_id and pit_token:
+        return GHLCalendarAdapter(calendar_id, pit_token)
+
+    return None
+
+
+# ── Appointment reminder helpers ────────────────────────────────────────────────
+
+async def create_appointment_reminders(
+    org_id:       str,
+    contact_id:   str | None,
+    lead_id:      str | None,
+    conv_id:      str | None,
+    datetime_str: str,
+) -> None:
+    """
+    Creates two follow_up_tasks (voice channel) for appointment reminders:
+      - 24h before the appointment (sequence_stage: appointment_reminder_24h)
+      -  2h before the appointment (sequence_stage: appointment_reminder_2h)
+    Appointment time is stored in variables JSONB for n8n to pass to the agent.
+    """
+    try:
+        appt_dt = datetime.fromisoformat(datetime_str)
+        # Normalise to UTC without corrupting an already-tz-aware string
+        if appt_dt.tzinfo is None:
+            appt_dt = appt_dt.replace(tzinfo=timezone.utc)
+        else:
+            appt_dt = appt_dt.astimezone(timezone.utc)
+        base = {
+            "organization_id": org_id,
+            "contact_id":      contact_id,
+            "lead_id":         lead_id,
+            "conversation_id": conv_id,
+            "task_type":       "appointment_reminder",
+            "status":          "pending",
+            "channel":         "voice",
+            "variables":       {"appointment_time": datetime_str},
+        }
+        sb = get_supabase()
+        sb.table("follow_up_tasks").insert([
+            {
+                **base,
+                "sequence_stage": "appointment_reminder_24h",
+                "scheduled_at":   (appt_dt - timedelta(hours=24)).isoformat(),
+            },
+            {
+                **base,
+                "sequence_stage": "appointment_reminder_2h",
+                "scheduled_at":   (appt_dt - timedelta(hours=2)).isoformat(),
+            },
+        ]).execute()
+        logger.info(f"Appointment reminder tasks created for {datetime_str}")
+    except Exception as e:
+        logger.warning(f"create_appointment_reminders failed: {e}")
 
 
 # ── Prompt builder ─────────────────────────────────────────────────────────────
@@ -594,7 +745,7 @@ async def save_call(
             "duration_seconds": duration,
             "transcript":      transcript_text,
             "livekit_room_name": (metadata or {}).get("livekit_room"),
-            "started_at":      call_start.replace(tzinfo=timezone.utc).isoformat(),
+            "started_at":      call_start.isoformat(),
             "ended_at":        datetime.now(timezone.utc).isoformat(),
             **({"metadata": metadata} if metadata else {}),
         }).execute()
@@ -730,14 +881,10 @@ async def entrypoint(ctx: JobContext):
     lang         = meta.get("lang") or persona.get("language", "tr")
     room_name    = ctx.room.name
 
-    # Calendar feature
+    # Calendar feature — provider-agnostic adapter
     features         = (playbook or {}).get("features", {}) if playbook else {}
-    calendar_enabled = features.get("calendar_booking", False)
-    crm_config       = org.get("crm_config", {})
-    calendar_id      = crm_config.get("calendar_id", "")
-    pit_token        = crm_config.get("pit_token", "")
-    if not (calendar_id and pit_token):
-        calendar_enabled = False
+    calendar_adapter = get_calendar_adapter(org) if features.get("calendar_booking", False) else None
+    calendar_enabled = calendar_adapter is not None
 
     logger.info(f"{'Outbound' if scenario else 'Inbound'} — org: {org['name']} | lang: {lang} | scenario: {scenario}")
 
@@ -761,11 +908,13 @@ async def entrypoint(ctx: JobContext):
 
     # ── Outbound ──────────────────────────────────────────────────────────────
     else:
-        contact_name = meta.get("contact_name", "")
-        phone_to     = meta.get("phone_to", "")
-        lead_id      = meta.get("lead_id") or None
-        contact_id   = meta.get("contact_id") or None
-        context_note = meta.get("context_note", "")
+        contact_name  = meta.get("contact_name", "")
+        phone_to      = meta.get("phone_to", "")
+        lead_id       = meta.get("lead_id") or None
+        contact_id    = meta.get("contact_id") or None
+        context_note  = meta.get("context_note", "")
+        appt_time     = meta.get("appointment_time", "")
+        reminder_hrs  = meta.get("reminder_hours", "24")
 
         # If contact_id wasn't passed in metadata, upsert from phone_to so conversation insert never fails
         if not contact_id:
@@ -776,7 +925,34 @@ async def entrypoint(ctx: JobContext):
                 lead_id = fallback_lead_id
 
         outbound_playbook_text = playbook.get("system_prompt_template", "") if playbook else ""
-        system_prompt = f"""{outbound_playbook_text}
+
+        # ── Appointment reminder scenario ──────────────────────────────────
+        if scenario == "appointment_reminder":
+            time_word = "Yarınki" if reminder_hrs == "24" else "Bugünkü"
+            appt_display = appt_time or "yaklaşan randevunuz"
+            system_prompt = f"""{outbound_playbook_text}
+
+Sen {org['name']} adına randevu hatırlatma araması yapan {persona_name}'sın.
+Arama yapılan kişi: {contact_name}
+Arama amacı: Randevu hatırlatma
+{f"Randevu zamanı: {appt_display}" if appt_time else ""}
+
+KURAL: Bu çok kısa bir hatırlatma araması, 2-3 turdan uzatma.
+KURAL: Randevuyu onayla. İptal veya değişiklik istiyorlarsa kliniği aramaları gerektiğini söyle.
+KURAL: "Başka bir konuda yardımcı olabilir miyim?" veya benzeri kapatıcı sorular YASAK.
+KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
+"""
+            opening = (
+                f"Merhaba{', ' + contact_name if contact_name else ''}! "
+                f"Ben {org['name']}'dan {persona_name} arıyorum. "
+                f"{time_word} randevunuzu hatırlatmak istedim. "
+                + (f"Randevunuz {appt_display} olarak kayıtlı. " if appt_time else "")
+                + "Randevunuz için hazır mısınız?"
+            )
+
+        # ── Standard outbound (followup, re_contact, etc.) ─────────────────
+        else:
+            system_prompt = f"""{outbound_playbook_text}
 
 Sen {org['name']} adına arayan {persona_name}'sın.
 Arama yapılan kişi: {contact_name}
@@ -786,11 +962,12 @@ Arama amacı: {scenario}
 KURAL: Kısa ve doğal konuş. Zorlayıcı olma.
 KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
 """
-        opening = (
-            f"Merhaba{', ' + contact_name if contact_name else ''}! "
-            f"Ben {org['name']}'dan {persona_name} arıyorum. "
-            f"Şu an uygun musunuz, iki dakikanız var mı?"
-        )
+            opening = (
+                f"Merhaba{', ' + contact_name if contact_name else ''}! "
+                f"Ben {org['name']}'dan {persona_name} arıyorum. "
+                f"Şu an uygun musunuz, iki dakikanız var mı?"
+            )
+
         direction  = "outbound"
         phone_from = os.environ.get("PLATFORM_OUTBOUND_NUMBER", "")
 
@@ -799,14 +976,14 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
 
     # ── Calendar tools (only if feature enabled) ───────────────────────────────
     fnc_ctx = None
-    if calendar_enabled:
+    if calendar_enabled and calendar_adapter is not None:
         fnc_ctx = llm.FunctionContext()
 
         @fnc_ctx.ai_callable(description="Müsait randevu saatlerini listeler. Kullanıcı randevu/görüşme istediğinde çağır.")
         async def check_availability(
             date: Annotated[str, llm.TypeInfo(description="Kontrol edilecek tarih, YYYY-MM-DD formatında. Belirtilmezse yakın 3 günü döndür.")] = ""
         ) -> str:
-            slots = await fetch_free_slots_ghl(calendar_id, pit_token)
+            slots = await calendar_adapter.get_free_slots(days=3)
             if not slots:
                 return "TAKVİM_HATA: Takvime şu an erişemiyorum. Kullanıcıya ekibimizin en kısa sürede kendisini arayacağını söyle ve görüşmeyi nazikçe sonlandır."
             return f"Müsait saatler:\n{slots}"
@@ -818,8 +995,12 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
             datetime_str: Annotated[str, llm.TypeInfo(description="Randevu tarihi ve saati, YYYY-MM-DDTHH:MM formatında")],
             notes: Annotated[str, llm.TypeInfo(description="Ek notlar veya özel istekler")] = "",
         ) -> str:
-            ok = await create_appointment_ghl(calendar_id, pit_token, name, phone, datetime_str, notes)
-            if ok:
+            result = await calendar_adapter.create_appointment(name, phone, datetime_str, notes)
+            if result["success"]:
+                # Create voice reminder tasks (-24h and -2h)
+                asyncio.create_task(create_appointment_reminders(
+                    org_id, contact_id, lead_id, conv_id, datetime_str
+                ))
                 return f"Randevunuz oluşturuldu: {name}, {datetime_str}. Onay bilgisi size iletilecektir."
             return "Randevu oluşturulurken bir sorun oluştu. Lütfen tekrar deneyin veya bizi arayın."
 
@@ -842,7 +1023,7 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
         **({"fnc_ctx": fnc_ctx} if fnc_ctx else {}),
     )
 
-    call_start     = datetime.utcnow()
+    call_start     = datetime.now(timezone.utc)
     transcript     = []
     handoff_reason = None   # handoff tetiklendiyse sebebi
 
@@ -880,8 +1061,6 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
     )
     await background_audio.start(room=ctx.room, agent_session=session)
 
-    await session.generate_reply(instructions=opening)
-
     @ctx.room.on("disconnected")
     def on_disconnected():
         asyncio.create_task(_save_all(
@@ -899,6 +1078,8 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
             room_name=room_name,
         ))
 
+    await session.generate_reply(instructions=opening)
+
 
 async def _save_all(
     org_id, direction, call_start, transcript,
@@ -906,7 +1087,7 @@ async def _save_all(
     conv_id, intake, handoff_reason, room_name,
 ):
     """Çağrı bittikten sonra tüm DB yazımlarını sırayla yap."""
-    duration = int((datetime.utcnow() - call_start).total_seconds())
+    duration = int((datetime.now(timezone.utc) - call_start).total_seconds())
 
     # 1. Messages
     await save_messages(conv_id, org_id, transcript)

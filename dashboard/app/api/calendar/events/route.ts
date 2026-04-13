@@ -18,6 +18,7 @@ async function getOrgCalendar(userId: string) {
 
 async function refreshToken(orgId: string, cal: any): Promise<string | null> {
   if (!cal?.refresh_token) return null
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) return null
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -56,7 +57,7 @@ async function getValidToken(orgId: string, cal: any): Promise<string | null> {
   return cal.access_token
 }
 
-// GET — upcoming events
+// GET — upcoming events (provider-agnostic)
 export async function GET(req: NextRequest) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -66,24 +67,54 @@ export async function GET(req: NextRequest) {
   if (!result) return NextResponse.json({ error: 'Org bulunamadı' }, { status: 404 })
 
   const { orgId, cal } = result
-  if (!cal?.access_token) return NextResponse.json({ connected: false, events: [] })
+  const provider = cal?.provider ?? 'none'
 
+  // No calendar configured
+  if (provider === 'none' || !cal) {
+    return NextResponse.json({ connected: false, provider: 'none', events: [] })
+  }
+
+  // Dentsoft — adapter not yet implemented
+  if (provider === 'dentsoft') {
+    return NextResponse.json({ connected: true, provider: 'dentsoft', events: [], dentsoft_pending: true })
+  }
+
+  // Google Calendar
+  if (provider === 'google') {
+    if (!cal?.access_token) return NextResponse.json({ connected: false, provider: 'google', events: [] })
+
+    const token = await getValidToken(orgId, cal)
+    if (!token) return NextResponse.json({ error: 'Token yenilenemedi' }, { status: 401 })
+
+    const calId     = encodeURIComponent(cal.calendar_id || 'primary')
+    const eventsRes = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${calId}/events?` +
+      new URLSearchParams({ timeMin: new Date().toISOString(), maxResults: '30', singleEvents: 'true', orderBy: 'startTime' }),
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+
+    if (!eventsRes.ok) return NextResponse.json({ error: await eventsRes.text() }, { status: eventsRes.status })
+    const data = await eventsRes.json()
+    return NextResponse.json({ connected: true, provider: 'google', events: data.items ?? [] })
+  }
+
+  // Legacy: no calendar.provider but old config pattern
+  if (!cal?.access_token) return NextResponse.json({ connected: false, provider: 'google', events: [] })
   const token = await getValidToken(orgId, cal)
   if (!token) return NextResponse.json({ error: 'Token yenilenemedi' }, { status: 401 })
 
-  const calId = encodeURIComponent(cal.calendar_id || 'primary')
+  const calId     = encodeURIComponent(cal.calendar_id || 'primary')
   const eventsRes = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${calId}/events?` +
     new URLSearchParams({ timeMin: new Date().toISOString(), maxResults: '30', singleEvents: 'true', orderBy: 'startTime' }),
     { headers: { Authorization: `Bearer ${token}` } }
   )
-
   if (!eventsRes.ok) return NextResponse.json({ error: await eventsRes.text() }, { status: eventsRes.status })
   const data = await eventsRes.json()
-  return NextResponse.json({ connected: true, events: data.items ?? [] })
+  return NextResponse.json({ connected: true, provider: 'google', events: data.items ?? [] })
 }
 
-// POST — create event
+// POST — create event (Google Calendar only — Dentsoft pending)
 export async function POST(req: NextRequest) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -93,12 +124,20 @@ export async function POST(req: NextRequest) {
   if (!result) return NextResponse.json({ error: 'Org bulunamadı' }, { status: 404 })
 
   const { orgId, cal } = result
+  const provider = cal?.provider ?? 'none'
+
+  if (provider === 'dentsoft') {
+    return NextResponse.json({ error: 'Dentsoft takvim entegrasyonu yakında aktif olacak' }, { status: 400 })
+  }
+
   if (!cal?.access_token) return NextResponse.json({ error: 'Takvim bağlı değil' }, { status: 400 })
 
   const token = await getValidToken(orgId, cal)
   if (!token) return NextResponse.json({ error: 'Token yenilenemedi' }, { status: 401 })
 
-  const { title, startDateTime, endDateTime, description, attendeeEmail } = await req.json()
+  let body: any
+  try { body = await req.json() } catch { return NextResponse.json({ error: 'Geçersiz JSON' }, { status: 400 }) }
+  const { title, startDateTime, endDateTime, description, attendeeEmail } = body
   if (!title || !startDateTime || !endDateTime)
     return NextResponse.json({ error: 'title, startDateTime, endDateTime zorunlu' }, { status: 400 })
 

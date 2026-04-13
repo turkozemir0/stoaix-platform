@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { sendDentsoftEvent } from './dentsoft-adapter.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,10 +39,13 @@ export interface AppointmentBookedPayload {
 export type CrmEventPayload = NewLeadPayload | LeadStatusChangePayload | AppointmentBookedPayload
 
 interface CrmConfig {
-  provider:       string
-  webhook_url?:   string
+  provider:        string
+  webhook_url?:    string
   webhook_secret?: string
-  events?:        string[]
+  events?:         string[]
+  api_url?:        string
+  api_key?:        string
+  clinic_id?:      string
 }
 
 // ─── HMAC-SHA256 signature ────────────────────────────────────────────────────
@@ -78,8 +82,29 @@ export async function sendCrmEvent(
     if (!org) return
 
     const crm = org.crm_config as CrmConfig | null
-    if (!crm || crm.provider !== 'webhook') return
+    if (!crm || crm.provider === 'none') return
+
+    // ── Dentsoft provider ──
+    if (crm.provider === 'dentsoft') {
+      await sendDentsoftEvent(
+        { api_url: crm.api_url ?? '', api_key: crm.api_key ?? '', clinic_id: crm.clinic_id },
+        payload.event,
+        payload as unknown as Record<string, unknown>
+      )
+      return
+    }
+
+    if (crm.provider !== 'webhook') return
     if (!crm.webhook_url) return
+
+    // SSRF guard — only allow HTTPS to public hosts
+    try {
+      const parsed = new URL(crm.webhook_url)
+      if (parsed.protocol !== 'https:') return
+      // Block RFC-1918 / loopback ranges
+      const host = parsed.hostname
+      if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) return
+    } catch { return }
 
     // Check event subscription
     const subscribedEvents = crm.events ?? ['new_lead', 'lead_status_change', 'appointment_booked']

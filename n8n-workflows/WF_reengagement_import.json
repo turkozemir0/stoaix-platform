@@ -369,7 +369,13 @@
             { "name": "apikey",        "value": "={{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" },
             { "name": "Authorization", "value": "=Bearer {{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" },
             { "name": "Content-Type",  "value": "application/json" },
-            { "name": "Prefer",        "value": "return=minimal" }
+            { "name": "Prefer",        "value": "resolution=ignore-duplicates,return=minimal" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "on_conflict", "value": "organization_id,contact_id,sequence_stage" }
           ]
         },
         "sendBody": true,
