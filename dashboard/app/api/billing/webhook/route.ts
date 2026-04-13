@@ -8,9 +8,6 @@ function getServiceClient() {
   return createSupabase(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 
-// Stripe raw body gerektirir — Next.js body parsing devre dışı
-export const config = { api: { bodyParser: false } }
-
 export async function POST(req: NextRequest) {
   const sig = req.headers.get('stripe-signature')
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
