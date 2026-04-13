@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef, Suspense } from 'react'
-import { Settings, Trash2, Plus, Loader2, Calendar, CheckCircle2, ExternalLink, Instagram, X, MessageCircle } from 'lucide-react'
+import { Settings, Trash2, Plus, Loader2, Calendar, CheckCircle2, ExternalLink, Instagram, X, MessageCircle, Lock, ToggleLeft, ToggleRight, CreditCard } from 'lucide-react'
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -574,7 +575,178 @@ function ExcludedPhonesSection() {
   )
 }
 
+// ─── Module labels ────────────────────────────────────────────────────────────
+
+const MODULE_LABELS: Record<string, string> = {
+  whatsapp:       'WhatsApp',
+  inbox:          'Gelen Kutusu',
+  voice:          'Ses Agent',
+  knowledge_base: 'Bilgi Bankası',
+  leads:          'Lead Yönetimi',
+  proposals:      'Teklifler',
+  calendar:       'Takvim',
+  followup:       'Takip',
+  instagram:      'Instagram DM',
+  analytics:      'Analitik',
+  api:            'API / Webhook',
+  crm:            'CRM Entegrasyonu',
+  support:        'Destek',
+  team:           'Ekip',
+}
+
+interface ModuleFeature {
+  key: string
+  module: string
+  name: string
+  plan_enabled: boolean
+  plan_limit: number | null
+  user_disabled: boolean
+  effective_enabled: boolean
+}
+
+function ModulesSection() {
+  const [features, setFeatures] = useState<ModuleFeature[]>([])
+  const [loading, setLoading] = useState(true)
+  const [toggling, setToggling] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/settings/modules')
+      .then(r => (r.ok ? r.json() : []))
+      .then(d => setFeatures(Array.isArray(d) ? d : []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function toggle(featureKey: string, newEnabled: boolean) {
+    setToggling(featureKey)
+    try {
+      await fetch('/api/settings/modules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ feature_key: featureKey, enabled: newEnabled }),
+      })
+      // Optimistic update
+      setFeatures(prev => prev.map(f =>
+        f.key === featureKey
+          ? { ...f, user_disabled: !newEnabled, effective_enabled: f.plan_enabled && newEnabled }
+          : f
+      ))
+    } finally {
+      setToggling(null)
+    }
+  }
+
+  // Group by module
+  const grouped: Record<string, ModuleFeature[]> = {}
+  for (const f of features) {
+    if (!grouped[f.module]) grouped[f.module] = []
+    grouped[f.module].push(f)
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="animate-pulse bg-white rounded-xl border border-slate-200 p-4 space-y-2">
+            <div className="h-3 w-24 bg-slate-100 rounded" />
+            {[1, 2].map(j => (
+              <div key={j} className="flex items-center justify-between py-2">
+                <div className="h-3 w-40 bg-slate-100 rounded" />
+                <div className="h-5 w-10 bg-slate-100 rounded-full" />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (features.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-sm text-slate-400">
+        Özellik listesi yüklenemedi.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-500">
+        Planınızda açık olan modülleri kapatabilirsiniz. Planınızda olmayan modüller için{' '}
+        <Link href="/dashboard/billing" className="text-brand-600 underline hover:text-brand-700">plan yükseltme</Link>{' '}
+        gereklidir.
+      </p>
+      {Object.entries(grouped).map(([module, moduleFeatures]) => (
+        <div key={module} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="px-5 py-3 bg-slate-50 border-b border-slate-100">
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              {MODULE_LABELS[module] ?? module}
+            </h3>
+          </div>
+          <div className="divide-y divide-slate-50">
+            {moduleFeatures.map(f => {
+              const isToggling = toggling === f.key
+              return (
+                <div key={f.key} className="flex items-center justify-between px-5 py-3.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {!f.plan_enabled ? (
+                      <Lock size={14} className="shrink-0 text-slate-300" />
+                    ) : f.effective_enabled ? (
+                      <div className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+                    ) : (
+                      <div className="h-2 w-2 shrink-0 rounded-full bg-slate-300" />
+                    )}
+                    <div className="min-w-0">
+                      <p className={`text-sm font-medium truncate ${!f.plan_enabled ? 'text-slate-400' : 'text-slate-700'}`}>
+                        {f.name}
+                      </p>
+                      {f.plan_limit !== null && (
+                        <p className="text-xs text-slate-400">{f.plan_limit.toLocaleString('tr-TR')}/ay limit</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {!f.plan_enabled ? (
+                    <Link
+                      href="/dashboard/billing"
+                      className="shrink-0 text-xs text-brand-600 font-medium hover:text-brand-700 flex items-center gap-1"
+                    >
+                      <CreditCard size={12} />
+                      Yükselt
+                    </Link>
+                  ) : (
+                    <button
+                      onClick={() => toggle(f.key, !f.effective_enabled)}
+                      disabled={isToggling}
+                      title={f.effective_enabled ? 'Kapat' : 'Aç'}
+                      className="shrink-0 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50"
+                    >
+                      {isToggling ? (
+                        <Loader2 size={20} className="animate-spin" />
+                      ) : f.effective_enabled ? (
+                        <ToggleRight size={24} className="text-emerald-500" />
+                      ) : (
+                        <ToggleLeft size={24} className="text-slate-300" />
+                      )}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Main Settings Page ───────────────────────────────────────────────────────
+
+type SettingsTab = 'kanallar' | 'moduller'
+
 export default function SettingsPage() {
+  const [activeTab, setActiveTab] = useState<SettingsTab>('kanallar')
+
   return (
     <div className="max-w-2xl mx-auto py-8 px-4">
       <div className="flex items-center gap-3 mb-6">
@@ -582,18 +754,39 @@ export default function SettingsPage() {
         <h1 className="text-xl font-semibold text-slate-800">Ayarlar</h1>
       </div>
 
-      <div className="space-y-6">
-        <Suspense fallback={<div className="bg-white rounded-xl border border-slate-200 p-6 text-sm text-slate-400">Yükleniyor...</div>}>
-          <WhatsAppSection />
-        </Suspense>
-        <Suspense fallback={<div className="bg-white rounded-xl border border-slate-200 p-6 text-sm text-slate-400">Yükleniyor...</div>}>
-          <InstagramSection />
-        </Suspense>
-        <Suspense fallback={<div className="bg-white rounded-xl border border-slate-200 p-6 text-sm text-slate-400">Yükleniyor...</div>}>
-          <CalendarSection />
-        </Suspense>
-        <ExcludedPhonesSection />
+      {/* Tab nav */}
+      <div className="flex gap-1 mb-6 bg-slate-100 p-1 rounded-xl w-fit">
+        {(['kanallar', 'moduller'] as SettingsTab[]).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              activeTab === tab
+                ? 'bg-white text-slate-800 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {tab === 'kanallar' ? 'Kanallar' : 'Modüller'}
+          </button>
+        ))}
       </div>
+
+      {activeTab === 'kanallar' && (
+        <div className="space-y-6">
+          <Suspense fallback={<div className="bg-white rounded-xl border border-slate-200 p-6 text-sm text-slate-400">Yükleniyor...</div>}>
+            <WhatsAppSection />
+          </Suspense>
+          <Suspense fallback={<div className="bg-white rounded-xl border border-slate-200 p-6 text-sm text-slate-400">Yükleniyor...</div>}>
+            <InstagramSection />
+          </Suspense>
+          <Suspense fallback={<div className="bg-white rounded-xl border border-slate-200 p-6 text-sm text-slate-400">Yükleniyor...</div>}>
+            <CalendarSection />
+          </Suspense>
+          <ExcludedPhonesSection />
+        </div>
+      )}
+
+      {activeTab === 'moduller' && <ModulesSection />}
     </div>
   )
 }

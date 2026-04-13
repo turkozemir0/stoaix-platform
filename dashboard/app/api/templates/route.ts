@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabase } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
+import { checkEntitlement, incrementUsage } from '@/lib/entitlements'
 
 function getServiceClient() {
   return createSupabase(
@@ -74,6 +75,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Yetki yetersiz' }, { status: 403 })
   }
 
+  const ent = await checkEntitlement(orgUser.organization_id, 'whatsapp_templates')
+  if (!ent.enabled) return NextResponse.json({ error: 'upgrade_required', feature: 'whatsapp_templates' }, { status: 403 })
+  if (ent.remaining !== null && ent.remaining <= 0) {
+    return NextResponse.json({ error: 'usage_limit_exceeded', feature: 'whatsapp_templates', limit: ent.limit, used: ent.used }, { status: 403 })
+  }
+
   const { data: template, error } = await service
     .from('message_templates')
     .insert({
@@ -96,5 +103,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  await incrementUsage(orgUser.organization_id, 'whatsapp_templates')
   return NextResponse.json({ template }, { status: 201 })
 }

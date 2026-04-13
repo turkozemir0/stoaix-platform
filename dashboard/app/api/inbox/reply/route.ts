@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { checkEntitlement, incrementUsage } from '@/lib/entitlements'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_CONTENT_LEN = 4096
@@ -65,6 +66,14 @@ export async function POST(request: NextRequest) {
 
   if (conv.channel === 'voice') {
     return NextResponse.json({ error: 'Ses konuşmalarına yanıt gönderilemez' }, { status: 400 })
+  }
+
+  // Feature gate: kanal bazlı
+  const featureKey = conv.channel === 'instagram' ? 'instagram_dm' : 'whatsapp_outbound'
+  const ent = await checkEntitlement(conv.organization_id, featureKey)
+  if (!ent.enabled) return NextResponse.json({ error: 'upgrade_required', feature: featureKey }, { status: 403 })
+  if (ent.remaining !== null && ent.remaining <= 0) {
+    return NextResponse.json({ error: 'usage_limit_exceeded', feature: featureKey, limit: ent.limit, used: ent.used }, { status: 403 })
   }
 
   // Fetch org channel_config
@@ -169,5 +178,6 @@ export async function POST(request: NextRequest) {
 
   if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 })
 
+  await incrementUsage(conv.organization_id, featureKey)
   return NextResponse.json({ message: newMsg })
 }

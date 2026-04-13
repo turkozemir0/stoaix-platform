@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { checkEntitlement } from '@/lib/entitlements'
 
 function getServiceClient() {
   return createClient(
@@ -35,6 +36,9 @@ export async function GET(req: NextRequest) {
   const orgId = await resolveOrgId(req)
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const ent = await checkEntitlement(orgId, 'followup_manual')
+  if (!ent.enabled) return NextResponse.json({ error: 'upgrade_required', feature: 'followup_manual' }, { status: 403 })
+
   const status = req.nextUrl.searchParams.get('status') // 'pending' | 'done' | null (hepsi)
 
   const sb = getServiceClient()
@@ -60,6 +64,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const orgId = await resolveOrgId(req)
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const ent = await checkEntitlement(orgId, 'followup_manual')
+  if (!ent.enabled) return NextResponse.json({ error: 'upgrade_required', feature: 'followup_manual' }, { status: 403 })
 
   const body = await req.json()
   const { note, action_type, scheduled_at, contact_name, contact_phone, contact_id, lead_id } = body as {

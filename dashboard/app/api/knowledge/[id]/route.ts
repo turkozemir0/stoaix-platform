@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient, createClient } from '@/lib/supabase/server'
 import OpenAI from 'openai'
+import { checkEntitlement, decrementUsage } from '@/lib/entitlements'
 import { getSchema } from '@/lib/kb-schemas'
 
 function getOpenAI() { return new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) }
@@ -32,6 +33,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
+  const orgId = body.organization_id as string | undefined
+  if (orgId) {
+    const ent = await checkEntitlement(orgId, 'kb_write')
+    if (!ent.enabled) return NextResponse.json({ error: 'upgrade_required', feature: 'kb_write' }, { status: 403 })
+  }
   const { title, description_for_ai: manualDescription, data: itemData, tags, item_type, is_active } = body
 
   const service = createServiceClient()
@@ -94,11 +100,20 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const service = createServiceClient()
+
+  // Silmeden önce org_id'yi çek (usage decrement için)
+  const { data: item } = await service
+    .from('knowledge_items')
+    .select('organization_id')
+    .eq('id', params.id)
+    .single()
+
   const { error } = await service
     .from('knowledge_items')
     .delete()
     .eq('id', params.id)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (item?.organization_id) await decrementUsage(item.organization_id, 'kb_write')
   return NextResponse.json({ success: true })
 }

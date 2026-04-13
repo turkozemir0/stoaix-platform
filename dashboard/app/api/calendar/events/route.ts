@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabase } from '@supabase/supabase-js'
+import { checkEntitlement } from '@/lib/entitlements'
 
 function getServiceClient() {
   return createSupabase(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -67,6 +68,10 @@ export async function GET(req: NextRequest) {
   if (!result) return NextResponse.json({ error: 'Org bulunamadı' }, { status: 404 })
 
   const { orgId, cal } = result
+
+  const ent = await checkEntitlement(orgId, 'calendar_manage')
+  if (!ent.enabled) return NextResponse.json({ error: 'upgrade_required', feature: 'calendar_manage' }, { status: 403 })
+
   const provider = cal?.provider ?? 'none'
 
   // No calendar configured
@@ -124,6 +129,10 @@ export async function POST(req: NextRequest) {
   if (!result) return NextResponse.json({ error: 'Org bulunamadı' }, { status: 404 })
 
   const { orgId, cal } = result
+
+  const entPost = await checkEntitlement(orgId, 'calendar_manage')
+  if (!entPost.enabled) return NextResponse.json({ error: 'upgrade_required', feature: 'calendar_manage' }, { status: 403 })
+
   const provider = cal?.provider ?? 'none'
 
   if (provider === 'dentsoft') {

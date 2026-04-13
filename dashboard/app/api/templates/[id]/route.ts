@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabase } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
+import { checkEntitlement, decrementUsage } from '@/lib/entitlements'
 
 function getServiceClient() {
   return createSupabase(
@@ -101,5 +102,6 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     .eq('organization_id', orgUser.organization_id)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  await decrementUsage(orgUser.organization_id, 'whatsapp_templates')
   return NextResponse.json({ ok: true })
 }

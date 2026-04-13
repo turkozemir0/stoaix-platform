@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { checkEntitlement } from '@/lib/entitlements'
 
 // GET /api/leads/kanban?status=new&q=xxx&page=0
 export async function GET(request: NextRequest) {
@@ -21,6 +22,12 @@ export async function GET(request: NextRequest) {
 
   if (!orgUser && !superAdmin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
+  const orgId = orgUser?.organization_id
+  if (orgId) {
+    const ent = await checkEntitlement(orgId, 'leads_kanban')
+    if (!ent.enabled) return NextResponse.json({ error: 'upgrade_required', feature: 'leads_kanban' }, { status: 403 })
+  }
+
   const sp = request.nextUrl.searchParams
   const status = sp.get('status')
   const q = sp.get('q')?.trim() ?? ''
@@ -29,7 +36,7 @@ export async function GET(request: NextRequest) {
 
   if (!status) return NextResponse.json({ error: 'status required' }, { status: 400 })
 
-  const orgId = orgUser?.organization_id
+
 
   let contactIds: string[] | null = null
 

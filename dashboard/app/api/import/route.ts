@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabase } from '@supabase/supabase-js'
 import Papa from 'papaparse'
 import { normalizePhone } from '@/lib/phone-utils'
+import { checkEntitlement, incrementUsage } from '@/lib/entitlements'
 
 function getServiceClient() {
   return createSupabase(
@@ -51,6 +52,9 @@ export async function POST(request: NextRequest) {
 
   const orgId = orgUser?.organization_id
   if (!orgId) return NextResponse.json({ error: 'Org bulunamadı' }, { status: 400 })
+
+  const ent = await checkEntitlement(orgId, 'leads_import_csv')
+  if (!ent.enabled) return NextResponse.json({ error: 'upgrade_required', feature: 'leads_import_csv' }, { status: 403 })
 
   const formData = await request.formData()
   const file = formData.get('file') as File | null
@@ -204,6 +208,8 @@ export async function POST(request: NextRequest) {
       completed_at: new Date().toISOString(),
     })
     .eq('id', job.id)
+
+  if (insertedCount > 0) await incrementUsage(orgId, 'leads_import_csv', insertedCount)
 
   return NextResponse.json({
     ok: true,

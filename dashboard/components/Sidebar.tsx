@@ -7,11 +7,12 @@ import {
   LayoutDashboard, MessageSquare, Phone, BookOpen, Settings, LogOut,
   ShieldCheck, LifeBuoy, Bot, RefreshCw, ClipboardList, Menu, X,
   Target, HeartHandshake, FileText, Wallet, Calendar, Inbox, LayoutTemplate,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, CreditCard,
 } from 'lucide-react'
 import { useT, useLang } from '@/lib/lang-context'
 import { createClient } from '@/lib/supabase/client'
 import NotificationBell from './NotificationBell'
+import UsageWidget from './billing/UsageWidget'
 
 interface Props {
   orgName: string
@@ -58,6 +59,7 @@ export default function Sidebar({ orgName, isSuperAdmin, userRole, userId, orgId
     { href: '/dashboard/support',       label: t.tickets,                                   icon: LifeBuoy,        roles: ['admin','viewer','yönetici'] },
     { href: '/dashboard/templates',      label: lang === 'tr' ? 'Templateler' : 'Templates', icon: LayoutTemplate,  roles: ['admin','yönetici','satisci'] },
     { href: '/dashboard/settings',      label: lang === 'tr' ? 'Ayarlar' : 'Settings',     icon: Settings,        roles: ['admin','yönetici','satisci'] },
+    { href: '/dashboard/billing',       label: lang === 'tr' ? 'Plan & Fatura' : 'Billing', icon: CreditCard,      roles: ['admin','yönetici'] },
   ]
 
   const navItems = allNavItems.filter(item =>
@@ -227,6 +229,9 @@ export default function Sidebar({ orgName, isSuperAdmin, userRole, userId, orgId
             </>
           )}
         </nav>
+
+        {/* Usage Widget */}
+        {orgId && <UsageWidget orgId={orgId} collapsed={collapsed} />}
 
         {/* Footer — Lang + Logout + Collapse toggle */}
         <div className={`relative border-t border-white/10 pt-3 pb-3 space-y-1.5 ${collapsed ? 'px-2' : 'px-2'}`}>

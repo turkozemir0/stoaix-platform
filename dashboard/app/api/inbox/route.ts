@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { checkEntitlement } from '@/lib/entitlements'
 
 const VALID_CHANNELS = ['whatsapp', 'instagram', 'voice', 'web']
 
@@ -36,6 +37,9 @@ export async function GET(request: NextRequest) {
   const service = createServiceClient()
   const orgId = await resolveOrgId(user.id, service)
   if (!orgId) return NextResponse.json({ error: 'No org' }, { status: 403 })
+
+  const ent = await checkEntitlement(orgId, 'unified_inbox')
+  if (!ent.enabled) return NextResponse.json({ error: 'upgrade_required', feature: 'unified_inbox' }, { status: 403 })
 
   const { searchParams } = new URL(request.url)
   const channel    = searchParams.get('channel')

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { createClient } from '@/lib/supabase/server'
 import OpenAI from 'openai'
+import { checkEntitlement, incrementUsage } from '@/lib/entitlements'
 import { getSchema } from '@/lib/kb-schemas'
 
 function getOpenAI() { return new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) }
@@ -81,6 +82,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'title ve organization_id zorunlu' }, { status: 400 })
   }
 
+  const ent = await checkEntitlement(organization_id, 'kb_write')
+  if (!ent.enabled) return NextResponse.json({ error: 'upgrade_required', feature: 'kb_write' }, { status: 403 })
+  if (ent.remaining !== null && ent.remaining <= 0) {
+    return NextResponse.json({ error: 'usage_limit_exceeded', feature: 'kb_write', limit: ent.limit, used: ent.used }, { status: 403 })
+  }
+
   // Generate description_for_ai from data if not provided manually
   let description_for_ai: string
   if (manualDescription) {
@@ -112,5 +119,6 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  await incrementUsage(organization_id, 'kb_write')
   return NextResponse.json(data)
 }
