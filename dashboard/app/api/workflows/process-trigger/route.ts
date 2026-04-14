@@ -98,6 +98,22 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // no_answer event — orijinal run'dan contact bilgisi al
+  if (event === 'no_answer' && ref_id) {
+    const { data: origRun } = await service
+      .from('workflow_runs')
+      .select('contact_id, contact_phone')
+      .eq('id', ref_id)
+      .maybeSingle()
+    if (origRun) {
+      contactId    = contactId    ?? origRun.contact_id
+      contactPhone = contactPhone || origRun.contact_phone
+    }
+    // attempt + script_type contact_data'ya ekle
+    if (triggerData?.attempt)     contactData.attempt     = triggerData.attempt
+    if (triggerData?.script_type) contactData.script_type = triggerData.script_type
+  }
+
   // Appointment events — bilgi zenginleştirme
   const isApptEvent = ['appointment_created', 'appointment_reminder', 'appointment_noshow', 'post_appointment'].includes(event)
   if (isApptEvent && triggerData?.id) {
@@ -179,7 +195,7 @@ export async function POST(request: NextRequest) {
         callback_url: `${dashboardUrl}/api/webhooks/n8n-result`,
       }
 
-      fetch(`${n8nWebhookUrl}/webhook/${template.n8n_workflow_id}`, {
+      fetch(`${n8nWebhookUrl.replace(/\/$/, '')}/webhook/${template.n8n_workflow_id}`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(payload),
