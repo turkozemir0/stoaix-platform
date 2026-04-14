@@ -183,7 +183,7 @@ export async function POST(request: NextRequest) {
 
     if (runErr || !run) continue
 
-    // n8n dispatch (async, no-wait)
+    // n8n dispatch
     if (n8nWebhookUrl && contactPhone) {
       const payload = {
         run_id:       run.id,
@@ -195,22 +195,28 @@ export async function POST(request: NextRequest) {
         callback_url: `${dashboardUrl}/api/webhooks/n8n-result`,
       }
 
-      fetch(`${n8nWebhookUrl.replace(/\/$/, '')}/webhook/${template.n8n_workflow_id}`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(payload),
-      }).then(() => {
-        service.from('workflow_runs')
-          .update({ status: 'running', started_at: new Date().toISOString() })
-          .eq('id', run.id)
-          .then(() => {})
-      }).catch(e => {
+      try {
+        const r = await fetch(`${n8nWebhookUrl.replace(/\/$/, '')}/webhook/${template.n8n_workflow_id}`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(payload),
+        })
+        if (r.ok) {
+          await service.from('workflow_runs')
+            .update({ status: 'running', started_at: new Date().toISOString() })
+            .eq('id', run.id)
+        } else {
+          console.error('[process-trigger] n8n returned', r.status)
+          await service.from('workflow_runs')
+            .update({ status: 'failed', finished_at: new Date().toISOString() })
+            .eq('id', run.id)
+        }
+      } catch (e) {
         console.error('[process-trigger] n8n dispatch failed:', e)
-        service.from('workflow_runs')
+        await service.from('workflow_runs')
           .update({ status: 'failed', finished_at: new Date().toISOString() })
           .eq('id', run.id)
-          .then(() => {})
-      })
+      }
     }
 
     processed++
