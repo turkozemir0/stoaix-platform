@@ -95,6 +95,47 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Appointment events — bilgi zenginleştirme
+  const isApptEvent = ['appointment_created', 'appointment_reminder', 'appointment_noshow', 'post_appointment'].includes(event)
+  if (isApptEvent && triggerData?.id) {
+    const apptId = ref_id ?? triggerData.id
+    const { data: appt } = await service
+      .from('appointments')
+      .select('contact_id, lead_id, scheduled_at, metadata')
+      .eq('id', apptId)
+      .maybeSingle()
+
+    if (appt) {
+      contactId = contactId ?? appt.contact_id ?? appt.lead_id
+      contactData.appointment_id = apptId
+      contactData.lead_id        = appt.lead_id ?? null
+      contactData.contact_id     = appt.contact_id ?? null
+
+      // appointment_time from schedule or pre-built label
+      if (triggerData.appointment_time) {
+        contactData.appointment_time = triggerData.appointment_time
+      } else if (appt.scheduled_at) {
+        const apptDate = new Date(appt.scheduled_at)
+        contactData.appointment_time = apptDate.toLocaleString('tr-TR', {
+          timeZone: 'Europe/Istanbul', hour12: false,
+        })
+      }
+
+      // Get contact phone if not set yet
+      if (!contactPhone && appt.contact_id) {
+        const { data: c } = await service
+          .from('contacts')
+          .select('phone, full_name')
+          .eq('id', appt.contact_id)
+          .maybeSingle()
+        if (c) {
+          contactPhone     = c.phone ?? ''
+          contactData.name = contactData.name || (c.full_name ?? '')
+        }
+      }
+    }
+  }
+
   const dashboardUrl   = process.env.NEXT_PUBLIC_APP_URL || 'https://platform.stoaix.com'
   const n8nWebhookUrl  = process.env.N8N_WEBHOOK_BASE_URL
 
