@@ -218,8 +218,8 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     n8n_workflow_id: 'lead-first-contact-chat',
     config_fields: [
       { key: 'delay_minutes', label: 'Kaç dakika sonra gönderilsin?', type: 'number', default: 2, unit: 'dakika' },
-      { key: 'message_template', label: 'Mesaj şablonu adı', type: 'text', default: 're_engagement_v1',
-        description: 'Meta onaylı template adı (24h window dışı için)' },
+      { key: 'message_template', label: 'WhatsApp Template', type: 'template_picker', default: '',
+        description: 'Meta\'da onaylı template seçin' },
     ],
     steps_summary: [
       'Lead oluşunca {{delay_minutes}} dk sonra WA mesajı gönderir',
@@ -261,6 +261,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     n8n_workflow_id: 'appointment-confirm-chat',
     config_fields: [
       { key: 'hours_before', label: 'Randevudan kaç saat önce?', type: 'number', default: 24, unit: 'saat' },
+      { key: 'message_template', label: 'WhatsApp Template', type: 'template_picker', default: '', description: 'Meta\'da onaylı template seçin' },
     ],
     steps_summary: [
       'Randevudan {{hours_before}} saat önce WA teyit mesajı',
@@ -280,6 +281,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     n8n_workflow_id: 'appointment-reminder-chat',
     config_fields: [
       { key: 'hours_before', label: 'Randevudan kaç saat önce?', type: 'number', default: 2, unit: 'saat' },
+      { key: 'message_template', label: 'WhatsApp Template', type: 'template_picker', default: '', description: 'Meta\'da onaylı template seçin' },
     ],
     steps_summary: [
       'Randevudan {{hours_before}} saat önce WA hatırlatma',
@@ -299,6 +301,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     n8n_workflow_id: 'satisfaction-survey-chat',
     config_fields: [
       { key: 'hours_after', label: 'Randevudan kaç saat sonra?', type: 'number', default: 24, unit: 'saat' },
+      { key: 'message_template', label: 'WhatsApp Template', type: 'template_picker', default: '', description: 'Meta\'da onaylı template seçin' },
     ],
     steps_summary: [
       'Randevudan {{hours_after}} saat sonra WA anket mesajı',
@@ -319,7 +322,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     config_fields: [
       { key: 'inactive_days',    label: 'Son etkileşimden kaç gün geçmişse?', type: 'number', default: 90, unit: 'gün' },
       { key: 'offer_text',       label: 'Özel teklif metni (isteğe bağlı)',   type: 'text',   default: '' },
-      { key: 'message_template', label: 'Meta template adı',                  type: 'text',   default: 're_engagement_v1' },
+      { key: 'message_template', label: 'WhatsApp Template', type: 'template_picker', default: '', description: 'Meta\'da onaylı template seçin' },
     ],
     steps_summary: [
       '{{inactive_days}} gün hareketsiz leadlere WA mesajı',
@@ -340,6 +343,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     n8n_workflow_id: 'payment-followup-chat',
     config_fields: [
       { key: 'delay_days',  label: 'Ödeme tarihinden kaç gün sonra?', type: 'number', default: 3, unit: 'gün' },
+      { key: 'message_template', label: 'WhatsApp Template', type: 'template_picker', default: '', description: 'Meta\'da onaylı template seçin' },
     ],
     steps_summary: [
       'Ödeme tarihinden {{delay_days}} gün sonra WA hatırlatması',
@@ -362,7 +366,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     config_fields: [
       { key: 'voice_attempts',     label: 'Sesli deneme sayısı',    type: 'number', default: 3 },
       { key: 'voice_delay_minutes', label: 'İlk aramaya gecikme',   type: 'number', default: 5,  unit: 'dakika' },
-      { key: 'wa_template',         label: 'WA template adı',       type: 'text',   default: 're_engagement_v1' },
+      { key: 'wa_template', label: 'WhatsApp Template', type: 'template_picker', default: '', description: 'Meta\'da onaylı template seçin' },
     ],
     steps_summary: [
       '{{voice_attempts}} sesli deneme başarısız olursa',

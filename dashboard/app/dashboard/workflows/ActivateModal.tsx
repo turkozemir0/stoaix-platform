@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Loader2, Zap, AlertCircle } from 'lucide-react'
 import type { TemplateWithStatus, ConfigField } from '@/lib/workflow-types'
 
@@ -22,11 +22,43 @@ function ConfigFieldInput({
   field,
   value,
   onChange,
+  approvedTemplates,
+  templatesLoading,
 }: {
   field: ConfigField
   value: any
   onChange: (key: string, value: any) => void
+  approvedTemplates: { id: string; name: string }[]
+  templatesLoading: boolean
 }) {
+  if (field.type === 'template_picker') {
+    if (templatesLoading) {
+      return <div className="h-9 w-full rounded-lg bg-slate-100 animate-pulse" />
+    }
+    if (approvedTemplates.length === 0) {
+      return (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          Henüz onaylı WhatsApp template&apos;iniz yok.{' '}
+          <a href="/dashboard/templates" className="underline font-medium hover:text-amber-900">
+            Templates sayfasından oluşturup Meta&apos;ya gönderin.
+          </a>
+        </div>
+      )
+    }
+    return (
+      <select
+        value={String(value ?? '')}
+        onChange={e => onChange(field.key, e.target.value)}
+        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+      >
+        <option value="">-- Template seçin --</option>
+        {approvedTemplates.map(t => (
+          <option key={t.id} value={t.name}>{t.name}</option>
+        ))}
+      </select>
+    )
+  }
+
   if (field.type === 'select') {
     return (
       <select
@@ -97,6 +129,20 @@ export default function ActivateModal({ template, onClose, onSaved }: Props) {
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState('')
 
+  const needsTemplate = template.channel === 'whatsapp' || template.channel === 'multi'
+  const [approvedTemplates, setApprovedTemplates] = useState<{ id: string; name: string }[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+
+  useEffect(() => {
+    if (!needsTemplate) return
+    setTemplatesLoading(true)
+    fetch('/api/templates')
+      .then(r => r.json())
+      .then(d => setApprovedTemplates((d.templates ?? []).filter((t: any) => t.status === 'approved')))
+      .catch(() => {})
+      .finally(() => setTemplatesLoading(false))
+  }, [needsTemplate])
+
   function handleChange(key: string, value: any) {
     setConfig(prev => ({ ...prev, [key]: value }))
   }
@@ -153,20 +199,13 @@ export default function ActivateModal({ template, onClose, onSaved }: Props) {
           </button>
         </div>
 
-        {/* WhatsApp template warning */}
-        {template.channel === 'whatsapp' && (
+        {/* WhatsApp template notice */}
+        {needsTemplate && approvedTemplates.length > 0 && (
           <div className="mx-6 mt-4 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
             <AlertCircle size={15} className="shrink-0 text-amber-500 mt-0.5" />
-            <div className="text-xs text-amber-800 space-y-1">
-              <p className="font-medium">WhatsApp template gerekli</p>
-              <p>
-                Bu workflow çalışmadan önce Meta&apos;da onaylı bir WhatsApp template oluşturmanız gerekir.{' '}
-                <a href="/dashboard/templates" className="underline font-medium hover:text-amber-900">
-                  Templates sayfasından
-                </a>{' '}
-                oluşturup Meta&apos;ya gönderebilirsiniz.
-              </p>
-            </div>
+            <p className="text-xs text-amber-800">
+              Bu workflow Meta&apos;da onaylı bir template gerektirir. Aşağıdan seçin.
+            </p>
           </div>
         )}
 
@@ -178,7 +217,13 @@ export default function ActivateModal({ template, onClose, onSaved }: Props) {
                 <label className="block text-xs font-medium text-slate-600 mb-1.5">
                   {field.label}
                 </label>
-                <ConfigFieldInput field={field} value={config[field.key]} onChange={handleChange} />
+                <ConfigFieldInput
+                  field={field}
+                  value={config[field.key]}
+                  onChange={handleChange}
+                  approvedTemplates={approvedTemplates}
+                  templatesLoading={templatesLoading}
+                />
               </div>
             ))
           ) : (
@@ -220,7 +265,7 @@ export default function ActivateModal({ template, onClose, onSaved }: Props) {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || template.config_fields.filter(f => f.type === 'template_picker').some(f => !config[f.key])}
             className="flex-1 bg-brand-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-brand-700 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}

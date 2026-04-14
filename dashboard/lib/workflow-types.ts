@@ -33,7 +33,7 @@ export interface ConfigFieldOption {
 export interface ConfigField {
   key: string
   label: string
-  type: 'number' | 'text' | 'time' | 'select' | 'boolean'
+  type: 'number' | 'text' | 'time' | 'select' | 'boolean' | 'template_picker'
   default: string | number | boolean
   unit?: string
   options?: ConfigFieldOption[]
