@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     .eq('is_active', true)
 
   if (error || !workflows?.length) {
-    return NextResponse.json({ processed: 0 })
+    return NextResponse.json({ processed: 0, _debug: 'no_workflows', error: error?.message, count: workflows?.length ?? 0 })
   }
 
   // event → trigger_type eşleşmesi
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   })
 
   if (!matching.length) {
-    return NextResponse.json({ processed: 0 })
+    return NextResponse.json({ processed: 0, _debug: 'no_matching', found_templates: workflows.map(w => ({ id: w.template_id, trigger: getTemplate(w.template_id)?.trigger_type })), event })
   }
 
   // Contact bilgisi
