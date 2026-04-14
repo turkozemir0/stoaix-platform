@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { X, Loader2, Zap } from 'lucide-react'
+import { X, Loader2, Zap, AlertCircle } from 'lucide-react'
 import type { TemplateWithStatus, ConfigField } from '@/lib/workflow-types'
 
 interface Props {
@@ -152,6 +152,23 @@ export default function ActivateModal({ template, onClose, onSaved }: Props) {
             <X size={18} />
           </button>
         </div>
+
+        {/* WhatsApp template warning */}
+        {template.channel === 'whatsapp' && (
+          <div className="mx-6 mt-4 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <AlertCircle size={15} className="shrink-0 text-amber-500 mt-0.5" />
+            <div className="text-xs text-amber-800 space-y-1">
+              <p className="font-medium">WhatsApp template gerekli</p>
+              <p>
+                Bu workflow çalışmadan önce Meta&apos;da onaylı bir WhatsApp template oluşturmanız gerekir.{' '}
+                <a href="/dashboard/templates" className="underline font-medium hover:text-amber-900">
+                  Templates sayfasından
+                </a>{' '}
+                oluşturup Meta&apos;ya gönderebilirsiniz.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Config fields */}
         <div className="px-6 py-4 space-y-4">
