@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     .eq('is_active', true)
 
   if (error || !workflows?.length) {
-    return NextResponse.json({ processed: 0, _debug: 'no_workflows', error: error?.message, count: workflows?.length ?? 0 })
+    return NextResponse.json({ processed: 0 })
   }
 
   // event → trigger_type eşleşmesi
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   })
 
   if (!matching.length) {
-    return NextResponse.json({ processed: 0, _debug: 'no_matching', found_templates: workflows.map(w => ({ id: w.template_id, trigger: getTemplate(w.template_id)?.trigger_type })), event })
+    return NextResponse.json({ processed: 0 })
   }
 
   // Contact bilgisi
@@ -148,6 +148,9 @@ export async function POST(request: NextRequest) {
     if (!template) continue
 
     // workflow_runs INSERT
+    const isValidUuid = (v: any) => typeof v === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
+
     const { data: run, error: runErr } = await service
       .from('workflow_runs')
       .insert({
@@ -156,7 +159,7 @@ export async function POST(request: NextRequest) {
         contact_id:      contactId ?? null,
         contact_phone:   contactPhone,
         trigger_type:    triggerType,
-        trigger_ref_id:  ref_id ?? null,
+        trigger_ref_id:  isValidUuid(ref_id) ? ref_id : null,
         status:          'pending',
       })
       .select('id')
