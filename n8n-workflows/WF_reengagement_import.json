@@ -202,6 +202,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"organization_id\": \"{{ $('Merge Org + Contact Data').first().json.orgId }}\",\n  \"phone\":           {{ $('Merge Org + Contact Data').first().json.phone ? '\"' + $('Merge Org + Contact Data').first().json.phone + '\"' : 'null' }},\n  \"source_channel\":  \"whatsapp\",\n  \"status\":          \"new\",\n  \"channel_identifiers\": {\n    \"ghl_contact_id\": \"{{ $('Merge Org + Contact Data').first().json.ghlContactId }}\"\n  }\n}"
       }
     },
@@ -287,6 +288,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"organization_id\":    \"{{ $('Extract Contact ID').first().json.orgId }}\",\n  \"contact_id\":         \"{{ $('Extract Contact ID').first().json.contactId }}\",\n  \"status\":             \"new\",\n  \"qualification_score\": 5,\n  \"source_channel\":     \"whatsapp\",\n  \"collected_data\":     {{ $('Extract Contact ID').first().json.fullName ? '{\"full_name\": \"' + $('Extract Contact ID').first().json.fullName + '\"}' : '{}' }}\n}"
       }
     },
@@ -380,6 +382,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"organization_id\": \"{{ $('Extract Lead ID').first().json.orgId }}\",\n  \"lead_id\":         \"{{ $('Extract Lead ID').first().json.leadId }}\",\n  \"contact_id\":      \"{{ $('Extract Lead ID').first().json.contactId }}\",\n  \"task_type\":       \"whatsapp_followup\",\n  \"sequence_stage\":  \"re_contact_1\",\n  \"channel\":         \"whatsapp\",\n  \"scheduled_at\":    \"{{ $('Extract Lead ID').first().json.scheduledAt }}\",\n  \"status\":          \"pending\"\n}"
       }
     }

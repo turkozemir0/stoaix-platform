@@ -123,6 +123,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "{ \"status\": \"cancelled\" }"
       }
     },
@@ -248,6 +249,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"recipient_type\": \"individual\",\n  \"to\": \"{{ $json.contacts.channel_identifiers.wa_id }}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"{{ $json.template_name }}\",\n    \"language\": { \"code\": \"{{ $json.template_language }}\" },\n    \"components\": [{ \"type\": \"body\", \"parameters\": [{ \"type\": \"text\", \"text\": \"{{ $json.template_param_1 }}\" }] }]\n  }\n}"
       }
     },
@@ -270,6 +272,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.contacts.channel_identifiers.wa_id }}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"{{ $json.template_name }}\",\n    \"language\": { \"code\": \"{{ $json.template_language }}\" },\n    \"components\": [{ \"type\": \"body\", \"parameters\": [{ \"type\": \"text\", \"text\": \"{{ $json.template_param_1 }}\" }] }]\n  }\n}"
       }
     },
@@ -303,6 +306,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"max_tokens\": 150,\n  \"messages\": [\n    { \"role\": \"system\", \"content\": \"{{ $json.ai_system_prompt.replace(/\"/g, '\\\\\"') }}\" },\n    { \"role\": \"user\",   \"content\": \"{{ $json.ai_user_message }}\" }\n  ]\n}"
       }
     },
@@ -381,6 +385,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"contactId\": \"{{ $json.contacts.channel_identifiers.ghl_contact_id }}\",\n  \"message\":   \"{{ $json.ai_reply.replace(/\"/g, '\\\\\"') }}\",\n  \"type\":       \"{{ $json.channel === 'instagram' ? 'Instagram' : 'SMS' }}\"\n}"
       }
     },
@@ -403,6 +408,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"recipient_type\":    \"individual\",\n  \"to\":   \"{{ $json.contacts.channel_identifiers.wa_id }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ $json.ai_reply.replace(/\"/g, '\\\\\"') }}\" }\n}"
       }
     },
@@ -425,6 +431,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\":   \"{{ $json.contacts.channel_identifiers.wa_id }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ $json.ai_reply.replace(/\"/g, '\\\\\"') }}\" }\n}"
       }
     },
@@ -454,6 +461,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"status\":       \"sent\",\n  \"sent_at\":      \"{{ new Date().toISOString() }}\",\n  \"sent_message\": \"{{ $('Extract Reply').item.json.ai_reply.replace(/\"/g, '\\\\\"') }}\"\n}"
       }
     },
@@ -494,6 +502,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"status\":       \"sent\",\n  \"sent_at\":      \"{{ new Date().toISOString() }}\",\n  \"sent_message\": \"[template] {{ $('Build Template Params').item.json.template_name }}\"\n}"
       }
     },
@@ -529,6 +538,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"organization_id\": \"{{ $json.organization_id }}\",\n  \"lead_id\":         \"{{ $json.lead_id }}\",\n  \"contact_id\":      \"{{ $json.contact_id }}\",\n  \"task_type\":       \"{{ $json.task_type }}\",\n  \"sequence_stage\":  \"{{ $json.sequence_stage }}\",\n  \"channel\":         \"{{ $json.channel }}\",\n  \"scheduled_at\":    \"{{ $json.scheduled_at }}\",\n  \"status\":          \"pending\"\n}"
       }
     }

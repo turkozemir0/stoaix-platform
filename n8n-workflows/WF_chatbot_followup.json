@@ -178,6 +178,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.to_phone }}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"{{ $json.template_name }}\",\n    \"language\": { \"code\": \"{{ $json.template_lang }}\" }\n  }\n}"
       }
     },
@@ -199,6 +200,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"run_id\": \"{{ $('Extract WA Credentials').item.json.run_id }}\",\n  \"status\": \"success\",\n  \"result\": { \"notes\": \"Follow-up WA template sent\" }\n}"
       }
     },
@@ -220,6 +222,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"run_id\": \"{{ $json.run_id }}\",\n  \"status\": \"failed\",\n  \"result\": { \"notes\": \"WhatsApp not configured or contact replied\" }\n}"
       }
     }

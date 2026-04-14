@@ -121,6 +121,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"name\":              \"{{ $json.room_name }}\",\n  \"metadata\":          \"{{ $json.agent_metadata.replace(/\"/g, '\\\\\"') }}\",\n  \"empty_timeout\":     120,\n  \"departure_timeout\": 10\n}"
       }
     },
@@ -143,6 +144,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"agent_name\": \"{{ $('Config').first().json.LIVEKIT_AGENT_NAME }}\",\n  \"room\":       \"{{ $('Build JWT + Payload').item.json.room_name }}\",\n  \"metadata\":   \"{{ $('Build JWT + Payload').item.json.agent_metadata.replace(/\"/g, '\\\\\"') }}\"\n}"
       }
     },
@@ -165,6 +167,7 @@
         },
         "sendBody": true,
         "contentType": "json",
+        "specifyBody": "json",
         "jsonBody": "={\n  \"sip_trunk_id\":         \"{{ $('Build JWT + Payload').item.json.trunk_id }}\",\n  \"sip_call_to\":          \"{{ $('Build JWT + Payload').item.json.phone }}\",\n  \"room_name\":            \"{{ $('Build JWT + Payload').item.json.room_name }}\",\n  \"participant_identity\": \"sip-{{ $('Build JWT + Payload').item.json.phone.replace(/\\\\+/g,'') }}\",\n  \"participant_name\":     \"{{ $('Build JWT + Payload').item.json.contact_name }}\",\n  \"participant_metadata\": \"{{ $('Build JWT + Payload').item.json.agent_metadata.replace(/\"/g, '\\\\\"') }}\"\n}"
       }
     }
