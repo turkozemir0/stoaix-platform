@@ -172,7 +172,9 @@
           ]
         },
         "sendBody": true,
-        "body": "={{ $json.body }}"
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}"
       }
     },
 
@@ -193,7 +195,9 @@
           ]
         },
         "sendBody": true,
-        "body": "={{ $json.body }}"
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}"
       }
     },
 
@@ -214,7 +218,9 @@
           ]
         },
         "sendBody": true,
-        "body": "={{ $json.body }}"
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}"
       }
     }
 
