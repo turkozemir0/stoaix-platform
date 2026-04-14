@@ -1253,6 +1253,8 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
             intake=intake,
             handoff_reason=handoff_reason,
             room_name=room_name,
+            run_id=meta.get("run_id"),
+            callback_url=meta.get("callback_url"),
         ))
 
     await session.generate_reply(instructions=opening)
@@ -1262,6 +1264,7 @@ async def _save_all(
     org_id, direction, call_start, transcript,
     phone_from, phone_to, contact_id, lead_id,
     conv_id, intake, handoff_reason, room_name,
+    run_id=None, callback_url=None,
 ):
     """Çağrı bittikten sonra tüm DB yazımlarını sırayla yap."""
     duration = int((datetime.now(timezone.utc) - call_start).total_seconds())
@@ -1315,6 +1318,30 @@ async def _save_all(
     )
 
     logger.info(f"All data saved — duration: {duration}s, handoff: {handoff_reason}")
+
+    # ── Workflow engine callback ───────────────────────────────────────────────
+    # Eğer bu çağrı bir workflow_run tarafından tetiklendiyse sonucu bildir.
+    # < 15 saniye = cevap alınamadı (no_answer); ≥ 15 saniye = başarılı görüşme.
+    if run_id and callback_url:
+        call_status = "no_answer" if duration < 15 else "success"
+        cb_payload = json.dumps({
+            "run_id": run_id,
+            "status": call_status,
+            "result": {
+                "call_duration_seconds": duration,
+                "next_action": "retry" if call_status == "no_answer" else None,
+            },
+        }).encode()
+        try:
+            import urllib.request as _ureq
+            req = _ureq.Request(
+                callback_url, data=cb_payload,
+                headers={"Content-Type": "application/json"}, method="POST"
+            )
+            _ureq.urlopen(req, timeout=10)
+            logger.info(f"Workflow callback sent: {call_status} for run {run_id}")
+        except Exception as e:
+            logger.warning(f"Workflow callback failed: {e}")
 
 
 # ── Başlat ─────────────────────────────────────────────────────────────────────
