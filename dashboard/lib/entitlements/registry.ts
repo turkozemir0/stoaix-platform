@@ -26,6 +26,14 @@ export const FEATURE_METRIC_MAP: Record<string, string | null> = {
   dentsoft_integration:       null,
   support_tickets:            null,
   multi_team:                 'team_member_count',
+  // Workflow engine features (all boolean, no usage tracking)
+  workflow_engine:            null,
+  workflow_outbound_voice:    null,
+  workflow_chatbot_auto:      null,
+  workflow_sync_flows:        null,
+  workflow_satisfaction:      null,
+  workflow_reactivation:      null,
+  workflow_payment_followup:  null,
 }
 
 export function featureKeyToMetric(featureKey: string): string | null {

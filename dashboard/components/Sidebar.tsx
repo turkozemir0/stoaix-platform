@@ -7,7 +7,7 @@ import {
   LayoutDashboard, MessageSquare, Phone, BookOpen, Settings, LogOut,
   ShieldCheck, LifeBuoy, Bot, RefreshCw, ClipboardList, Menu, X,
   Target, HeartHandshake, FileText, Wallet, Calendar, Inbox, LayoutTemplate,
-  ChevronLeft, ChevronRight, CreditCard,
+  ChevronLeft, ChevronRight, CreditCard, Zap,
 } from 'lucide-react'
 import { useT, useLang } from '@/lib/lang-context'
 import { createClient } from '@/lib/supabase/client'
@@ -57,6 +57,7 @@ export default function Sidebar({ orgName, isSuperAdmin, userRole, userId, orgId
     { href: '/dashboard/followup',      label: 'Follow-up',                                 icon: RefreshCw,       roles: ['admin','yönetici','satisci'] },
     { href: '/dashboard/calendar',      label: lang === 'tr' ? 'Takvim' : 'Calendar',      icon: Calendar,        roles: ['admin','yönetici','satisci'] },
     { href: '/dashboard/support',       label: t.tickets,                                   icon: LifeBuoy,        roles: ['admin','viewer','yönetici'] },
+    { href: '/dashboard/workflows',      label: lang === 'tr' ? 'İş Akışları' : 'Workflows', icon: Zap,             roles: ['admin','yönetici'] },
     { href: '/dashboard/templates',      label: lang === 'tr' ? 'Templateler' : 'Templates', icon: LayoutTemplate,  roles: ['admin','yönetici','satisci'] },
     { href: '/dashboard/settings',      label: lang === 'tr' ? 'Ayarlar' : 'Settings',     icon: Settings,        roles: ['admin','yönetici','satisci'] },
     { href: '/dashboard/billing',       label: lang === 'tr' ? 'Plan & Fatura' : 'Billing', icon: CreditCard,      roles: ['admin','yönetici'] },
