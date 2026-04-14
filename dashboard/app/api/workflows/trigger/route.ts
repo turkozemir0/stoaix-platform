@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createClient as sbAdmin } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/server'
 import { getTemplate } from '@/lib/workflow-templates'
 import { checkEntitlement } from '@/lib/entitlements'
 
+function getServiceClient() {
+  return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
 // POST — Manuel workflow tetikleme
 export async function POST(request: NextRequest) {
   const supabase = createClient()
@@ -27,7 +31,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'workflow_id ve phone zorunlu' }, { status: 400 })
   }
 
-  const service = createServiceClient()
+  const service = getServiceClient()
 
   // Workflow'u getir
   const { data: workflow, error: wfErr } = await service

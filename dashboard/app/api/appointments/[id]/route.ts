@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createClient as sbAdmin } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/server'
 
+function getServiceClient() {
+  return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
 // PATCH — Randevu durumu güncelle (attended, no_show, confirmed, cancelled, rescheduled)
 export async function PATCH(
   request: NextRequest,
@@ -40,7 +44,7 @@ export async function PATCH(
   if (notes !== undefined)    updates.notes        = notes
   if (scheduled_at)           updates.scheduled_at = scheduled_at
 
-  const service = createServiceClient()
+  const service = getServiceClient()
   const { data, error } = await service
     .from('appointments')
     .update(updates)
@@ -74,7 +78,7 @@ export async function GET(
 
   if (!orgUser) return NextResponse.json({ error: 'No org' }, { status: 403 })
 
-  const service = createServiceClient()
+  const service = getServiceClient()
   const { data, error } = await service
     .from('appointments')
     .select('*, contacts(full_name, phone)')

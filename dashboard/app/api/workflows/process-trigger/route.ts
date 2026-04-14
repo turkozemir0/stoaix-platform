@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createClient as sbAdmin } from '@supabase/supabase-js'
 import { getTemplate } from '@/lib/workflow-templates'
 import type { TriggerType } from '@/lib/workflow-types'
 
+function getServiceClient() {
+  return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
 // POST — Supabase pg_net trigger → bu endpoint → n8n dispatch
 // Body: { event, org_id, ref_id, data }
 export async function POST(request: NextRequest) {
@@ -26,7 +29,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'event ve org_id zorunlu' }, { status: 400 })
   }
 
-  const service = createServiceClient()
+  const service = getServiceClient()
 
   // event'e eşleşen aktif org_workflows bul
   const { data: workflows, error } = await service

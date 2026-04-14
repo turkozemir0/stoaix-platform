@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createClient as sbAdmin } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/server'
 
+function getServiceClient() {
+  return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
 // GET — Org'un randevuları
 export async function GET(request: NextRequest) {
   const supabase = createClient()
@@ -21,7 +25,7 @@ export async function GET(request: NextRequest) {
   const leadId    = searchParams.get('lead_id')
   const limit     = Math.min(Number(searchParams.get('limit') ?? '50'), 200)
 
-  const service = createServiceClient()
+  const service = getServiceClient()
   let query = service
     .from('appointments')
     .select('*, contacts(full_name, phone)')
@@ -68,7 +72,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'scheduled_at geçersiz tarih formatı' }, { status: 400 })
   }
 
-  const service = createServiceClient()
+  const service = getServiceClient()
   const { data, error } = await service
     .from('appointments')
     .insert({

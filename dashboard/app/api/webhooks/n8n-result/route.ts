@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createClient as sbAdmin } from '@supabase/supabase-js'
 import type { N8nResultPayload } from '@/lib/workflow-types'
 
+function getServiceClient() {
+  return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
 // POST — n8n callback → DB güncelle
 export async function POST(request: NextRequest) {
   // Optional secret validation
@@ -24,7 +27,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'run_id ve status zorunlu' }, { status: 400 })
   }
 
-  const service = createServiceClient()
+  const service = getServiceClient()
 
   // workflow_run güncelle
   const { data: run, error: runErr } = await service

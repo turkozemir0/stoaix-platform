@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
+import { createClient as sbAdmin } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
-import { createServiceClient } from '@/lib/supabase/server'
 import { checkEntitlement } from '@/lib/entitlements'
 import { WORKFLOW_TEMPLATES } from '@/lib/workflow-templates'
 import type { TemplateWithStatus } from '@/lib/workflow-types'
 
+function getServiceClient() {
+  return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
 export async function GET() {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -21,7 +24,7 @@ export async function GET() {
   const orgId = orgUser.organization_id
 
   // Fetch org's active workflows
-  const service = createServiceClient()
+  const service = getServiceClient()
   const { data: orgWorkflows } = await service
     .from('org_workflows')
     .select('id, template_id, is_active, config')

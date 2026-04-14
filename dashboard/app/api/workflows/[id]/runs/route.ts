@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createClient as sbAdmin } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/server'
 
+function getServiceClient() {
+  return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
 // GET — Workflow'un çalışma geçmişi
 export async function GET(
   request: NextRequest,
@@ -21,7 +25,7 @@ export async function GET(
   const { searchParams } = new URL(request.url)
   const limit = Math.min(Number(searchParams.get('limit') ?? '50'), 200)
 
-  const service = createServiceClient()
+  const service = getServiceClient()
   const { data, error } = await service
     .from('workflow_runs')
     .select('*')

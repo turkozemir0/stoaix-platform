@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createClient as sbAdmin } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/server'
 
+function getServiceClient() {
+  return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
 // PATCH — config güncelle veya is_active toggle
 export async function PATCH(
   request: NextRequest,
@@ -28,7 +32,7 @@ export async function PATCH(
   if (typeof is_active === 'boolean') updates.is_active = is_active
   if (config !== undefined) updates.config = config
 
-  const service = createServiceClient()
+  const service = getServiceClient()
   const { data, error } = await service
     .from('org_workflows')
     .update(updates)
@@ -62,7 +66,7 @@ export async function DELETE(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const service = createServiceClient()
+  const service = getServiceClient()
   const { error } = await service
     .from('org_workflows')
     .delete()

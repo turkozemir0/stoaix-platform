@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createClient as sbAdmin } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/server'
 import { checkEntitlement } from '@/lib/entitlements'
 import { getTemplate } from '@/lib/workflow-templates'
 
+function getServiceClient() {
+  return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
 // GET — Org'un aktif workflow'ları
 export async function GET() {
   const supabase = createClient()
@@ -17,7 +21,7 @@ export async function GET() {
 
   if (!orgUser) return NextResponse.json({ error: 'No org' }, { status: 403 })
 
-  const service = createServiceClient()
+  const service = getServiceClient()
   const { data, error } = await service
     .from('org_workflows')
     .select('*')
@@ -65,7 +69,7 @@ export async function POST(request: NextRequest) {
     }, { status: 403 })
   }
 
-  const service = createServiceClient()
+  const service = getServiceClient()
   const { data, error } = await service
     .from('org_workflows')
     .upsert({
