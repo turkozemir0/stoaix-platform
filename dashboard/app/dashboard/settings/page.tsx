@@ -29,6 +29,7 @@ function CalendarSection() {
   const searchParams = useSearchParams()
   const [calConnected, setCalConnected] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
+  const [disconnecting, setDisconnecting] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -72,12 +73,31 @@ function CalendarSection() {
         <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm">
           <CheckCircle2 size={16} />
           <span className="font-medium">Google Takvim bağlı</span>
-          <button
-            onClick={() => window.location.href = '/api/calendar/auth'}
-            className="ml-auto text-xs text-slate-500 hover:text-slate-700 underline"
-          >
-            Yeniden bağla
-          </button>
+          <div className="ml-auto flex items-center gap-3">
+            <button
+              onClick={() => window.location.href = '/api/calendar/auth'}
+              className="text-xs text-slate-500 hover:text-slate-700 underline"
+            >
+              Yeniden bağla
+            </button>
+            <button
+              disabled={disconnecting}
+              onClick={async () => {
+                if (!confirm('Google Takvim bağlantısını kesmek istediğinize emin misiniz?')) return
+                setDisconnecting(true)
+                const res = await fetch('/api/calendar/disconnect', { method: 'DELETE' })
+                if (res.ok) {
+                  setCalConnected(false)
+                } else {
+                  alert('Bağlantı kesilirken bir hata oluştu.')
+                }
+                setDisconnecting(false)
+              }}
+              className="text-xs text-red-500 hover:text-red-700 underline disabled:opacity-50"
+            >
+              {disconnecting ? 'Kesiliyor...' : 'Bağlantıyı kes'}
+            </button>
+          </div>
         </div>
       ) : (
         <>
