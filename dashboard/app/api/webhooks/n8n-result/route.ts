@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       finished_at:      new Date().toISOString(),
     })
     .eq('id', run_id)
-    .select('id, org_workflow_id, organization_id, contact_id, trigger_ref_id, config')
+    .select('id, org_workflow_id, organization_id, contact_id, trigger_ref_id')
     .single()
 
   if (runErr || !run) {
