@@ -47,15 +47,15 @@
         "headerParameters": {
           "parameters": [
             { "name": "apikey",        "value": "={{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" }
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $('Config').first().json.SUPABASE_SERVICE_KEY }}" }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
             { "name": "select",       "value": "id,run_id,organization_id,phone,script_type,attempt,max_attempts" },
-            { "name": "status",       "value": "=eq.pending" },
-            { "name": "scheduled_at", "value": "=lte.{{ new Date().toISOString() }}" },
+            { "name": "status",       "value": "eq.pending" },
+            { "name": "scheduled_at", "value": "={{ 'lte.' + new Date().toISOString() }}" },
             { "name": "limit",        "value": "50" }
           ]
         }

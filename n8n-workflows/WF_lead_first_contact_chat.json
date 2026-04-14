@@ -62,13 +62,13 @@
         "headerParameters": {
           "parameters": [
             { "name": "apikey",        "value": "={{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" }
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $('Config').first().json.SUPABASE_SERVICE_KEY }}" }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id",     "value": "=eq.{{ $('Webhook').item.json.org_id }}" },
+            { "name": "id",     "value": "={{ 'eq.' + $('Webhook').item.json.org_id }}" },
             { "name": "select", "value": "id,channel_config,ai_persona" },
             { "name": "limit",  "value": "1" }
           ]
@@ -121,7 +121,7 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $json.access_token }}" },
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $json.access_token }}" },
             { "name": "Content-Type",  "value": "application/json" }
           ]
         },

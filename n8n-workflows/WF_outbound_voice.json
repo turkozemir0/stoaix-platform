@@ -53,7 +53,7 @@
         "headerParameters": {
           "parameters": [
             { "name": "apikey",        "value": "={{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" }
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $('Config').first().json.SUPABASE_SERVICE_KEY }}" }
           ]
         },
         "sendQuery": true,
@@ -61,7 +61,7 @@
           "parameters": [
             { "name": "status",   "value": "eq.pending" },
             { "name": "channel",  "value": "eq.voice" },
-            { "name": "scheduled_at", "value": "=lte.{{ new Date().toISOString() }}" },
+            { "name": "scheduled_at", "value": "={{ 'lte.' + new Date().toISOString() }}" },
             { "name": "or",       "value": "=(window_expires_at.is.null,window_expires_at.gt.{{ new Date().toISOString() }})" },
             {
               "name": "select",
@@ -128,14 +128,14 @@
         "headerParameters": {
           "parameters": [
             { "name": "apikey",        "value": "={{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $('Config').first().json.SUPABASE_SERVICE_KEY }}" },
             { "name": "Content-Type",  "value": "application/json" }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id", "value": "=eq.{{ $json.id }}" }
+            { "name": "id", "value": "={{ 'eq.' + $json.id }}" }
           ]
         },
         "sendBody": true,
@@ -168,7 +168,7 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $json.jwt }}" },
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $json.jwt }}" },
             { "name": "Content-Type",  "value": "application/json" }
           ]
         },
@@ -191,7 +191,7 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $('Build JWT + Payload').item.json.jwt }}" },
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $('Build JWT + Payload').item.json.jwt }}" },
             { "name": "Content-Type",  "value": "application/json" }
           ]
         },
@@ -214,7 +214,7 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Authorization", "value": "=Bearer {{ $('Build JWT + Payload').item.json.jwt }}" },
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $('Build JWT + Payload').item.json.jwt }}" },
             { "name": "Content-Type",  "value": "application/json" }
           ]
         },
@@ -238,14 +238,14 @@
         "headerParameters": {
           "parameters": [
             { "name": "apikey",        "value": "={{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $('Config').first().json.SUPABASE_SERVICE_KEY }}" },
             { "name": "Content-Type",  "value": "application/json" }
           ]
         },
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id", "value": "=eq.{{ $('Build JWT + Payload').item.json.id }}" }
+            { "name": "id", "value": "={{ 'eq.' + $('Build JWT + Payload').item.json.id }}" }
           ]
         },
         "sendBody": true,

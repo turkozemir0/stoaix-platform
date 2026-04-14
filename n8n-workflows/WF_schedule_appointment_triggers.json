@@ -48,7 +48,7 @@
         "headerParameters": {
           "parameters": [
             { "name": "apikey",        "value": "={{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" }
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $('Config').first().json.SUPABASE_SERVICE_KEY }}" }
           ]
         },
         "sendQuery": true,
@@ -56,8 +56,8 @@
           "parameters": [
             { "name": "select",       "value": "id,organization_id,contact_id,lead_id,scheduled_at,metadata" },
             { "name": "status",       "value": "=in.(scheduled,confirmed)" },
-            { "name": "scheduled_at", "value": "=gte.{{ new Date(Date.now() + (24*3600 - 900)*1000).toISOString() }}" },
-            { "name": "scheduled_at", "value": "=lte.{{ new Date(Date.now() + (24*3600 + 900)*1000).toISOString() }}" },
+            { "name": "scheduled_at", "value": "={{ 'gte.' + new Date(Date.now() + (24*3600 - 900)*1000).toISOString() }}" },
+            { "name": "scheduled_at", "value": "={{ 'lte.' + new Date(Date.now() + (24*3600 + 900)*1000).toISOString() }}" },
             { "name": "limit",        "value": "50" }
           ]
         }
@@ -77,7 +77,7 @@
         "headerParameters": {
           "parameters": [
             { "name": "apikey",        "value": "={{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" }
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $('Config').first().json.SUPABASE_SERVICE_KEY }}" }
           ]
         },
         "sendQuery": true,
@@ -85,8 +85,8 @@
           "parameters": [
             { "name": "select",       "value": "id,organization_id,contact_id,lead_id,scheduled_at,metadata" },
             { "name": "status",       "value": "=in.(scheduled,confirmed)" },
-            { "name": "scheduled_at", "value": "=gte.{{ new Date(Date.now() + (2*3600 - 900)*1000).toISOString() }}" },
-            { "name": "scheduled_at", "value": "=lte.{{ new Date(Date.now() + (2*3600 + 900)*1000).toISOString() }}" },
+            { "name": "scheduled_at", "value": "={{ 'gte.' + new Date(Date.now() + (2*3600 - 900)*1000).toISOString() }}" },
+            { "name": "scheduled_at", "value": "={{ 'lte.' + new Date(Date.now() + (2*3600 + 900)*1000).toISOString() }}" },
             { "name": "limit",        "value": "50" }
           ]
         }
@@ -106,7 +106,7 @@
         "headerParameters": {
           "parameters": [
             { "name": "apikey",        "value": "={{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" },
-            { "name": "Authorization", "value": "=Bearer {{ $('Config').first().json.SUPABASE_SERVICE_KEY }}" }
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $('Config').first().json.SUPABASE_SERVICE_KEY }}" }
           ]
         },
         "sendQuery": true,
@@ -114,8 +114,8 @@
           "parameters": [
             { "name": "select",       "value": "id,organization_id,contact_id,lead_id,scheduled_at,metadata" },
             { "name": "status",       "value": "=in.(scheduled,confirmed)" },
-            { "name": "scheduled_at", "value": "=gte.{{ new Date(Date.now() - (60*3600)*1000).toISOString() }}" },
-            { "name": "scheduled_at", "value": "=lte.{{ new Date(Date.now() - (30*60)*1000).toISOString() }}" },
+            { "name": "scheduled_at", "value": "={{ 'gte.' + new Date(Date.now() - (60*3600)*1000).toISOString() }}" },
+            { "name": "scheduled_at", "value": "={{ 'lte.' + new Date(Date.now() - (30*60)*1000).toISOString() }}" },
             { "name": "limit",        "value": "50" }
           ]
         }
