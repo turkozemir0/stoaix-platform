@@ -2,13 +2,24 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare, ListChecks, FlaskConical, PhoneForwarded, Clock, ToggleLeft, ToggleRight, Lightbulb, ArrowUpRight, CheckCircle2, BookOpen, LayoutTemplate, AlertTriangle, X } from 'lucide-react'
+import {
+  Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare, ListChecks,
+  FlaskConical, PhoneForwarded, Clock, ToggleLeft, ToggleRight, Lightbulb,
+  ArrowUpRight, CheckCircle2, BookOpen, AlertTriangle, X, Lock, Star,
+  ArrowLeft, ArrowRight, Info,
+} from 'lucide-react'
 import AgentTestPanel from '@/components/agent/AgentTestPanel'
-import AgentTemplateModal from '@/components/agent/AgentTemplateModal'
+import { VOICE_TEMPLATES, WHATSAPP_TEMPLATES } from '@/lib/agent-templates'
 import type { AgentTemplate } from '@/lib/agent-templates'
 
 type Channel = 'voice' | 'whatsapp'
-type PageTab = 'settings' | 'routing' | 'test'
+type EditorTab = 'settings' | 'modules' | 'routing' | 'test'
+
+interface EditorView {
+  channel: Channel
+  templateId: string
+  templateName: string
+}
 
 interface RoutingRule {
   id: string
@@ -59,7 +70,14 @@ interface IntakeField {
   voice_prompt?: string
 }
 
-const EMPTY: PlaybookState = { systemPrompt: '', openingMessage: '', blocks: [], features: { calendar_booking: false, voice_language: '', tts_voice_id: '' }, fewShots: [], noKbMatch: '' }
+const EMPTY: PlaybookState = {
+  systemPrompt: '',
+  openingMessage: '',
+  blocks: [],
+  features: { calendar_booking: false, voice_language: '', tts_voice_id: '' },
+  fewShots: [],
+  noKbMatch: '',
+}
 
 const VOICE_LANGUAGES = [
   { value: '',   label: 'Varsayılan (ai_persona dilinden alınır)' },
@@ -93,7 +111,11 @@ const tipToneStyles: Record<ImprovementTip['tone'], string> = {
 export default function AgentPage() {
   const [orgId, setOrgId] = useState('')
   const [loading, setLoading] = useState(true)
-  const [activeChannel, setActiveChannel] = useState<Channel>('voice')
+
+  // Phase state
+  const [editorView, setEditorView] = useState<EditorView | null>(null)
+  const [editorTab, setEditorTab] = useState<EditorTab>('settings')
+  const [hasVoiceEntitlement, setHasVoiceEntitlement] = useState(true)
 
   const [voice, setVoice] = useState<PlaybookState>(EMPTY)
   const [whatsapp, setWhatsapp] = useState<PlaybookState>(EMPTY)
@@ -103,32 +125,34 @@ export default function AgentPage() {
   const [voiceIntakeId, setVoiceIntakeId]   = useState<string | null>(null)
   const [waIntakeId, setWaIntakeId]         = useState<string | null>(null)
 
-  const [suggestions, setSuggestions]             = useState<IntakeField[]>([])
-  const [selectedSuggestions, setSelectedSuggestions] = useState<Set<string>>(new Set())
-  const [suggesting, setSuggesting]               = useState(false)
-  const [savingIntake, setSavingIntake]           = useState<boolean>(false)
-  const [intakeSaved, setIntakeSaved]             = useState(false)
+  const [suggestions, setSuggestions]                   = useState<IntakeField[]>([])
+  const [selectedSuggestions, setSelectedSuggestions]   = useState<Set<string>>(new Set())
+  const [suggesting, setSuggesting]                     = useState(false)
+  const [savingIntake, setSavingIntake]                 = useState<boolean>(false)
+  const [intakeSaved, setIntakeSaved]                   = useState(false)
 
-  const [kbCount, setKbCount] = useState(0)
+  const [kbCount, setKbCount]               = useState(0)
   const [activeTipIndex, setActiveTipIndex] = useState(0)
-  const [generating, setGenerating] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [savedChannel, setSavedChannel] = useState<Channel | null>(null)
-  const [voiceActive, setVoiceActive] = useState(false)
-  const [hasCalendar, setHasCalendar] = useState(false)
-  const [templateModalOpen, setTemplateModalOpen] = useState(false)
+  const [generating, setGenerating]         = useState(false)
+  const [saving, setSaving]                 = useState(false)
+  const [savedChannel, setSavedChannel]     = useState<Channel | null>(null)
+  const [voiceActive, setVoiceActive]       = useState(false)
+  const [hasCalendar, setHasCalendar]       = useState(false)
   const [calendarWarning, setCalendarWarning] = useState(false)
-  const [error, setError] = useState('')
-  const [persona, setPersona] = useState({ name: '', tone: 'warm-professional' })
-  const [pageTab, setPageTab] = useState<PageTab>('settings')
+  const [error, setError]                   = useState('')
+  const [persona, setPersona]               = useState({ name: '', tone: 'warm-professional' })
 
   // Routing state
   const [routingConfig, setRoutingConfig] = useState<RoutingConfig>({ transfer_numbers: {}, rules: [] })
-  const [workingHours, setWorkingHours] = useState<WorkingHours>({ weekdays: '09:30-19:00', saturday: '10:00-17:00', sunday: null, timezone: 'Europe/Istanbul' })
+  const [workingHours, setWorkingHours]   = useState<WorkingHours>({
+    weekdays: '09:30-19:00', saturday: '10:00-17:00', sunday: null, timezone: 'Europe/Istanbul',
+  })
   const [savingRouting, setSavingRouting] = useState(false)
-  const [routingSaved, setRoutingSaved] = useState(false)
+  const [routingSaved, setRoutingSaved]   = useState(false)
 
-  const current = activeChannel === 'voice' ? voice : whatsapp
+  // Computed
+  const activeChannel: Channel = editorView?.channel ?? 'voice'
+  const current    = activeChannel === 'voice' ? voice : whatsapp
   const setCurrent = (fn: (prev: PlaybookState) => PlaybookState) =>
     activeChannel === 'voice' ? setVoice(fn) : setWhatsapp(fn)
 
@@ -190,11 +214,9 @@ export default function AgentPage() {
       })
 
       if (playbooks) {
-        // channel'a özgün önce, 'all' fallback
-        // chat kanalı için: 'whatsapp' önce (engine canonical), 'chat' legacy fallback
-        const voicePb = playbooks.find(p => p.channel === 'voice') || playbooks.find(p => p.channel === 'all')
+        const voicePb    = playbooks.find(p => p.channel === 'voice')    || playbooks.find(p => p.channel === 'all')
         const whatsappPb = playbooks.find(p => p.channel === 'whatsapp') || playbooks.find(p => p.channel === 'chat') || playbooks.find(p => p.channel === 'all')
-        if (voicePb) setVoice(parsePlaybook(voicePb))
+        if (voicePb)    setVoice(parsePlaybook(voicePb))
         if (whatsappPb) setWhatsapp(parsePlaybook(whatsappPb))
       }
 
@@ -239,6 +261,15 @@ export default function AgentPage() {
           const rData = await rRes.json()
           if (rData.routing_rules) setRoutingConfig(rData.routing_rules)
           if (rData.working_hours && Object.keys(rData.working_hours).length) setWorkingHours(rData.working_hours)
+        }
+      } catch {}
+
+      // Billing entitlements
+      try {
+        const limRes = await fetch('/api/billing/limits')
+        if (limRes.ok) {
+          const limData = await limRes.json()
+          setHasVoiceEntitlement(limData.entitlements?.voice_agent_inbound?.enabled ?? true)
         }
       } catch {}
 
@@ -423,15 +454,29 @@ export default function AgentPage() {
     }
   }
 
-  function applyTemplate(t: AgentTemplate) {
+  function applyTemplate(t: AgentTemplate, channel?: Channel) {
+    const ch = channel ?? activeChannel
     const data = { ...t.playbook }
     if (t.requiresCalendar && !hasCalendar) {
       data.features = { ...data.features, calendar_booking: false }
       setCalendarWarning(true)
     }
-    if (activeChannel === 'voice')    setVoice(prev    => ({ ...prev, ...data }))
-    if (activeChannel === 'whatsapp') setWhatsapp(prev => ({ ...prev, ...data }))
-    setTemplateModalOpen(false)
+    if (ch === 'voice')    setVoice(prev    => ({ ...prev, ...data }))
+    if (ch === 'whatsapp') setWhatsapp(prev => ({ ...prev, ...data }))
+  }
+
+  function openEditor(channel: Channel, t: AgentTemplate | 'custom') {
+    if (t !== 'custom') {
+      applyTemplate(t as AgentTemplate, channel)
+    }
+    const name = t === 'custom' ? 'Özelleştirilmiş' : (t as AgentTemplate).name
+    const id   = t === 'custom' ? 'custom' : (t as AgentTemplate).id
+    setEditorView({ channel, templateId: id, templateName: name })
+    setEditorTab('settings')
+  }
+
+  function closeEditor() {
+    setEditorView(null)
   }
 
   function updateRule(idx: number, patch: Partial<RoutingRule>) {
@@ -475,7 +520,7 @@ export default function AgentPage() {
   }
 
   // Computed values — before loading check so hooks are always called in same order
-  const promptLength = current.systemPrompt.trim().length
+  const promptLength    = current.systemPrompt.trim().length
   const intakeMustCount = currentIntake.filter(f => f.priority === 'must').length
 
   const improvementTips: ImprovementTip[] = [
@@ -536,8 +581,8 @@ export default function AgentPage() {
 
   const quickWins = [
     { label: 'Knowledge base kapsamı', value: kbCount < 12 ? 'Geliştirilmeli' : 'İyi', icon: BookOpen },
-    { label: 'Zorunlu intake alanı', value: `${intakeMustCount}`, icon: ListChecks },
-    { label: 'Prompt uzunluğu', value: promptLength < 500 ? 'Geliştirilmeli' : 'İyi', icon: MessageSquare },
+    { label: 'Zorunlu intake alanı',   value: `${intakeMustCount}`,                    icon: ListChecks },
+    { label: 'Prompt uzunluğu',        value: promptLength < 500 ? 'Geliştirilmeli' : 'İyi', icon: MessageSquare },
   ]
 
   // useEffect MUST be before early return (Rules of Hooks)
@@ -560,834 +605,799 @@ export default function AgentPage() {
 
   const isSaved = savedChannel === activeChannel
 
-  return (
-    <>
-    <div className="p-6 xl:grid xl:grid-cols-[1fr_300px] xl:gap-8 xl:items-start">
-      <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <Bot size={20} className="text-brand-500" />
-            AI Asistan
-          </h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Asistanınızı yapılandırın ve doğrudan tarayıcıdan test edin.
-          </p>
-        </div>
-        {pageTab === 'settings' && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setTemplateModalOpen(true)}
-              className="flex items-center gap-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-sm font-medium px-3 py-2.5 rounded-lg transition-colors"
-            >
-              <LayoutTemplate size={14} />
-              Şablon Uygula
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
-            >
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              {isSaved ? 'Kaydedildi ✓' : 'Kaydet'}
-            </button>
-          </div>
-        )}
-        {pageTab === 'routing' && (
-          <button
-            onClick={handleSaveRouting}
-            disabled={savingRouting}
-            className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
-          >
-            {savingRouting ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            {routingSaved ? 'Kaydedildi ✓' : 'Kaydet'}
-          </button>
-        )}
-      </div>
+  // ─── PHASE 1 ──────────────────────────────────────────────────────────────
+  if (!editorView) {
+    return (
+      <div className="p-6 space-y-8">
+        {/* Header */}
+        <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+          <Bot size={20} className="text-brand-500" /> AI Asistan
+        </h1>
 
-      {/* Page Tabs: Ayarlar / Arama Kuralları / Test */}
-      <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-fit">
-        <button
-          onClick={() => setPageTab('settings')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            pageTab === 'settings'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <Bot size={15} />
-          Ayarlar
-        </button>
-        <button
-          onClick={() => voiceActive && setPageTab('routing')}
-          title={!voiceActive ? 'Voice hizmeti aktif değil' : undefined}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            !voiceActive
-              ? 'text-slate-300 cursor-not-allowed'
-              : pageTab === 'routing'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <PhoneForwarded size={15} />
-          Arama Kuralları
-        </button>
-        <button
-          onClick={() => setPageTab('test')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            pageTab === 'test'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <FlaskConical size={15} />
-          Test Et
-        </button>
-      </div>
-
-      {/* Routing Panel */}
-      {pageTab === 'routing' && (
-        <div className="space-y-5">
-
-          {/* Transfer Numaraları */}
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-                <PhoneForwarded size={15} className="text-brand-500" />
-                Transfer Numaraları
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Tier 1 kurallar tetiklendiğinde arama bu numaraya aktarılır.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Call Center (Transfer)</label>
-                <input
-                  value={routingConfig.transfer_numbers.primary ?? ''}
-                  onChange={e => setRoutingConfig(prev => ({
-                    ...prev,
-                    transfer_numbers: { ...prev.transfer_numbers, primary: e.target.value },
-                  }))}
-                  placeholder="02122446600"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Voice Agent Hattı</label>
-                <input
-                  value={routingConfig.transfer_numbers.voice_agent ?? ''}
-                  onChange={e => setRoutingConfig(prev => ({
-                    ...prev,
-                    transfer_numbers: { ...prev.transfer_numbers, voice_agent: e.target.value },
-                  }))}
-                  placeholder="02127098709"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Mesai Saatleri */}
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-                <Clock size={15} className="text-brand-500" />
-                Mesai Saatleri
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Mesai içinde Tier 1 kurallar transfere, mesai dışında callback vaadiyle notlara yönlenir.
-              </p>
-            </div>
-            <div className="space-y-3">
-              {[
-                { key: 'weekdays',  label: 'Hafta içi (Pzt–Cum)' },
-                { key: 'saturday', label: 'Cumartesi' },
-              ].map(({ key, label }) => (
-                <div key={key} className="flex items-center gap-4">
-                  <label className="text-xs text-slate-600 w-40 flex-shrink-0">{label}</label>
-                  <input
-                    type="text"
-                    value={(workingHours as any)[key] ?? ''}
-                    onChange={e => setWorkingHours(prev => ({ ...prev, [key]: e.target.value || null }))}
-                    placeholder="09:30-19:00"
-                    className="w-36 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  />
-                  <span className="text-xs text-slate-400">format: SS:DD-SS:DD</span>
-                </div>
-              ))}
-              <div className="flex items-center gap-4">
-                <label className="text-xs text-slate-600 w-40 flex-shrink-0">Pazar</label>
-                <button
-                  onClick={() => setWorkingHours(prev => ({ ...prev, sunday: prev.sunday ? null : '10:00-16:00' }))}
-                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-                    workingHours.sunday
-                      ? 'border-brand-200 bg-brand-50 text-brand-600'
-                      : 'border-slate-200 bg-slate-50 text-slate-400'
-                  }`}
-                >
-                  {workingHours.sunday ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
-                  {workingHours.sunday ? workingHours.sunday : 'Kapalı'}
-                </button>
-                {workingHours.sunday && (
-                  <input
-                    type="text"
-                    value={workingHours.sunday}
-                    onChange={e => setWorkingHours(prev => ({ ...prev, sunday: e.target.value }))}
-                    className="w-36 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Kural Listesi */}
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-800">Yönlendirme Kuralları</h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Tier 1 kurallar çağrıyı aktarır, Tier 2 kurallar not alıp geri arama yapar.
-              </p>
-            </div>
-
-            {routingConfig.rules.length === 0 && (
-              <p className="text-sm text-slate-400 py-2">Henüz yönlendirme kuralı eklenmemiş.</p>
-            )}
-
-            <div className="space-y-3">
-              {routingConfig.rules.map((rule, idx) => {
-                const tierLabel  = rule.tier === 1 ? 'Transfer' : 'Not Al'
-                const tierColor  = rule.tier === 1 ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'
-                const typeLabels: Record<string, string> = {
-                  kb_fallback:       'KB Fallback',
-                  intent:            'Niyet',
-                  topic_note:        'Konu',
-                  sentiment_note:    'Duygu',
-                }
-                const isTier1 = rule.tier === 1
-
-                return (
-                  <div key={rule.id} className={`border rounded-xl p-4 space-y-3 transition-colors ${rule.active ? 'border-slate-100 bg-slate-50' : 'border-slate-100 bg-white opacity-50'}`}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => updateRule(idx, { active: !rule.active })}
-                          className={`relative inline-flex h-5 w-9 rounded-full transition-colors flex-shrink-0 ${rule.active ? 'bg-brand-500' : 'bg-slate-200'}`}
-                        >
-                          <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${rule.active ? 'translate-x-4' : ''}`} />
-                        </button>
-                        <span className="text-sm font-medium text-slate-800">
-                          {typeLabels[rule.type] ?? rule.type}
-                        </span>
-                        <span className="text-xs text-slate-400 font-mono">{rule.id}</span>
-                      </div>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${tierColor}`}>
-                        Tier {rule.tier} — {tierLabel}
-                      </span>
-                    </div>
-
-                    {rule.keywords && rule.keywords.length > 0 && (
-                      <div>
-                        <label className="block text-xs text-slate-500 mb-1">Anahtar kelimeler <span className="text-slate-400">(virgülle ayır)</span></label>
-                        <input
-                          value={rule.keywords.join(', ')}
-                          onChange={e => updateRule(idx, {
-                            keywords: e.target.value.split(',').map(k => k.trim()).filter(Boolean),
-                          })}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                        />
-                      </div>
-                    )}
-
-                    {isTier1 ? (
-                      <>
-                        <div>
-                          <label className="block text-xs text-slate-500 mb-1">Mesai içi mesajı</label>
-                          <textarea
-                            value={rule.transition_message ?? ''}
-                            onChange={e => updateRule(idx, { transition_message: e.target.value })}
-                            rows={2}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-slate-500 mb-1">Mesai dışı mesajı</label>
-                          <textarea
-                            value={rule.after_hours_message ?? ''}
-                            onChange={e => updateRule(idx, { after_hours_message: e.target.value })}
-                            rows={2}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
-                          />
-                        </div>
-                      </>
-                    ) : (
-                      <div>
-                        <label className="block text-xs text-slate-500 mb-1">Geri arama mesajı</label>
-                        <textarea
-                          value={rule.note_message ?? ''}
-                          onChange={e => updateRule(idx, { note_message: e.target.value })}
-                          rows={2}
-                          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
-                        />
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {error && (
-            <p className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-lg">{error}</p>
-          )}
-        </div>
-      )}
-
-      {/* Test Panel */}
-      {pageTab === 'test' && orgId && (
-        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
-          <div className="mb-4">
-            <h2 className="text-sm font-semibold text-slate-800">Asistan Playground</h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Mevcut bilgi bankası ve promptunuzla gerçek zamanlı test yapın. Hiçbir veri kaydedilmez.
-            </p>
-          </div>
-          {/* Channel seçimi test modunda da */}
-          <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-fit mb-4">
-            <button
-              onClick={() => setActiveChannel('voice')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                activeChannel === 'voice'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <Mic size={13} />
-              Sesli
-            </button>
-            <button
-              onClick={() => setActiveChannel('whatsapp')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                activeChannel === 'whatsapp'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <MessageSquare size={13} />
-              Chat
-            </button>
-          </div>
-          <AgentTestPanel
-            orgId={orgId}
-            activeChannel={activeChannel}
-            hasVoice={!!voice.id || !!voice.systemPrompt}
-            hasChat={!!whatsapp.id || !!whatsapp.systemPrompt}
-            kbCount={kbCount}
-            promptLength={
-              activeChannel === 'voice'
-                ? voice.systemPrompt.length
-                : whatsapp.systemPrompt.length
-            }
-          />
-        </div>
-      )}
-
-      {/* Settings Panel */}
-      {pageTab === 'settings' && (
-        <>
-      {/* Asistan Kimliği — org-level, kanaldan bağımsız */}
-      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-            <Bot size={15} className="text-brand-500" />
-            Asistan Kimliği
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">Tüm kanallar için geçerli. Sesli ve mesajlaşma asistanı aynı kimliği kullanır.</p>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Asistan adı</label>
-            <input
-              value={persona.name}
-              onChange={e => setPersona(p => ({ ...p, name: e.target.value }))}
-              placeholder="örn: Elif, Arda, AI Asistan"
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Konuşma tonu</label>
-            <select
-              value={persona.tone}
-              onChange={e => setPersona(p => ({ ...p, tone: e.target.value }))}
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
-            >
-              {TONE_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Channel Tabs */}
-      <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-fit">
-        <button
-          onClick={() => setActiveChannel('voice')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            activeChannel === 'voice'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <Mic size={15} />
-          Sesli Görüşme
-          {voice.id && (
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500" title="Yapılandırıldı" />
-          )}
-        </button>
-        <button
-          onClick={() => setActiveChannel('whatsapp')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            activeChannel === 'whatsapp'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <MessageSquare size={15} />
-          Mesajlaşma
-          {whatsapp.id && (
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500" title="Yapılandırıldı" />
-          )}
-        </button>
-      </div>
-
-      {/* Henüz yapılandırılmamış uyarısı */}
-      {!current.id && !current.systemPrompt && (
-        <div className="bg-gradient-to-br from-brand-50 to-slate-50 border border-brand-100 rounded-xl p-6 flex flex-col items-center text-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-brand-100 flex items-center justify-center">
-            <LayoutTemplate size={18} className="text-brand-600" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-800">
-              {activeChannel === 'voice' ? 'Sesli görüşme' : 'Mesajlaşma'} asistanı henüz yapılandırılmamış.
-            </p>
-            <p className="text-xs text-slate-500 mt-1">
-              Hazır bir şablonla başlayın veya AI ile otomatik oluşturun.
-            </p>
-          </div>
-          <button
-            onClick={() => setTemplateModalOpen(true)}
-            className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
-          >
-            <LayoutTemplate size={14} />
-            Hazır Şablonla Başla
-          </button>
-        </div>
-      )}
-
-      {/* Takvim bağlantısı uyarısı */}
-      {calendarWarning && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
-          <AlertTriangle size={15} className="text-amber-500 mt-0.5 flex-shrink-0" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-amber-800">Takvim bağlantısı gerekiyor</p>
-            <p className="text-xs text-amber-600 mt-0.5">
-              Randevu alma özelliği devre dışı bırakıldı. Aktifleştirmek için takvim bağlayın.{' '}
-              <a href="/dashboard/settings" className="underline font-medium">Ayarlar → Takvim</a>
-            </p>
-          </div>
-          <button
-            onClick={() => setCalendarWarning(false)}
-            className="text-amber-400 hover:text-amber-600 transition-colors"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
-
-      {/* Karşılama Mesajı — sadece voice */}
-      {activeChannel === 'voice' && (
-        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-3">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-800">İlk Karşılama Mesajı</h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Çağrı bağlandığında asistanın söyleyeceği ilk cümle. Boş bırakılırsa varsayılan mesaj kullanılır.
-            </p>
-          </div>
-          <input
-            type="text"
-            value={current.openingMessage}
-            onChange={e => setCurrent(prev => ({ ...prev, openingMessage: e.target.value }))}
-            className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-            placeholder="Merhaba! Şirketinizi aradınız, ben Asistan. Nasıl yardımcı olabilirim?"
-          />
-        </div>
-      )}
-
-      {/* Sistem Prompt */}
-      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-3">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-800">Asistan Talimatları</h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {activeChannel === 'voice'
-                ? 'Asistanın kimliğini, görevini ve sesli konuşma davranışını tanımlar.'
-                : 'Asistanın kimliğini, görevini ve mesajlaşma davranışını tanımlar.'}
-            </p>
-          </div>
-          <button
-            onClick={handleGenerate}
-            disabled={generating}
-            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-600 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-          >
-            {generating
-              ? <Loader2 size={13} className="animate-spin" />
-              : <Sparkles size={13} />}
-            {generating ? 'Üretiliyor...' : 'AI ile Oluştur'}
-          </button>
-        </div>
-        <textarea
-          value={current.systemPrompt}
-          onChange={e => setCurrent(prev => ({ ...prev, systemPrompt: e.target.value }))}
-          rows={14}
-          className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none font-mono leading-relaxed"
-          placeholder={
-            activeChannel === 'voice'
-              ? 'Asistanın kim olduğunu, ne yapacağını ve sesli konuşma kurallarını yazın...'
-              : 'Asistanın kim olduğunu, ne yapacağını ve mesajlaşma davranışını yazın...'
-          }
-        />
-        {activeChannel === 'voice' && (
-          <p className="text-xs text-slate-400">
-            💡 Sayı okuma kuralları, bilgi bankası ve veri toplama talimatları runtime'da otomatik eklenir — buraya yazmanıza gerek yok.
-          </p>
-        )}
-      </div>
-
-      {/* Özellikler */}
-      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-800">Özellikler</h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Kanalı için açmak istediğiniz ek özellikleri etkinleştirin.
-          </p>
-        </div>
-        <div className="flex items-center justify-between p-4 border border-slate-100 rounded-xl">
-          <div>
-            <p className="text-sm font-medium text-slate-800">Randevu Alma</p>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Müşteri randevu talep edince GHL takviminizden uygun saatleri gösterir ve randevu oluşturur.
-              <br />
-              <span className="text-slate-300">Gerekli: Admin → CRM → Calendar ID doldurulmuş olmalı.</span>
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setCurrent(prev => ({
-              ...prev,
-              features: { ...prev.features, calendar_booking: !prev.features.calendar_booking },
-            }))}
-            className={`relative inline-flex h-6 w-11 rounded-full transition-colors flex-shrink-0 ${
-              current.features.calendar_booking ? 'bg-brand-500' : 'bg-slate-200'
-            }`}
-          >
-            <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-              current.features.calendar_booking ? 'translate-x-5' : ''
-            }`} />
-          </button>
-        </div>
-
-        {/* Sesli Asistan Dil & Ses Ayarları — sadece voice kanalında */}
-        {activeChannel === 'voice' && (
-          <div className="space-y-3 pt-1 border-t border-slate-100 mt-1">
-            <p className="text-xs font-semibold text-slate-500 pt-2">Sesli Asistan — Dil & Ses</p>
-
-            <div>
-              <label className="block text-xs text-slate-500 mb-1">Konuşma Dili (STT + TTS)</label>
-              <select
-                value={current.features.voice_language ?? ''}
-                onChange={e => setCurrent(prev => ({ ...prev, features: { ...prev.features, voice_language: e.target.value } }))}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-              >
-                {VOICE_LANGUAGES.map(l => (
-                  <option key={l.value} value={l.value}>{l.label}</option>
-                ))}
-              </select>
-              <p className="text-xs text-slate-400 mt-1">Deepgram STT ve Cartesia TTS bu dili kullanır.</p>
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-500 mb-1">Cartesia TTS Ses ID</label>
-              <input
-                value={current.features.tts_voice_id ?? ''}
-                onChange={e => setCurrent(prev => ({ ...prev, features: { ...prev.features, tts_voice_id: e.target.value } }))}
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
-              />
-              <p className="text-xs text-slate-400 mt-1">
-                Cartesia Voice Library'den kopyalayın:{' '}
-                <a href="https://play.cartesia.ai" target="_blank" rel="noreferrer" className="text-brand-500 hover:underline">
-                  play.cartesia.ai
-                </a>
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Veri Toplama Alanları */}
-      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-              <ListChecks size={15} className="text-brand-500" />
-              Veri Toplama Alanları
+        {/* Yapılandırılmış asistanlar */}
+        {(voice.id || whatsapp.id) && (
+          <section className="space-y-3">
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+              Yapılandırılmış Asistanlar
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Asistanın konuşma sırasında müşteriden topladığı bilgiler.
-              {activeChannel === 'whatsapp' && ' Telefon numarası WhatsApp\'tan otomatik alınır.'}
-            </p>
-          </div>
-          <div className="flex gap-2 flex-shrink-0">
-            <button
-              onClick={handleSuggestIntake}
-              disabled={suggesting}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-600 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-            >
-              {suggesting ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-              {suggesting ? 'Üretiliyor...' : 'AI Öner'}
-            </button>
-            <button
-              onClick={handleSaveIntake}
-              disabled={savingIntake}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-            >
-              {savingIntake ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-              {intakeSaved ? 'Kaydedildi ✓' : 'Kaydet'}
-            </button>
-          </div>
-        </div>
+            <div className="flex flex-wrap gap-4">
+              {voice.id && (
+                <ConfiguredCard channel="voice" onClick={() => openEditor('voice', 'custom')} />
+              )}
+              {whatsapp.id && (
+                <ConfiguredCard channel="whatsapp" onClick={() => openEditor('whatsapp', 'custom')} />
+              )}
+            </div>
+          </section>
+        )}
 
-        {/* Mevcut alanlar */}
-        {currentIntake.length === 0 ? (
-          <p className="text-sm text-slate-400 py-1">Henüz alan eklenmemiş. AI Öner butonunu kullanın.</p>
-        ) : (
-          <div className="space-y-2">
-            {currentIntake.map((field, i) => (
-              <div key={field.key} className="flex items-center gap-3 px-3 py-2.5 border border-slate-100 rounded-lg bg-slate-50">
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm text-slate-700">{field.label}</span>
-                  <span className="ml-2 text-xs text-slate-400">{field.key}</span>
-                </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${
-                  field.priority === 'must'
-                    ? 'bg-red-50 text-red-600'
-                    : 'bg-slate-100 text-slate-500'
-                }`}>
-                  {field.priority === 'must' ? 'Zorunlu' : 'Opsiyonel'}
-                </span>
-                <button
-                  onClick={() => removeIntakeField(i)}
-                  className="text-slate-300 hover:text-red-400 transition-colors flex-shrink-0"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
+        {/* Sesli şablonlar */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-700">Sesli Görüşme</h2>
+            {!hasVoiceEntitlement && (
+              <a
+                href="/dashboard/billing"
+                className="text-xs text-brand-600 font-medium flex items-center gap-1 hover:text-brand-700"
+              >
+                <Lock size={11} /> Paketi Yükselt
+              </a>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-4">
+            {VOICE_TEMPLATES.map(t => (
+              <Phase1Card
+                key={t.id}
+                template={t}
+                locked={!hasVoiceEntitlement}
+                hasCalendar={hasCalendar}
+                onClick={() => openEditor('voice', t)}
+              />
             ))}
           </div>
+        </section>
+
+        {/* WA şablonlar */}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-slate-700">Mesajlaşma (WhatsApp)</h2>
+          <div className="flex flex-wrap gap-4">
+            {WHATSAPP_TEMPLATES.map(t => (
+              <Phase1Card
+                key={t.id}
+                template={t}
+                locked={false}
+                hasCalendar={hasCalendar}
+                onClick={() => openEditor('whatsapp', t)}
+              />
+            ))}
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  // ─── PHASE 2 ──────────────────────────────────────────────────────────────
+  const tabClass = (tab: EditorTab) =>
+    `flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+      editorTab === tab
+        ? 'bg-white text-slate-900 shadow-sm'
+        : 'text-slate-500 hover:text-slate-700'
+    }`
+
+  const saveBusy   = editorTab === 'routing' ? savingRouting : saving
+  const saveOk     = editorTab === 'routing' ? routingSaved  : isSaved
+  const onSaveClick = editorTab === 'routing' ? handleSaveRouting : handleSave
+
+  return (
+    <div className="p-6 xl:grid xl:grid-cols-[1fr_300px] xl:gap-8 xl:items-start">
+      <div className="space-y-6">
+
+        {/* Back nav + header + save */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={closeEditor}
+              className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors"
+            >
+              <ArrowLeft size={15} /> Asistanlar
+            </button>
+            <span className="text-slate-200">|</span>
+            <h1 className="text-base font-semibold text-slate-900">
+              {editorView.templateName}
+              <span className="text-slate-400 font-normal ml-1.5">
+                · {editorView.channel === 'voice' ? 'Sesli Görüşme' : 'Mesajlaşma'}
+              </span>
+            </h1>
+          </div>
+          {editorTab !== 'test' && (
+            <button
+              onClick={onSaveClick}
+              disabled={saveBusy}
+              className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+            >
+              {saveBusy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              {saveOk ? 'Kaydedildi ✓' : 'Kaydet'}
+            </button>
+          )}
+        </div>
+
+        {/* Editor tabs */}
+        <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-fit">
+          <button onClick={() => setEditorTab('settings')} className={tabClass('settings')}>
+            <Bot size={15} /> Ayarlar
+          </button>
+          <button onClick={() => setEditorTab('modules')} className={tabClass('modules')}>
+            <ToggleRight size={15} /> Modüller
+          </button>
+          {editorView.channel === 'voice' && voiceActive && (
+            <button onClick={() => setEditorTab('routing')} className={tabClass('routing')}>
+              <PhoneForwarded size={15} /> Arama Kuralları
+            </button>
+          )}
+          <button onClick={() => setEditorTab('test')} className={tabClass('test')}>
+            <FlaskConical size={15} /> Test Et
+          </button>
+        </div>
+
+        {/* ── AYARLAR TAB ───────────────────────────────────────────────── */}
+        {editorTab === 'settings' && (
+          <>
+            {/* Takvim bağlantısı uyarısı */}
+            {calendarWarning && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+                <AlertTriangle size={15} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-amber-800">Takvim bağlantısı gerekiyor</p>
+                  <p className="text-xs text-amber-600 mt-0.5">
+                    Randevu alma özelliği devre dışı bırakıldı. Aktifleştirmek için takvim bağlayın.{' '}
+                    <a href="/dashboard/settings" className="underline font-medium">Ayarlar → Takvim</a>
+                  </p>
+                </div>
+                <button onClick={() => setCalendarWarning(false)} className="text-amber-400 hover:text-amber-600 transition-colors">
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+
+            {/* Asistan Kimliği */}
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                  <Bot size={15} className="text-brand-500" /> Asistan Kimliği
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Tüm kanallar için geçerli. Sesli ve mesajlaşma asistanı aynı kimliği kullanır.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Asistan adı</label>
+                  <input
+                    value={persona.name}
+                    onChange={e => setPersona(p => ({ ...p, name: e.target.value }))}
+                    placeholder="örn: Elif, Arda, AI Asistan"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Konuşma tonu</label>
+                  <select
+                    value={persona.tone}
+                    onChange={e => setPersona(p => ({ ...p, tone: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+                  >
+                    {TONE_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* İlk Karşılama Mesajı — sadece voice */}
+            {editorView.channel === 'voice' && (
+              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-800">İlk Karşılama Mesajı</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Çağrı bağlandığında asistanın söyleyeceği ilk cümle. Boş bırakılırsa varsayılan mesaj kullanılır.
+                  </p>
+                </div>
+                <input
+                  type="text"
+                  value={current.openingMessage}
+                  onChange={e => setCurrent(prev => ({ ...prev, openingMessage: e.target.value }))}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  placeholder="Merhaba! Şirketinizi aradınız, ben Asistan. Nasıl yardımcı olabilirim?"
+                />
+              </div>
+            )}
+
+            {/* Asistan Talimatları */}
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-3">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-800">Asistan Talimatları</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {editorView.channel === 'voice'
+                      ? 'Asistanın kimliğini, görevini ve sesli konuşma davranışını tanımlar.'
+                      : 'Asistanın kimliğini, görevini ve mesajlaşma davranışını tanımlar.'}
+                  </p>
+                </div>
+                <button
+                  onClick={handleGenerate}
+                  disabled={generating}
+                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-600 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                >
+                  {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                  {generating ? 'Üretiliyor...' : 'AI ile Oluştur'}
+                </button>
+              </div>
+              <textarea
+                value={current.systemPrompt}
+                onChange={e => setCurrent(prev => ({ ...prev, systemPrompt: e.target.value }))}
+                rows={14}
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none font-mono leading-relaxed"
+                placeholder={
+                  editorView.channel === 'voice'
+                    ? 'Asistanın kim olduğunu, ne yapacağını ve sesli konuşma kurallarını yazın...'
+                    : 'Asistanın kim olduğunu, ne yapacağını ve mesajlaşma davranışını yazın...'
+                }
+              />
+              {editorView.channel === 'voice' && (
+                <p className="text-xs text-slate-400">
+                  💡 Sayı okuma kuralları, bilgi bankası ve veri toplama talimatları runtime&apos;da otomatik eklenir — buraya yazmanıza gerek yok.
+                </p>
+              )}
+            </div>
+
+            {/* Veri Toplama Alanları */}
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                    <ListChecks size={15} className="text-brand-500" />
+                    Veri Toplama Alanları
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Asistanın konuşma sırasında müşteriden topladığı bilgiler.
+                    {editorView.channel === 'whatsapp' && ' Telefon numarası WhatsApp\'tan otomatik alınır.'}
+                  </p>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <button
+                    onClick={handleSuggestIntake}
+                    disabled={suggesting}
+                    className="flex items-center gap-1.5 px-3 py-1.5 border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-600 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                  >
+                    {suggesting ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                    {suggesting ? 'Üretiliyor...' : 'AI Öner'}
+                  </button>
+                  <button
+                    onClick={handleSaveIntake}
+                    disabled={savingIntake}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                  >
+                    {savingIntake ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                    {intakeSaved ? 'Kaydedildi ✓' : 'Kaydet'}
+                  </button>
+                </div>
+              </div>
+
+              {currentIntake.length === 0 ? (
+                <p className="text-sm text-slate-400 py-1">Henüz alan eklenmemiş. AI Öner butonunu kullanın.</p>
+              ) : (
+                <div className="space-y-2">
+                  {currentIntake.map((field, i) => (
+                    <div key={field.key} className="flex items-center gap-3 px-3 py-2.5 border border-slate-100 rounded-lg bg-slate-50">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm text-slate-700">{field.label}</span>
+                        <span className="ml-2 text-xs text-slate-400">{field.key}</span>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${
+                        field.priority === 'must' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {field.priority === 'must' ? 'Zorunlu' : 'Opsiyonel'}
+                      </span>
+                      <button onClick={() => removeIntakeField(i)} className="text-slate-300 hover:text-red-400 transition-colors flex-shrink-0">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {suggestions.length > 0 && (
+                <div className="border border-brand-100 rounded-xl p-4 bg-brand-50 space-y-3">
+                  <p className="text-xs font-semibold text-brand-700">
+                    AI Önerileri — eklemek istediklerini seç:
+                  </p>
+                  <div className="space-y-2">
+                    {suggestions.map(f => (
+                      <label key={f.key} className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedSuggestions.has(f.key)}
+                          onChange={e => {
+                            const next = new Set(selectedSuggestions)
+                            e.target.checked ? next.add(f.key) : next.delete(f.key)
+                            setSelectedSuggestions(next)
+                          }}
+                          className="rounded border-brand-300 text-brand-600"
+                        />
+                        <span className="text-sm text-slate-700 flex-1">{f.label}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          f.priority === 'must' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {f.priority === 'must' ? 'Zorunlu' : 'Opsiyonel'}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={addSelectedSuggestions}
+                      disabled={selectedSuggestions.size === 0}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors"
+                    >
+                      <Plus size={13} />
+                      Seçilenleri Ekle ({selectedSuggestions.size})
+                    </button>
+                    <button
+                      onClick={() => { setSuggestions([]); setSelectedSuggestions(new Set()) }}
+                      className="px-3 py-1.5 text-slate-500 hover:text-slate-700 text-xs font-medium"
+                    >
+                      İptal
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Koruma Blokları */}
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-800">Konuşulmaması Gereken Konular</h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Bu anahtar kelimeler geçtiğinde asistan otomatik olarak belirlenen yanıtı verir.
+                </p>
+              </div>
+
+              {current.blocks.length === 0 && (
+                <p className="text-sm text-slate-400 py-2">Henüz kural eklenmemiş.</p>
+              )}
+
+              <div className="space-y-3">
+                {current.blocks.map((b, i) => (
+                  <div key={i} className="border border-slate-100 rounded-xl p-4 space-y-3 bg-slate-50">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 space-y-2">
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">
+                            Tetikleyen kelimeler <span className="text-slate-400">(virgülle ayır)</span>
+                          </label>
+                          <input
+                            value={b.keywords}
+                            onChange={e => updateBlock(i, 'keywords', e.target.value)}
+                            placeholder="örn: rakip firma, iade, hukuk"
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">Verilecek yanıt</label>
+                          <input
+                            value={b.response}
+                            onChange={e => updateBlock(i, 'response', e.target.value)}
+                            placeholder="Bu konuda yardımcı olamıyorum, danışmanımıza bağlayayım."
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => removeBlock(i)}
+                        className="text-slate-300 hover:text-red-400 transition-colors mt-1 flex-shrink-0"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={addBlock}
+                className="flex items-center gap-1.5 text-sm text-brand-600 font-medium hover:text-brand-700"
+              >
+                <Plus size={15} /> Kural Ekle
+              </button>
+            </div>
+
+            {/* KB Boş Yanıtı */}
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-800">Bilgi Bulunamadığında Yanıt</h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Bilgi tabanında eşleşme bulunamazsa asistanın söyleyeceği mesaj. Boş bırakılırsa varsayılan kullanılır.
+                </p>
+              </div>
+              <textarea
+                value={current.noKbMatch}
+                onChange={e => setCurrent(prev => ({ ...prev, noKbMatch: e.target.value }))}
+                placeholder="örn: Bu konuda elimde net bilgi yok. Uzman ekibimiz en kısa sürede sizinle iletişime geçecek."
+                rows={2}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+              />
+            </div>
+
+            {/* Örnek Diyaloglar */}
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-800">Örnek Diyaloglar</h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  AI&apos;ın taklit edeceği ideal konuşma örnekleri — maks {fewShotMax} örnek ({editorView.channel === 'voice' ? 'sesli' : 'chat'} için).
+                </p>
+              </div>
+
+              {current.fewShots.length === 0 && (
+                <p className="text-sm text-slate-400 py-2">Henüz örnek eklenmemiş.</p>
+              )}
+
+              <div className="space-y-3">
+                {current.fewShots.map((ex, i) => (
+                  <div key={i} className="border border-slate-100 rounded-xl p-4 space-y-3 bg-slate-50">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 space-y-2">
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">Kullanıcı</label>
+                          <input
+                            value={ex.user}
+                            onChange={e => updateFewShot(i, 'user', e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">Asistan</label>
+                          <textarea
+                            value={ex.assistant}
+                            onChange={e => updateFewShot(i, 'assistant', e.target.value)}
+                            rows={2}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => removeFewShot(i)}
+                        className="text-slate-300 hover:text-red-400 transition-colors mt-1 flex-shrink-0"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={addFewShot}
+                disabled={current.fewShots.length >= fewShotMax}
+                className="flex items-center gap-1.5 text-sm text-brand-600 font-medium hover:text-brand-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus size={15} />
+                Örnek Ekle {current.fewShots.length > 0 && `(${current.fewShots.length}/${fewShotMax})`}
+              </button>
+            </div>
+
+            {error && (
+              <p className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-lg">{error}</p>
+            )}
+          </>
         )}
 
-        {/* AI Önerileri */}
-        {suggestions.length > 0 && (
-          <div className="border border-brand-100 rounded-xl p-4 bg-brand-50 space-y-3">
-            <p className="text-xs font-semibold text-brand-700">
-              AI Önerileri — eklemek istediklerini seç:
-            </p>
-            <div className="space-y-2">
-              {suggestions.map(f => (
-                <label key={f.key} className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedSuggestions.has(f.key)}
-                    onChange={e => {
-                      const next = new Set(selectedSuggestions)
-                      e.target.checked ? next.add(f.key) : next.delete(f.key)
-                      setSelectedSuggestions(next)
-                    }}
-                    className="rounded border-brand-300 text-brand-600"
-                  />
-                  <span className="text-sm text-slate-700 flex-1">{f.label}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                    f.priority === 'must'
-                      ? 'bg-red-50 text-red-600'
-                      : 'bg-slate-100 text-slate-500'
-                  }`}>
-                    {f.priority === 'must' ? 'Zorunlu' : 'Opsiyonel'}
-                  </span>
-                </label>
-              ))}
-            </div>
-            <div className="flex gap-2">
+        {/* ── MODÜLLER TAB ─────────────────────────────────────────────────── */}
+        {editorTab === 'modules' && (
+          <div className="space-y-4">
+            {/* Randevu Alma */}
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 flex items-start gap-4">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-slate-800">Randevu Alma</p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Müşteri randevu talep edince takvimden uygun saatleri gösterir ve randevu oluşturur.
+                </p>
+                {!hasCalendar && current.features.calendar_booking && (
+                  <p className="text-xs text-amber-500 mt-1 flex items-center gap-1">
+                    <AlertTriangle size={11} /> Takvim bağlı değil ·{' '}
+                    <a href="/dashboard/settings" className="underline">Ayarlar → Takvim</a>
+                  </p>
+                )}
+              </div>
               <button
-                onClick={addSelectedSuggestions}
-                disabled={selectedSuggestions.size === 0}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors"
+                type="button"
+                onClick={() => setCurrent(prev => ({
+                  ...prev,
+                  features: { ...prev.features, calendar_booking: !prev.features.calendar_booking },
+                }))}
+                className="flex-shrink-0 mt-0.5"
               >
-                <Plus size={13} />
-                Seçilenleri Ekle ({selectedSuggestions.size})
-              </button>
-              <button
-                onClick={() => { setSuggestions([]); setSelectedSuggestions(new Set()) }}
-                className="px-3 py-1.5 text-slate-500 hover:text-slate-700 text-xs font-medium"
-              >
-                İptal
+                {current.features.calendar_booking
+                  ? <ToggleRight size={24} className="text-brand-500" />
+                  : <ToggleLeft size={24} className="text-slate-300" />}
               </button>
             </div>
+
+            {/* Sesli Dil — voice only */}
+            {editorView.channel === 'voice' && (
+              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 flex items-start gap-4">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-slate-800">Sesli Dil</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Deepgram STT ve Cartesia TTS bu dili kullanır.
+                  </p>
+                </div>
+                <select
+                  value={current.features.voice_language ?? ''}
+                  onChange={e => setCurrent(prev => ({
+                    ...prev,
+                    features: { ...prev.features, voice_language: e.target.value },
+                  }))}
+                  className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  {VOICE_LANGUAGES.map(l => (
+                    <option key={l.value} value={l.value}>{l.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* TTS Ses Tonu — voice only */}
+            {editorView.channel === 'voice' && (
+              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 flex items-start gap-4">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-slate-800">TTS Ses Tonu</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Cartesia Voice ID.{' '}
+                    <a href="https://play.cartesia.ai" target="_blank" rel="noreferrer" className="text-brand-500 hover:underline">
+                      play.cartesia.ai
+                    </a>{' '}
+                    üzerinden kopyalayın.
+                  </p>
+                </div>
+                <input
+                  value={current.features.tts_voice_id ?? ''}
+                  onChange={e => setCurrent(prev => ({
+                    ...prev,
+                    features: { ...prev.features, tts_voice_id: e.target.value },
+                  }))}
+                  className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm w-52 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                />
+              </div>
+            )}
+
+            {error && (
+              <p className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-lg">{error}</p>
+            )}
           </div>
         )}
-      </div>
 
-      {/* Hard Blocks */}
-      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-800">Konuşulmaması Gereken Konular</h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Bu anahtar kelimeler geçtiğinde asistan otomatik olarak belirlenen yanıtı verir.
-          </p>
-        </div>
+        {/* ── ARAMA KURALLARI TAB ──────────────────────────────────────────── */}
+        {editorTab === 'routing' && editorView.channel === 'voice' && (
+          <div className="space-y-5">
 
-        {current.blocks.length === 0 && (
-          <p className="text-sm text-slate-400 py-2">Henüz kural eklenmemiş.</p>
-        )}
-
-        <div className="space-y-3">
-          {current.blocks.map((b, i) => (
-            <div key={i} className="border border-slate-100 rounded-xl p-4 space-y-3 bg-slate-50">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 space-y-2">
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">
-                      Tetikleyen kelimeler <span className="text-slate-400">(virgülle ayır)</span>
-                    </label>
-                    <input
-                      value={b.keywords}
-                      onChange={e => updateBlock(i, 'keywords', e.target.value)}
-                      placeholder="örn: rakip firma, iade, hukuk"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">Verilecek yanıt</label>
-                    <input
-                      value={b.response}
-                      onChange={e => updateBlock(i, 'response', e.target.value)}
-                      placeholder="Bu konuda yardımcı olamıyorum, danışmanımıza bağlayayım."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
-                  </div>
+            {/* Transfer Numaraları */}
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                  <PhoneForwarded size={15} className="text-brand-500" /> Transfer Numaraları
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Tier 1 kurallar tetiklendiğinde arama bu numaraya aktarılır.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Call Center (Transfer)</label>
+                  <input
+                    value={routingConfig.transfer_numbers.primary ?? ''}
+                    onChange={e => setRoutingConfig(prev => ({
+                      ...prev,
+                      transfer_numbers: { ...prev.transfer_numbers, primary: e.target.value },
+                    }))}
+                    placeholder="02122446600"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
                 </div>
-                <button
-                  onClick={() => removeBlock(i)}
-                  className="text-slate-300 hover:text-red-400 transition-colors mt-1 flex-shrink-0"
-                >
-                  <Trash2 size={15} />
-                </button>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Voice Agent Hattı</label>
+                  <input
+                    value={routingConfig.transfer_numbers.voice_agent ?? ''}
+                    onChange={e => setRoutingConfig(prev => ({
+                      ...prev,
+                      transfer_numbers: { ...prev.transfer_numbers, voice_agent: e.target.value },
+                    }))}
+                    placeholder="02127098709"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                </div>
               </div>
             </div>
-          ))}
-        </div>
 
-        <button
-          onClick={addBlock}
-          className="flex items-center gap-1.5 text-sm text-brand-600 font-medium hover:text-brand-700"
-        >
-          <Plus size={15} />
-          Kural Ekle
-        </button>
-      </div>
-
-      {/* KB Boş Yanıtı */}
-      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-800">Bilgi Bulunamadığında Yanıt</h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Bilgi tabanında eşleşme bulunamazsa asistanın söyleyeceği mesaj. Boş bırakılırsa varsayılan kullanılır.
-          </p>
-        </div>
-        <textarea
-          value={current.noKbMatch}
-          onChange={e => setCurrent(prev => ({ ...prev, noKbMatch: e.target.value }))}
-          placeholder="örn: Bu konuda elimde net bilgi yok. Uzman ekibimiz en kısa sürede sizinle iletişime geçecek."
-          rows={2}
-          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
-        />
-      </div>
-
-      {/* Few-shot Examples */}
-      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-800">Örnek Diyaloglar</h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            AI'ın taklit edeceği ideal konuşma örnekleri — maks {fewShotMax} örnek ({activeChannel === 'voice' ? 'sesli' : 'chat'} için).
-          </p>
-        </div>
-
-        {current.fewShots.length === 0 && (
-          <p className="text-sm text-slate-400 py-2">Henüz örnek eklenmemiş.</p>
-        )}
-
-        <div className="space-y-3">
-          {current.fewShots.map((ex, i) => (
-            <div key={i} className="border border-slate-100 rounded-xl p-4 space-y-3 bg-slate-50">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 space-y-2">
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">Kullanıcı</label>
+            {/* Mesai Saatleri */}
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                  <Clock size={15} className="text-brand-500" /> Mesai Saatleri
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Mesai içinde Tier 1 kurallar transfere, mesai dışında callback vaadiyle notlara yönlenir.
+                </p>
+              </div>
+              <div className="space-y-3">
+                {[
+                  { key: 'weekdays', label: 'Hafta içi (Pzt–Cum)' },
+                  { key: 'saturday', label: 'Cumartesi' },
+                ].map(({ key, label }) => (
+                  <div key={key} className="flex items-center gap-4">
+                    <label className="text-xs text-slate-600 w-40 flex-shrink-0">{label}</label>
                     <input
-                      value={ex.user}
-                      onChange={e => updateFewShot(i, 'user', e.target.value)}
-                      placeholder=""
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      type="text"
+                      value={(workingHours as any)[key] ?? ''}
+                      onChange={e => setWorkingHours(prev => ({ ...prev, [key]: e.target.value || null }))}
+                      placeholder="09:30-19:00"
+                      className="w-36 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
                     />
+                    <span className="text-xs text-slate-400">format: SS:DD-SS:DD</span>
                   </div>
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">Asistan</label>
-                    <textarea
-                      value={ex.assistant}
-                      onChange={e => updateFewShot(i, 'assistant', e.target.value)}
-                      placeholder=""
-                      rows={2}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+                ))}
+                <div className="flex items-center gap-4">
+                  <label className="text-xs text-slate-600 w-40 flex-shrink-0">Pazar</label>
+                  <button
+                    onClick={() => setWorkingHours(prev => ({ ...prev, sunday: prev.sunday ? null : '10:00-16:00' }))}
+                    className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                      workingHours.sunday
+                        ? 'border-brand-200 bg-brand-50 text-brand-600'
+                        : 'border-slate-200 bg-slate-50 text-slate-400'
+                    }`}
+                  >
+                    {workingHours.sunday ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                    {workingHours.sunday ? workingHours.sunday : 'Kapalı'}
+                  </button>
+                  {workingHours.sunday && (
+                    <input
+                      type="text"
+                      value={workingHours.sunday}
+                      onChange={e => setWorkingHours(prev => ({ ...prev, sunday: e.target.value }))}
+                      className="w-36 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
                     />
-                  </div>
+                  )}
                 </div>
-                <button
-                  onClick={() => removeFewShot(i)}
-                  className="text-slate-300 hover:text-red-400 transition-colors mt-1 flex-shrink-0"
-                >
-                  <Trash2 size={15} />
-                </button>
               </div>
             </div>
-          ))}
-        </div>
 
-        <button
-          onClick={addFewShot}
-          disabled={current.fewShots.length >= fewShotMax}
-          className="flex items-center gap-1.5 text-sm text-brand-600 font-medium hover:text-brand-700 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Plus size={15} />
-          Örnek Ekle {current.fewShots.length > 0 && `(${current.fewShots.length}/${fewShotMax})`}
-        </button>
-      </div>
+            {/* Yönlendirme Kuralları */}
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-800">Yönlendirme Kuralları</h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Tier 1 kurallar çağrıyı aktarır, Tier 2 kurallar not alıp geri arama yapar.
+                </p>
+              </div>
 
-      {error && (
-        <p className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-lg">{error}</p>
-      )}
-        </>
-      )}
+              {routingConfig.rules.length === 0 && (
+                <p className="text-sm text-slate-400 py-2">Henüz yönlendirme kuralı eklenmemiş.</p>
+              )}
+
+              <div className="space-y-3">
+                {routingConfig.rules.map((rule, idx) => {
+                  const tierLabel = rule.tier === 1 ? 'Transfer' : 'Not Al'
+                  const tierColor = rule.tier === 1 ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'
+                  const typeLabels: Record<string, string> = {
+                    kb_fallback:    'KB Fallback',
+                    intent:         'Niyet',
+                    topic_note:     'Konu',
+                    sentiment_note: 'Duygu',
+                  }
+                  const isTier1 = rule.tier === 1
+
+                  return (
+                    <div key={rule.id} className={`border rounded-xl p-4 space-y-3 transition-colors ${rule.active ? 'border-slate-100 bg-slate-50' : 'border-slate-100 bg-white opacity-50'}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => updateRule(idx, { active: !rule.active })}
+                            className={`relative inline-flex h-5 w-9 rounded-full transition-colors flex-shrink-0 ${rule.active ? 'bg-brand-500' : 'bg-slate-200'}`}
+                          >
+                            <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${rule.active ? 'translate-x-4' : ''}`} />
+                          </button>
+                          <span className="text-sm font-medium text-slate-800">
+                            {typeLabels[rule.type] ?? rule.type}
+                          </span>
+                          <span className="text-xs text-slate-400 font-mono">{rule.id}</span>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${tierColor}`}>
+                          Tier {rule.tier} — {tierLabel}
+                        </span>
+                      </div>
+
+                      {rule.keywords && rule.keywords.length > 0 && (
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">Anahtar kelimeler <span className="text-slate-400">(virgülle ayır)</span></label>
+                          <input
+                            value={rule.keywords.join(', ')}
+                            onChange={e => updateRule(idx, {
+                              keywords: e.target.value.split(',').map(k => k.trim()).filter(Boolean),
+                            })}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                          />
+                        </div>
+                      )}
+
+                      {isTier1 ? (
+                        <>
+                          <div>
+                            <label className="block text-xs text-slate-500 mb-1">Mesai içi mesajı</label>
+                            <textarea
+                              value={rule.transition_message ?? ''}
+                              onChange={e => updateRule(idx, { transition_message: e.target.value })}
+                              rows={2}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-slate-500 mb-1">Mesai dışı mesajı</label>
+                            <textarea
+                              value={rule.after_hours_message ?? ''}
+                              onChange={e => updateRule(idx, { after_hours_message: e.target.value })}
+                              rows={2}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">Geri arama mesajı</label>
+                          <textarea
+                            value={rule.note_message ?? ''}
+                            onChange={e => updateRule(idx, { note_message: e.target.value })}
+                            rows={2}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {error && (
+              <p className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-lg">{error}</p>
+            )}
+          </div>
+        )}
+
+        {/* ── TEST ET TAB ──────────────────────────────────────────────────── */}
+        {editorTab === 'test' && orgId && (
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+            <div className="mb-4">
+              <h2 className="text-sm font-semibold text-slate-800">Asistan Playground</h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Mevcut bilgi bankası ve promptunuzla gerçek zamanlı test yapın. Hiçbir veri kaydedilmez.
+              </p>
+            </div>
+            <AgentTestPanel
+              orgId={orgId}
+              activeChannel={activeChannel}
+              hasVoice={!!voice.id || !!voice.systemPrompt}
+              hasChat={!!whatsapp.id || !!whatsapp.systemPrompt}
+              kbCount={kbCount}
+              promptLength={
+                activeChannel === 'voice'
+                  ? voice.systemPrompt.length
+                  : whatsapp.systemPrompt.length
+              }
+            />
+          </div>
+        )}
+
       </div>{/* end main column */}
 
       {/* Improvement tips sidebar */}
@@ -1444,29 +1454,91 @@ export default function AgentPage() {
             {quickWins.map(item => {
               const Icon = item.icon
               return (
-              <div key={item.label} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2 text-slate-500">
-                  <Icon size={13} />
-                  {item.label}
+                <div key={item.label} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 text-slate-500">
+                    <Icon size={13} />
+                    {item.label}
+                  </div>
+                  <span className={`font-semibold ${item.value === 'Geliştirilmeli' ? 'text-amber-600' : 'text-slate-800'}`}>
+                    {item.value}
+                  </span>
                 </div>
-                <span className={`font-semibold ${item.value === 'Geliştirilmeli' ? 'text-amber-600' : 'text-slate-800'}`}>
-                  {item.value}
-                </span>
-              </div>
               )
             })}
           </div>
         </div>
       </aside>
     </div>
+  )
+}
 
-    <AgentTemplateModal
-      open={templateModalOpen}
-      channel={activeChannel}
-      hasCalendar={hasCalendar}
-      onClose={() => setTemplateModalOpen(false)}
-      onApply={applyTemplate}
-    />
-    </>
+// ─── HELPER COMPONENTS ────────────────────────────────────────────────────────
+
+function Phase1Card({
+  template,
+  locked,
+  hasCalendar,
+  onClick,
+}: {
+  template: AgentTemplate
+  locked: boolean
+  hasCalendar: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={locked ? undefined : onClick}
+      disabled={locked}
+      className="relative flex-shrink-0 w-40 min-h-[190px] rounded-xl border-2 border-slate-100 bg-white p-4
+        text-left flex flex-col gap-2 transition-all
+        hover:border-brand-200 hover:shadow-sm disabled:cursor-not-allowed"
+    >
+      {locked && (
+        <div className="absolute inset-0 rounded-xl flex flex-col items-center justify-center gap-1.5 bg-white/80 backdrop-blur-[1px]">
+          <Lock size={14} className="text-slate-400" />
+          <span className="text-xs text-slate-400">Paket gerekli</span>
+        </div>
+      )}
+      {template.recommended && (
+        <span className="text-[10px] font-semibold text-amber-600 flex items-center gap-0.5">
+          <Star size={10} className="fill-amber-400 text-amber-400" /> Önerilen
+        </span>
+      )}
+      <p className="text-sm font-semibold text-slate-800 leading-tight">{template.name}</p>
+      <p className="text-xs text-slate-400 leading-relaxed line-clamp-4 flex-1">{template.description}</p>
+      {template.requiresCalendar && !hasCalendar && (
+        <p className="text-[10px] text-amber-500 flex items-center gap-0.5 mt-auto">
+          <Info size={9} /> Takvim gerekir
+        </p>
+      )}
+    </button>
+  )
+}
+
+function ConfiguredCard({
+  channel,
+  onClick,
+}: {
+  channel: 'voice' | 'whatsapp'
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 border-brand-100 bg-brand-50/40 hover:border-brand-300 transition-all w-64"
+    >
+      <div className="flex items-center gap-2">
+        {channel === 'voice'
+          ? <Mic size={15} className="text-brand-500" />
+          : <MessageSquare size={15} className="text-brand-500" />}
+        <div className="text-left">
+          <p className="text-sm font-medium text-slate-800">
+            {channel === 'voice' ? 'Sesli Görüşme' : 'Mesajlaşma'}
+          </p>
+          <p className="text-xs text-slate-400">Özelleştirilmiş yapılandırma</p>
+        </div>
+      </div>
+      <ArrowRight size={14} className="text-slate-400 flex-shrink-0" />
+    </button>
   )
 }
