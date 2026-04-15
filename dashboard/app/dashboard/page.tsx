@@ -4,6 +4,7 @@ import { Users, Flame, TrendingUp, ArrowRight, Star, CalendarDays } from 'lucide
 import StatCard from '@/components/StatCard'
 import TrendChart from '@/components/TrendChart'
 import LeadBadge from '@/components/LeadBadge'
+import SetupBanner from '@/components/setup/SetupBanner'
 import { getT } from '@/lib/i18n'
 import { cookies } from 'next/headers'
 import { formatDuration } from '@/lib/types'
@@ -123,6 +124,10 @@ export default async function DashboardPage() {
         <p className="text-sm text-slate-500 mt-0.5">Genel performans özeti</p>
       </div>
 
+      <SetupBanner />
+
+      <div id="dashboard-main-content" className="space-y-6 transition-all duration-300">
+
       {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard title={t.totalLeads} value={totalLeads} icon={Users} color="blue" />
@@ -236,6 +241,8 @@ export default async function DashboardPage() {
           </div>
         </div>
       </div>
+
+      </div> {/* dashboard-main-content */}
     </div>
   )
 }
