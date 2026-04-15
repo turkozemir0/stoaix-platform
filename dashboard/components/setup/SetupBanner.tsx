@@ -8,6 +8,7 @@ interface SetupStatus {
   business_info_complete: boolean
   has_kb_items: boolean
   has_channel: boolean
+  has_playbook: boolean
   has_conversation: boolean
   kb_count: number
 }
@@ -21,9 +22,9 @@ export default function SetupBanner() {
   const [loaded, setLoaded] = useState(false)
 
   const completedCount = status
-    ? [status.business_info_complete, status.has_kb_items, status.has_channel, status.has_conversation].filter(Boolean).length
+    ? [status.business_info_complete, status.has_kb_items, status.has_channel, status.has_playbook, status.has_conversation].filter(Boolean).length
     : 0
-  const isIncomplete = completedCount < 4
+  const isIncomplete = completedCount < 5
 
   useEffect(() => {
     if (localStorage.getItem(STORAGE_KEY) === 'collapsed') setCollapsed(true)
@@ -69,7 +70,7 @@ export default function SetupBanner() {
         <div className="flex items-center gap-2">
           <Rocket className="w-4 h-4 text-amber-600" />
           <span className="text-sm font-medium text-amber-800">
-            Kurulum Rehberi — {completedCount}/4 adım tamamlandı
+            Kurulum Rehberi — {completedCount}/5 adım tamamlandı
           </span>
         </div>
         <button
@@ -96,14 +97,14 @@ export default function SetupBanner() {
             <p className="text-xs text-slate-500">
               {completedCount === 0
                 ? 'AI asistanınız henüz aktif değil. Aşağıdaki adımları tamamlayın.'
-                : `${completedCount}/4 adım tamamlandı — neredeyse hazırsınız!`}
+                : `${completedCount}/5 adım tamamlandı — neredeyse hazırsınız!`}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           {/* Progress dots */}
           <div className="hidden sm:flex items-center gap-1.5">
-            {[0, 1, 2, 3].map(i => (
+            {[0, 1, 2, 3, 4].map(i => (
               <div
                 key={i}
                 className={`w-2 h-2 rounded-full transition-colors ${i < completedCount ? 'bg-brand-500' : 'bg-slate-200'}`}
@@ -148,6 +149,13 @@ export default function SetupBanner() {
         />
         <SetupStep
           step={4}
+          done={status.has_playbook}
+          title="AI Asistanını Kur"
+          description="Şablon seç, asistan adını ve davranışını belirle"
+          cta={{ label: 'AI Asistanı', href: '/dashboard/agent' }}
+        />
+        <SetupStep
+          step={5}
           done={status.has_conversation}
           title="İlk Konuşmayı Bekle"
           description="Kanal bağlandığında AI asistanınız otomatik olarak konuşmalara başlayacak"

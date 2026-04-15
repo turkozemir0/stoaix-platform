@@ -22,7 +22,7 @@ export async function GET() {
   if (!orgUser) return NextResponse.json({ error: 'Org bulunamadı' }, { status: 403 })
   const orgId = orgUser.organization_id
 
-  const [orgResult, kbResult, convResult] = await Promise.all([
+  const [orgResult, kbResult, convResult, playbookResult] = await Promise.all([
     service
       .from('organizations')
       .select('phone, email, city, channel_config')
@@ -36,11 +36,17 @@ export async function GET() {
       .from('conversations')
       .select('id', { count: 'exact', head: true })
       .eq('organization_id', orgId),
+    service
+      .from('agent_playbooks')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', orgId)
+      .eq('is_active', true),
   ])
 
   const org = orgResult.data
   const kbCount = kbResult.count ?? 0
   const convCount = convResult.count ?? 0
+  const playbookCount = playbookResult.count ?? 0
   const channelConfig = org?.channel_config as any
 
   return NextResponse.json({
@@ -51,6 +57,7 @@ export async function GET() {
       channelConfig?.instagram?.active === true ||
       channelConfig?.voice_inbound?.active === true
     ),
+    has_playbook: playbookCount > 0,
     has_conversation: convCount > 0,
     kb_count: kbCount,
   })
