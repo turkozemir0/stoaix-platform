@@ -41,6 +41,7 @@ export default function KBItemModal({ orgId, sector, item, onClose, onSaved }: P
   const [tags, setTags] = useState(item?.tags.join(', ') || '')
   const [isActive, setIsActive] = useState(item?.is_active !== false)
   const [formData, setFormData] = useState<Record<string, any>>(item?.data || {})
+  const [descriptionForAI, setDescriptionForAI] = useState(item?.description_for_ai || '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [suggestingField, setSuggestingField] = useState<string | null>(null)
@@ -295,13 +296,17 @@ export default function KBItemModal({ orgId, sector, item, onClose, onSaved }: P
     setError('')
 
     const normalizedData = normalizeFormData(formData)
-    const payload = {
+    const payload: Record<string, any> = {
       title: title.trim(),
       item_type: itemType,
       data: normalizedData,
       tags: tags.split(',').map(s => s.trim()).filter(Boolean),
       is_active: isActive,
       organization_id: orgId,
+    }
+    // Edit modunda dolu bir description_for_ai varsa gönder; boş bırakılırsa API data'dan yeniden üretir
+    if (isEdit && descriptionForAI.trim()) {
+      payload.description_for_ai = descriptionForAI.trim()
     }
 
     try {
@@ -385,6 +390,21 @@ export default function KBItemModal({ orgId, sector, item, onClose, onSaved }: P
               {renderField(field)}
             </div>
           ))}
+
+          {/* AI Description — edit modunda göster */}
+          {isEdit && (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">AI Açıklaması</label>
+              <textarea
+                value={descriptionForAI}
+                onChange={e => setDescriptionForAI(e.target.value)}
+                placeholder="AI asistanının kullanacağı açıklama metni..."
+                rows={4}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+              />
+              <p className="mt-1 text-xs text-slate-400">Boş bırakırsanız yukarıdaki alanlardan otomatik oluşturulur.</p>
+            </div>
+          )}
 
           {/* Tags */}
           <div>

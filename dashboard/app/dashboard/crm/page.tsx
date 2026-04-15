@@ -132,7 +132,7 @@ function LeadsTab({ orgId }: { orgId: string }) {
         <p className="text-sm text-slate-500">{statusCounts.all} kayıt</p>
         <div className="flex items-center gap-2">
           <Link
-            href="/dashboard/crm/import"
+            href="/dashboard/admin/import"
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 border border-slate-200 text-slate-600 rounded-lg text-xs font-medium hover:bg-slate-200 transition-colors"
           >
             <Plus size={13} />
