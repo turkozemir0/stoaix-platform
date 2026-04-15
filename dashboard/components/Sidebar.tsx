@@ -63,6 +63,8 @@ export default function Sidebar({ orgName, isSuperAdmin, userRole, userId, orgId
   useEffect(() => { setMobileOpen(false) }, [pathname])
 
   async function handleLogout() {
+    const msg = lang === 'tr' ? 'Çıkış yapmak istediğinize emin misiniz?' : 'Are you sure you want to log out?'
+    if (!confirm(msg)) return
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')
