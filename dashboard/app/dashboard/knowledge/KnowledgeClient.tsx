@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { Search, Plus, Pencil, Trash2 } from 'lucide-react'
+import { Search, Plus, Pencil, Trash2, Globe } from 'lucide-react'
 import { useT } from '@/lib/lang-context'
 import KBItemModal from '@/components/admin/KBItemModal'
+import WebScraperModal from '@/components/knowledge/WebScraperModal'
 import type { KnowledgeItem } from '@/lib/types'
 
 interface Props {
@@ -49,6 +50,7 @@ export default function KnowledgeClient({ items: initialItems, orgId, sector }: 
   const [modalOpen, setModalOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<KnowledgeItem | undefined>(undefined)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [scraperOpen, setScraperOpen] = useState(false)
 
   const filtered = items.filter(item =>
     item.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -95,6 +97,13 @@ export default function KnowledgeClient({ items: initialItems, orgId, sector }: 
         <h1 className="text-xl font-bold text-slate-900">{t.knowledgeTitle}</h1>
         <div className="flex items-center gap-3">
           <span className="text-sm text-slate-500">{items.length} kayıt</span>
+          <button
+            onClick={() => setScraperOpen(true)}
+            className="flex items-center gap-1.5 border border-slate-200 hover:border-brand-400 hover:text-brand-600 text-slate-600 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            <Globe size={15} />
+            Web'den İçe Aktar
+          </button>
           <button
             onClick={openAdd}
             className="flex items-center gap-1.5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
@@ -189,6 +198,16 @@ export default function KnowledgeClient({ items: initialItems, orgId, sector }: 
           item={editingItem}
           onClose={() => setModalOpen(false)}
           onSaved={handleSaved}
+        />
+      )}
+
+      {scraperOpen && (
+        <WebScraperModal
+          orgId={orgId}
+          onClose={() => setScraperOpen(false)}
+          onSaved={(newItems) => {
+            setItems(prev => [...newItems, ...prev])
+          }}
         />
       )}
     </div>
