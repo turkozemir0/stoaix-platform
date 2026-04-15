@@ -14,7 +14,7 @@ const COUNTRY_KEYWORDS: Record<string, string> = {
   'bulgaristan': 'bulgaristan', 'moldova': 'moldova', 'romanya': 'romanya',
   'gürcistan': 'gurcistan', 'sırbistan': 'sirbistan', 'polonya': 'polonya',
   'iran': 'iran', 'rusya': 'rusya', 'makedonya': 'kuzey_makedonya',
-  'macaristan': 'macaristan', 'çek': 'cek_cumhuriyeti',
+  'macaristan': 'macaristan', 'çek cumhuriyeti': 'cek_cumhuriyeti', 'çekya': 'cek_cumhuriyeti',
 }
 const DEPT_KEYWORDS: Record<string, string> = {
   'tıp': 'tıp', 'tıbbi': 'tıp', 'diş hekimliği': 'dis_hekimligi', 'diş': 'dis_hekimligi',
