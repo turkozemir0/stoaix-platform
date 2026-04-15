@@ -7,6 +7,7 @@ import { useT } from '@/lib/lang-context'
 import NewOrgModal from './NewOrgModal'
 import OrgSettingsModal from './OrgSettingsModal'
 import InviteUserModal from './InviteUserModal'
+import N8nStatusWidget from './N8nStatusWidget'
 
 interface Org {
   id: string
@@ -89,6 +90,12 @@ export default function AdminClient({ orgs: initialOrgs, countsByOrg, kbCountsBy
             <p className="text-2xl font-bold text-slate-900">{Object.values(countsByOrg).reduce((a, b) => a + b, 0)}</p>
           </div>
         </div>
+      </div>
+
+      {/* Sistem Durumu */}
+      <div className="mb-6">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Sistem Durumu</p>
+        <N8nStatusWidget />
       </div>
 
       <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">

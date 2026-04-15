@@ -3,6 +3,7 @@ import { createClient as createSupabase } from '@supabase/supabase-js'
 import { getStripe } from '@/lib/stripe'
 import { invalidateCache } from '@/lib/entitlements'
 import Stripe from 'stripe'
+import * as Sentry from '@sentry/nextjs'
 
 function getServiceClient() {
   return createSupabase(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -44,6 +45,7 @@ export async function POST(req: NextRequest) {
     await handleEvent(event, service)
   } catch (err) {
     console.error('[webhook] Event işleme hatası:', event.type, err)
+    Sentry.captureException(err, { extra: { eventType: event.type, route: 'billing/webhook' } })
     // 200 döndür — Stripe retry etmesin, event log'da
     return NextResponse.json({ ok: false, event: event.type })
   }

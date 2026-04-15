@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import Sidebar from '@/components/Sidebar'
 import BillingStatusBanner from '@/components/billing/BillingStatusBanner'
+import ConsentGuard from '@/components/ConsentGuard'
 import { LangProvider } from '@/lib/lang-context'
 import type { Lang } from '@/lib/i18n'
 
@@ -41,7 +42,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <Sidebar orgName={orgName} isSuperAdmin={!!superAdmin} userRole={userRole} userId={user.id} orgId={orgId} />
         <main className="relative flex-1 min-w-0 overflow-auto pt-16 md:pt-0">
           <BillingStatusBanner />
-          {children}
+          <ConsentGuard>
+            {children}
+          </ConsentGuard>
         </main>
       </div>
     </LangProvider>
