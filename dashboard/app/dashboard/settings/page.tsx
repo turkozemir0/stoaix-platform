@@ -1,599 +1,17 @@
 'use client'
 
-import { useState, useEffect, useRef, Suspense } from 'react'
-import { Settings, Trash2, Plus, Loader2, Calendar, CheckCircle2, ExternalLink, Instagram, X, MessageCircle, Lock, ToggleLeft, ToggleRight, CreditCard } from 'lucide-react'
+import { useState, useEffect, Suspense } from 'react'
+import {
+  Settings, Loader2, Lock, ToggleLeft, ToggleRight, CreditCard,
+  Check, X, Zap, Star, Building2, Rocket,
+  Plus, ChevronDown, LifeBuoy,
+} from 'lucide-react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-
-// ─── Facebook SDK type shim ───────────────────────────────────────────────────
-declare global {
-  interface Window {
-    FB: any
-    fbAsyncInit: () => void
-  }
-}
-
-function loadFbSdk(appId: string) {
-  if (document.getElementById('facebook-jssdk')) return
-  window.fbAsyncInit = function () {
-    window.FB.init({ appId, cookie: true, xfbml: false, version: 'v19.0' })
-  }
-  const script = document.createElement('script')
-  script.id  = 'facebook-jssdk'
-  script.src = 'https://connect.facebook.net/en_US/sdk.js'
-  document.body.appendChild(script)
-}
-
-function CalendarSection() {
-  const searchParams = useSearchParams()
-  const [calConnected, setCalConnected] = useState<boolean | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [disconnecting, setDisconnecting] = useState(false)
-
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return
-      const { data: orgUser } = await supabase
-        .from('org_users')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .maybeSingle()
-      if (!orgUser) { setLoading(false); return }
-      const { data: org } = await supabase
-        .from('organizations')
-        .select('channel_config')
-        .eq('id', orgUser.organization_id)
-        .single()
-      const cal = (org?.channel_config as any)?.calendar
-      setCalConnected(!!(cal?.access_token))
-      setLoading(false)
-    })
-  }, [searchParams.get('calendar_connected')])
-
-  const connected = calConnected || !!searchParams.get('calendar_connected')
-  const error = searchParams.get('calendar_error')
-
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6">
-      <div className="flex items-center gap-2 mb-1">
-        <Calendar size={16} className="text-brand-600" />
-        <h2 className="font-semibold text-slate-800">Google Takvim</h2>
-      </div>
-      <p className="text-sm text-slate-500 mb-4">
-        Randevu oluşturma özelliği için Google Takviminizi bağlayın.
-      </p>
-
-      {loading ? (
-        <div className="flex items-center gap-2 text-slate-400 text-sm">
-          <Loader2 size={14} className="animate-spin" /> Yükleniyor...
-        </div>
-      ) : connected ? (
-        <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm">
-          <CheckCircle2 size={16} />
-          <span className="font-medium">Google Takvim bağlı</span>
-          <div className="ml-auto flex items-center gap-3">
-            <button
-              onClick={() => window.location.href = '/api/calendar/auth'}
-              className="text-xs text-slate-500 hover:text-slate-700 underline"
-            >
-              Yeniden bağla
-            </button>
-            <button
-              disabled={disconnecting}
-              onClick={async () => {
-                if (!confirm('Google Takvim bağlantısını kesmek istediğinize emin misiniz?')) return
-                setDisconnecting(true)
-                const res = await fetch('/api/calendar/disconnect', { method: 'DELETE' })
-                if (res.ok) {
-                  setCalConnected(false)
-                } else {
-                  alert('Bağlantı kesilirken bir hata oluştu.')
-                }
-                setDisconnecting(false)
-              }}
-              className="text-xs text-red-500 hover:text-red-700 underline disabled:opacity-50"
-            >
-              {disconnecting ? 'Kesiliyor...' : 'Bağlantıyı kes'}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-          {error && (
-            <p className="text-sm text-red-500 mb-3">
-              Bağlantı başarısız: {error}
-            </p>
-          )}
-          <button
-            onClick={() => window.location.href = '/api/calendar/auth'}
-            className="flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
-          >
-            <Calendar size={14} />
-            Google Takvim Bağla
-            <ExternalLink size={13} className="opacity-70" />
-          </button>
-        </>
-      )}
-    </div>
-  )
-}
-
-function InstagramSection() {
-  const searchParams = useSearchParams()
-  const [igState, setIgState] = useState<{ connected: boolean; username?: string } | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [disconnecting, setDisconnecting] = useState(false)
-
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return
-      const { data: orgUser } = await supabase
-        .from('org_users')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .maybeSingle()
-      if (!orgUser) { setLoading(false); return }
-      const { data: org } = await supabase
-        .from('organizations')
-        .select('channel_config')
-        .eq('id', orgUser.organization_id)
-        .single()
-      const ig = (org?.channel_config as any)?.instagram
-      const creds = ig?.credentials
-      setIgState({
-        connected: !!(ig?.active && creds?.page_id),
-        username: creds?.username,
-      })
-      setLoading(false)
-    })
-  }, [searchParams.get('instagram')])
-
-  const justConnected = searchParams.get('instagram') === 'connected'
-  const error = searchParams.get('instagram_error')
-  const connected = justConnected || igState?.connected
-
-  async function disconnect() {
-    setDisconnecting(true)
-    try {
-      await fetch('/api/instagram/disconnect', { method: 'DELETE' })
-      setIgState({ connected: false })
-      // Remove query param without full reload
-      window.history.replaceState({}, '', '/dashboard/settings')
-    } finally {
-      setDisconnecting(false)
-    }
-  }
-
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6">
-      <div className="flex items-center gap-2 mb-1">
-        <Instagram size={16} className="text-pink-500" />
-        <h2 className="font-semibold text-slate-800">Instagram DM</h2>
-      </div>
-      <p className="text-sm text-slate-500 mb-4">
-        Instagram hesabınızı bağlayın, gelen DM&apos;ler otomatik yönetilsin.
-      </p>
-
-      {loading ? (
-        <div className="flex items-center gap-2 text-slate-400 text-sm">
-          <Loader2 size={14} className="animate-spin" /> Yükleniyor...
-        </div>
-      ) : connected ? (
-        <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm">
-          <CheckCircle2 size={16} />
-          <span className="font-medium">
-            Bağlı{igState?.username ? ` — @${igState.username}` : ''}
-          </span>
-          <button
-            onClick={disconnect}
-            disabled={disconnecting}
-            className="ml-auto flex items-center gap-1 text-xs text-slate-500 hover:text-red-500 transition-colors"
-          >
-            {disconnecting ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
-            Bağlantıyı Kes
-          </button>
-        </div>
-      ) : (
-        <>
-          {error && (
-            <p className="text-sm text-red-500 mb-3">
-              Bağlantı başarısız: {error}
-            </p>
-          )}
-          <button
-            onClick={() => { window.location.href = '/api/instagram/auth' }}
-            className="flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
-          >
-            <Instagram size={14} />
-            Instagram&apos;ı Bağla
-            <ExternalLink size={13} className="opacity-70" />
-          </button>
-        </>
-      )}
-    </div>
-  )
-}
-
-type WaConnectMode = 'embedded' | 'manual'
-
-function WhatsAppSection() {
-  const [waState, setWaState]       = useState<{ connected: boolean; phone?: string } | null>(null)
-  const [loading, setLoading]       = useState(true)
-  const [connecting, setConnecting] = useState(false)
-  const [disconnecting, setDisconnecting] = useState(false)
-  const [error, setError]           = useState('')
-  const [mode, setMode]             = useState<WaConnectMode>('embedded')
-
-  // Manual form fields
-  const [manualPhoneId, setManualPhoneId]   = useState('')
-  const [manualToken, setManualToken]       = useState('')
-  const [manualWabaId, setManualWabaId]     = useState('')
-
-  const waSessionInfo = useRef<{ phone_number_id?: string; waba_id?: string } | null>(null)
-  const hasEmbeddedSignup = !!process.env.NEXT_PUBLIC_META_WA_CONFIG_ID
-
-  useEffect(() => {
-    const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID
-    if (appId) loadFbSdk(appId)
-
-    const supabase = createClient()
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return
-      const { data: orgUser } = await supabase
-        .from('org_users')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .maybeSingle()
-      if (!orgUser) { setLoading(false); return }
-      const { data: org } = await supabase
-        .from('organizations')
-        .select('channel_config')
-        .eq('id', orgUser.organization_id)
-        .single()
-      const wa    = (org?.channel_config as any)?.whatsapp
-      const creds = wa?.credentials
-      setWaState({
-        connected: !!(wa?.active && creds?.phone_number_id),
-        phone:     creds?.phone_number,
-      })
-      setLoading(false)
-    })
-  }, [])
-
-  // Listen for Embedded Signup session info (WABA + phone_number_id from Meta popup)
-  useEffect(() => {
-    function onMessage(event: MessageEvent) {
-      if (event.origin !== 'https://www.facebook.com') return
-      try {
-        const data = JSON.parse(event.data)
-        if (data.type === 'WA_EMBEDDED_SIGNUP' && data.event === 'FINISH') {
-          waSessionInfo.current = {
-            phone_number_id: data.data?.phone_number_id,
-            waba_id:         data.data?.waba_id,
-          }
-        }
-      } catch {}
-    }
-    window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
-  }, [])
-
-  async function connectEmbedded() {
-    if (!window.FB) {
-      setError('Facebook SDK yüklenemedi, sayfayı yenileyin.')
-      return
-    }
-    setConnecting(true)
-    setError('')
-    waSessionInfo.current = null
-
-    window.FB.login(async (response: any) => {
-      try {
-        if (!response?.authResponse?.code) {
-          setError('Bağlantı iptal edildi veya yetki verilmedi.')
-          return
-        }
-        const sessionInfo = waSessionInfo.current ?? {}
-        const res = await fetch('/api/whatsapp/callback', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            code:            response.authResponse.code,
-            phone_number_id: sessionInfo.phone_number_id,
-            waba_id:         sessionInfo.waba_id,
-          }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error ?? 'Bağlantı başarısız')
-        setWaState({ connected: true, phone: data.phone_number })
-      } catch (e: any) {
-        setError(e.message ?? 'Bağlantı başarısız')
-      } finally {
-        setConnecting(false)
-      }
-    }, {
-      config_id:                    process.env.NEXT_PUBLIC_META_WA_CONFIG_ID,
-      response_type:                'code',
-      override_default_response_type: true,
-      extras: { sessionInfoVersion: '3' },
-    })
-  }
-
-  async function connectManual() {
-    if (!manualPhoneId.trim() || !manualToken.trim()) {
-      setError('Phone Number ID ve Access Token zorunlu.')
-      return
-    }
-    setConnecting(true)
-    setError('')
-    try {
-      const res = await fetch('/api/whatsapp/manual-connect', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone_number_id: manualPhoneId.trim(),
-          access_token:    manualToken.trim(),
-          waba_id:         manualWabaId.trim() || undefined,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Bağlantı başarısız')
-      setWaState({ connected: true, phone: data.phone_number })
-      setManualPhoneId('')
-      setManualToken('')
-      setManualWabaId('')
-    } catch (e: any) {
-      setError(e.message ?? 'Bağlantı başarısız')
-    } finally {
-      setConnecting(false)
-    }
-  }
-
-  async function disconnect() {
-    setDisconnecting(true)
-    try {
-      await fetch('/api/whatsapp/disconnect', { method: 'DELETE' })
-      setWaState({ connected: false })
-    } finally {
-      setDisconnecting(false)
-    }
-  }
-
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6">
-      <div className="flex items-center gap-2 mb-1">
-        <MessageCircle size={16} className="text-green-500" />
-        <h2 className="font-semibold text-slate-800">WhatsApp</h2>
-      </div>
-      <p className="text-sm text-slate-500 mb-4">
-        WhatsApp Business hesabınızı bağlayın, gelen mesajlar otomatik yönetilsin.
-      </p>
-
-      {loading ? (
-        <div className="flex items-center gap-2 text-slate-400 text-sm">
-          <Loader2 size={14} className="animate-spin" /> Yükleniyor...
-        </div>
-      ) : waState?.connected ? (
-        <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm">
-          <CheckCircle2 size={16} />
-          <span className="font-medium">
-            Bağlı{waState.phone ? ` — ${waState.phone}` : ''}
-          </span>
-          <button
-            onClick={disconnect}
-            disabled={disconnecting}
-            className="ml-auto flex items-center gap-1 text-xs text-slate-500 hover:text-red-500 transition-colors"
-          >
-            {disconnecting ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
-            Bağlantıyı Kes
-          </button>
-        </div>
-      ) : (
-        <>
-          {/* Mode toggle — only show if Embedded Signup is configured */}
-          {hasEmbeddedSignup && (
-            <div className="flex gap-1 mb-4 bg-slate-100 p-1 rounded-lg w-fit">
-              <button
-                onClick={() => { setMode('embedded'); setError('') }}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  mode === 'embedded' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Embedded Signup
-              </button>
-              <button
-                onClick={() => { setMode('manual'); setError('') }}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  mode === 'manual' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Manuel Bağla
-              </button>
-            </div>
-          )}
-
-          {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
-
-          {/* Embedded Signup button */}
-          {(mode === 'embedded' && hasEmbeddedSignup) && (
-            <button
-              onClick={connectEmbedded}
-              disabled={connecting}
-              className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-60 transition-colors"
-            >
-              {connecting ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />}
-              WhatsApp Bağla
-              <ExternalLink size={13} className="opacity-70" />
-            </button>
-          )}
-
-          {/* Manual connect form */}
-          {(mode === 'manual' || !hasEmbeddedSignup) && (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Phone Number ID <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={manualPhoneId}
-                  onChange={(e) => setManualPhoneId(e.target.value)}
-                  placeholder="Meta App → WhatsApp → Phone Numbers"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  System User Access Token <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="password"
-                  value={manualToken}
-                  onChange={(e) => setManualToken(e.target.value)}
-                  placeholder="EAAx..."
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  WABA ID <span className="text-slate-400 font-normal">(isteğe bağlı)</span>
-                </label>
-                <input
-                  type="text"
-                  value={manualWabaId}
-                  onChange={(e) => setManualWabaId(e.target.value)}
-                  placeholder="WhatsApp Business Account ID"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                />
-              </div>
-              <button
-                onClick={connectManual}
-                disabled={connecting || !manualPhoneId.trim() || !manualToken.trim()}
-                className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-60 transition-colors"
-              >
-                {connecting ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />}
-                Bağlan &amp; Doğrula
-              </button>
-              <p className="text-xs text-slate-400">
-                Meta Business Suite → System Users → "Generate Token" ile token alabilirsiniz.
-              </p>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  )
-}
-
-function ExcludedPhonesSection() {
-  const [phones, setPhones] = useState<string[]>([])
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState(false)
-
-  useEffect(() => {
-    fetch('/api/settings/excluded-phones')
-      .then((r) => r.json())
-      .then((d) => setPhones(d.phones ?? []))
-      .catch(() => setError('Yüklenemedi'))
-      .finally(() => setLoading(false))
-  }, [])
-
-  async function save(updated: string[]) {
-    setSaving(true)
-    setError('')
-    setSuccess(false)
-    try {
-      const res = await fetch('/api/settings/excluded-phones', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phones: updated }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      setPhones(data.phones)
-      setSuccess(true)
-      setTimeout(() => setSuccess(false), 2000)
-    } catch (e: any) {
-      setError(e.message ?? 'Kaydedilemedi')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  function addPhones() {
-    if (!input.trim()) return
-    const parsed = input.split(/[\s,\n]+/).map((s) => s.trim()).filter(Boolean)
-    const merged = Array.from(new Set([...phones, ...parsed]))
-    setInput('')
-    save(merged)
-  }
-
-  function remove(phone: string) {
-    save(phones.filter((p) => p !== phone))
-  }
-
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6">
-      <h2 className="font-semibold text-slate-800 mb-1">Hariç Tutulan Numaralar</h2>
-      <p className="text-sm text-slate-500 mb-4">
-        Bu numaralara gelen mesajlara AI yanıt vermez. Numaraları ülke kodu ile girin (ör.{' '}
-        <span className="font-mono">4915123456789</span> veya{' '}
-        <span className="font-mono">+4915123456789</span>). Virgülle, boşlukla veya alt alta yapıştırabilirsiniz.
-      </p>
-
-      <div className="flex gap-2 mb-4">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addPhones() } }}
-          placeholder="+4915123456789&#10;4915123456789, +90 555 000 00 00"
-          rows={3}
-          className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-500"
-        />
-        <button
-          onClick={addPhones}
-          disabled={saving || !input.trim()}
-          className="self-start flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors"
-        >
-          {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-          Ekle
-        </button>
-      </div>
-
-      {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
-      {success && <p className="text-sm text-green-600 mb-3">Kaydedildi.</p>}
-
-      {loading ? (
-        <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
-          <Loader2 size={14} className="animate-spin" /> Yükleniyor...
-        </div>
-      ) : phones.length === 0 ? (
-        <p className="text-sm text-slate-400 py-4">Henüz hariç tutulan numara yok.</p>
-      ) : (
-        <ul className="space-y-1">
-          {phones.map((phone) => (
-            <li key={phone} className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-lg text-sm">
-              <span className="font-mono text-slate-700">{phone}</span>
-              <button
-                onClick={() => remove(phone)}
-                disabled={saving}
-                className="text-slate-400 hover:text-red-500 disabled:opacity-40 transition-colors"
-              >
-                <Trash2 size={14} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
+import { useT } from '@/lib/lang-context'
+import DunningBanner from '@/components/billing/DunningBanner'
+import TrialBanner from '@/components/billing/TrialBanner'
 
 // ─── Module labels ────────────────────────────────────────────────────────────
 
@@ -645,7 +63,6 @@ function ModulesSection() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ feature_key: featureKey, enabled: newEnabled }),
       })
-      // Optimistic update
       setFeatures(prev => prev.map(f =>
         f.key === featureKey
           ? { ...f, user_disabled: !newEnabled, effective_enabled: f.plan_enabled && newEnabled }
@@ -656,7 +73,6 @@ function ModulesSection() {
     }
   }
 
-  // Group by module
   const grouped: Record<string, ModuleFeature[]> = {}
   for (const f of features) {
     if (!grouped[f.module]) grouped[f.module] = []
@@ -693,7 +109,9 @@ function ModulesSection() {
     <div className="space-y-4">
       <p className="text-xs text-slate-500">
         Planınızda açık olan modülleri kapatabilirsiniz. Planınızda olmayan modüller için{' '}
-        <Link href="/dashboard/billing" className="text-brand-600 underline hover:text-brand-700">plan yükseltme</Link>{' '}
+        <Link href="/dashboard/settings?tab=billing" className="text-brand-600 underline hover:text-brand-700">
+          plan yükseltme
+        </Link>{' '}
         gereklidir.
       </p>
       {Object.entries(grouped).map(([module, moduleFeatures]) => (
@@ -728,7 +146,7 @@ function ModulesSection() {
 
                   {!f.plan_enabled ? (
                     <Link
-                      href="/dashboard/billing"
+                      href="/dashboard/settings?tab=billing"
                       className="shrink-0 text-xs text-brand-600 font-medium hover:text-brand-700 flex items-center gap-1"
                     >
                       <CreditCard size={12} />
@@ -760,53 +178,582 @@ function ModulesSection() {
   )
 }
 
-// ─── Main Settings Page ───────────────────────────────────────────────────────
+// ─── Billing ──────────────────────────────────────────────────────────────────
 
-type SettingsTab = 'kanallar' | 'moduller'
+type Interval = 'monthly' | 'annual'
 
-export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('kanallar')
+interface Plan {
+  id: string
+  name: string
+  monthlyPrice: number
+  annualPrice: number
+  icon: React.ReactNode
+  color: string
+  features: { label: string; value: string | boolean }[]
+}
+
+const PLANS: Plan[] = [
+  {
+    id: 'lite',
+    name: 'Lite',
+    monthlyPrice: 79,
+    annualPrice: 63,
+    icon: <Zap size={18} />,
+    color: 'text-slate-600',
+    features: [
+      { label: 'WhatsApp mesajı', value: '500/ay' },
+      { label: 'Voice agent', value: false },
+      { label: 'Kanban board', value: true },
+      { label: 'CSV import', value: false },
+      { label: 'Instagram DM', value: false },
+      { label: 'Gelismis analitik', value: false },
+      { label: 'Outbound webhook', value: false },
+      { label: 'Ekip üyesi', value: '1' },
+    ],
+  },
+  {
+    id: 'plus',
+    name: 'Plus',
+    monthlyPrice: 149,
+    annualPrice: 119,
+    icon: <Star size={18} />,
+    color: 'text-brand-500',
+    features: [
+      { label: 'WhatsApp mesajı', value: '2.000/ay' },
+      { label: 'Voice agent', value: '60 dk/ay' },
+      { label: 'Kanban board', value: true },
+      { label: 'CSV import', value: true },
+      { label: 'Instagram DM', value: true },
+      { label: 'Gelismis analitik', value: false },
+      { label: 'Outbound webhook', value: false },
+      { label: 'Ekip üyesi', value: '3' },
+    ],
+  },
+  {
+    id: 'advanced',
+    name: 'Advanced',
+    monthlyPrice: 299,
+    annualPrice: 239,
+    icon: <Rocket size={18} />,
+    color: 'text-purple-500',
+    features: [
+      { label: 'WhatsApp mesajı', value: '5.000/ay' },
+      { label: 'Voice agent', value: '200 dk/ay' },
+      { label: 'Kanban board', value: true },
+      { label: 'CSV import', value: true },
+      { label: 'Instagram DM', value: true },
+      { label: 'Gelismis analitik', value: true },
+      { label: 'Outbound webhook', value: true },
+      { label: 'Ekip üyesi', value: '10' },
+    ],
+  },
+  {
+    id: 'agency',
+    name: 'Agency',
+    monthlyPrice: 499,
+    annualPrice: 399,
+    icon: <Building2 size={18} />,
+    color: 'text-emerald-500',
+    features: [
+      { label: 'WhatsApp mesajı', value: 'Sınırsız' },
+      { label: 'Voice agent', value: 'Sınırsız' },
+      { label: 'Kanban board', value: true },
+      { label: 'CSV import', value: true },
+      { label: 'Instagram DM', value: true },
+      { label: 'Gelismis analitik', value: true },
+      { label: 'Outbound webhook', value: true },
+      { label: 'Ekip üyesi', value: 'Sınırsız' },
+    ],
+  },
+]
+
+function BillingSection() {
+  const [interval, setInterval] = useState<Interval>('monthly')
+  const [limitsData, setLimitsData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [selectingPlan, setSelectingPlan] = useState<string | null>(null)
+  const [portalLoading, setPortalLoading] = useState(false)
+
+  const currentPlanId: string | null = limitsData?.plan_id ?? null
+  const status: string = limitsData?.status ?? ''
+  const trialEndsAt: string | null = limitsData?.trial_ends_at ?? null
+  const isLegacy = currentPlanId === 'legacy'
+  const hasNoPlan = currentPlanId === null
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch('/api/billing/limits')
+        if (res.ok) {
+          const data = await res.json()
+          setLimitsData(data)
+        }
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [])
+
+  async function handleSelect(planId: string) {
+    setSelectingPlan(planId)
+    try {
+      const res = await fetch('/api/billing/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId, interval }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.url) window.location.href = data.url
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSelectingPlan(null)
+    }
+  }
+
+  async function handlePortal() {
+    setPortalLoading(true)
+    try {
+      const res = await fetch('/api/billing/portal', { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.url) window.location.href = data.url
+      }
+    } catch {
+      // ignore
+    } finally {
+      setPortalLoading(false)
+    }
+  }
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4">
+    <div className="space-y-6">
+      {!loading && (
+        <div className="space-y-3">
+          <DunningBanner status={status} />
+          <TrialBanner trialEndsAt={trialEndsAt} planId={currentPlanId} />
+        </div>
+      )}
+
+      {isLegacy && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-6 py-5">
+          <p className="text-sm font-semibold text-slate-700">Mevcut müşteri — Özel fiyatlandırma</p>
+          <p className="mt-1 text-sm text-slate-500">
+            Özel fiyatlandırmadan yararlanıyorsunuz. Planınızı güncellemek için bizimle iletişime geçin.
+          </p>
+          <a
+            href="mailto:destek@stoaix.com"
+            className="mt-3 inline-block rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 transition-colors"
+          >
+            İletişime Geç
+          </a>
+        </div>
+      )}
+
+      {(!isLegacy || hasNoPlan) && (
+        <div className="flex items-center justify-center gap-2">
+          <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+            <button
+              onClick={() => setInterval('monthly')}
+              className={`rounded-lg px-5 py-2 text-sm font-medium transition-colors ${
+                interval === 'monthly' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Aylık
+            </button>
+            <button
+              onClick={() => setInterval('annual')}
+              className={`flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-medium transition-colors ${
+                interval === 'annual' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Yıllık
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                %20 indirim
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {(!isLegacy || hasNoPlan) && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {PLANS.map(plan => {
+            const isCurrent = plan.id === currentPlanId
+            const price = interval === 'annual' ? plan.annualPrice : plan.monthlyPrice
+            const isBusy = selectingPlan === plan.id
+
+            return (
+              <div
+                key={plan.id}
+                className={`relative flex flex-col rounded-xl border bg-white p-5 transition-shadow hover:shadow-md ${
+                  isCurrent ? 'border-emerald-400 ring-2 ring-emerald-400/30' : 'border-slate-200'
+                }`}
+              >
+                {isCurrent && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <span className="rounded-full bg-emerald-500 px-3 py-0.5 text-[11px] font-semibold text-white shadow">
+                      Aktif Plan
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 mb-4">
+                  <span className={plan.color}>{plan.icon}</span>
+                  <h3 className="text-base font-semibold text-slate-800">{plan.name}</h3>
+                </div>
+                <div className="mb-5">
+                  <div className="flex items-end gap-1">
+                    <span className="text-3xl font-bold text-slate-900">${price}</span>
+                    <span className="mb-1 text-sm text-slate-400">/ay</span>
+                  </div>
+                  {interval === 'annual' && (
+                    <p className="mt-0.5 text-xs text-slate-400">Yıllık ödeme (${price * 12}/yıl)</p>
+                  )}
+                </div>
+                <ul className="mb-6 flex-1 space-y-2">
+                  {plan.features.map((f, i) => (
+                    <li key={i} className="flex items-start gap-2 text-xs">
+                      {f.value === false ? (
+                        <X size={13} className="mt-0.5 shrink-0 text-slate-300" />
+                      ) : (
+                        <Check size={13} className="mt-0.5 shrink-0 text-emerald-500" />
+                      )}
+                      <span className={f.value === false ? 'text-slate-400' : 'text-slate-700'}>
+                        <span className="font-medium">{f.label}</span>
+                        {typeof f.value === 'string' && (
+                          <span className="text-slate-500"> — {f.value}</span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {isCurrent ? (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 py-2 text-center text-sm font-medium text-emerald-700">
+                    Mevcut Plan
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => handleSelect(plan.id)}
+                    disabled={isBusy || !!selectingPlan}
+                    className="w-full rounded-lg bg-brand-500 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-600 disabled:opacity-60"
+                  >
+                    {isBusy ? 'Yükleniyor...' : 'Seç'}
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {!loading && currentPlanId && !isLegacy && !hasNoPlan && (
+        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-5">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Mevcut aboneliği yönet</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Fatura bilgileri, ödeme yöntemi ve abonelik detayları.
+            </p>
+          </div>
+          <button
+            onClick={handlePortal}
+            disabled={portalLoading}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60"
+          >
+            {portalLoading ? 'Yükleniyor...' : 'Abonelik Portalı'}
+          </button>
+        </div>
+      )}
+
+      {loading && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="animate-pulse rounded-xl border border-slate-200 bg-white p-5 space-y-3">
+              <div className="h-5 w-24 bg-slate-100 rounded" />
+              <div className="h-8 w-20 bg-slate-100 rounded" />
+              <div className="space-y-2">
+                {[1, 2, 3, 4].map(j => <div key={j} className="h-3 bg-slate-100 rounded" />)}
+              </div>
+              <div className="h-9 bg-slate-100 rounded-lg" />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Support ──────────────────────────────────────────────────────────────────
+
+const statusColors: Record<string, string> = {
+  open: 'bg-amber-100 text-amber-700',
+  in_progress: 'bg-blue-100 text-blue-700',
+  resolved: 'bg-green-100 text-green-700',
+}
+
+const priorityLabels: Record<string, string> = {
+  low: 'Düşük',
+  normal: 'Normal',
+  high: 'Yüksek',
+  urgent: 'Acil',
+}
+
+interface Ticket {
+  id: string
+  subject: string
+  message: string
+  status: string
+  priority: string
+  admin_notes: string | null
+  created_at: string
+}
+
+function SupportSection() {
+  const t = useT()
+  const [tickets, setTickets] = useState<Ticket[]>([])
+  const [orgId, setOrgId] = useState('')
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [showForm, setShowForm] = useState(false)
+  const [subject, setSubject] = useState('')
+  const [message, setMessage] = useState('')
+  const [priority, setPriority] = useState('normal')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user) return
+      supabase
+        .from('org_users')
+        .select('organization_id')
+        .eq('user_id', data.user.id)
+        .maybeSingle()
+        .then(({ data: ou }) => {
+          if (!ou) { setLoading(false); return }
+          setOrgId(ou.organization_id)
+          supabase
+            .from('support_tickets')
+            .select('id, subject, message, status, priority, admin_notes, created_at')
+            .eq('organization_id', ou.organization_id)
+            .order('created_at', { ascending: false })
+            .then(({ data: rows }) => {
+              setTickets(rows ?? [])
+              setLoading(false)
+            })
+        })
+    })
+  }, [])
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!subject.trim() || !message.trim() || !orgId) return
+    setSubmitting(true)
+    setError('')
+
+    const supabase = createClient()
+    const { data, error: err } = await supabase
+      .from('support_tickets')
+      .insert({ organization_id: orgId, subject: subject.trim(), message: message.trim(), priority })
+      .select('id, subject, message, status, priority, admin_notes, created_at')
+      .single()
+
+    if (err) {
+      setError('Talep gönderilemedi. Lütfen tekrar deneyin.')
+    } else if (data) {
+      setTickets(prev => [data, ...prev])
+      setSubject('')
+      setMessage('')
+      setPriority('normal')
+      setShowForm(false)
+    }
+    setSubmitting(false)
+  }
+
+  return (
+    <div className="max-w-3xl">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-base font-bold text-slate-900">{t.ticketsTitle}</h2>
+          <p className="text-sm text-slate-500 mt-0.5">Sorun ve taleplerinizi buradan iletebilirsiniz.</p>
+        </div>
+        <button
+          onClick={() => setShowForm(v => !v)}
+          className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+        >
+          <Plus size={16} />
+          Yeni Talep
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-brand-100 shadow-sm p-5 mb-5 space-y-4">
+          <h3 className="text-sm font-semibold text-slate-800">Yeni Destek Talebi</h3>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Konu</label>
+            <input
+              value={subject}
+              onChange={e => setSubject(e.target.value)}
+              placeholder="Kısaca konuyu belirtin"
+              required
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Mesaj</label>
+            <textarea
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+              rows={4}
+              placeholder="Sorununuzu veya talebinizi detaylı açıklayın..."
+              required
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Öncelik</label>
+            <select
+              value={priority}
+              onChange={e => setPriority(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            >
+              <option value="low">Düşük</option>
+              <option value="normal">Normal</option>
+              <option value="high">Yüksek</option>
+              <option value="urgent">Acil</option>
+            </select>
+          </div>
+          {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={() => setShowForm(false)} className="text-sm text-slate-500 hover:text-slate-700 px-4 py-2">
+              İptal
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white font-medium px-5 py-2 rounded-lg text-sm transition-colors"
+            >
+              {submitting ? 'Gönderiliyor...' : 'Gönder'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {loading ? (
+        <p className="text-sm text-slate-400">{t.loading}</p>
+      ) : tickets.length === 0 ? (
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm px-5 py-12 text-center">
+          <LifeBuoy size={32} className="mx-auto text-slate-300 mb-3" />
+          <p className="text-slate-400 text-sm">Henüz destek talebiniz yok.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {tickets.map(ticket => (
+            <div key={ticket.id} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+              <div
+                className="flex items-start gap-4 px-5 py-4 cursor-pointer hover:bg-slate-50 transition-colors"
+                onClick={() => setExpanded(expanded === ticket.id ? null : ticket.id)}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[ticket.status] || 'bg-slate-100 text-slate-600'}`}>
+                      {t[ticket.status as keyof typeof t] as string || ticket.status}
+                    </span>
+                    <span className="text-xs text-slate-400">{priorityLabels[ticket.priority] || ticket.priority}</span>
+                  </div>
+                  <p className="font-medium text-slate-800">{ticket.subject}</p>
+                  <p className="text-sm text-slate-500 line-clamp-1 mt-0.5">{ticket.message}</p>
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <span className="text-xs text-slate-400">
+                    {new Date(ticket.created_at).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                  <ChevronDown
+                    size={15}
+                    className={`text-slate-400 transition-transform ${expanded === ticket.id ? 'rotate-180' : ''}`}
+                  />
+                </div>
+              </div>
+
+              {expanded === ticket.id && (
+                <div className="px-5 pb-5 border-t border-slate-50 pt-4 space-y-3">
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 mb-1">{t.message}</p>
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap">{ticket.message}</p>
+                  </div>
+                  {ticket.admin_notes && (
+                    <div className="bg-brand-50 border border-brand-100 rounded-lg p-3">
+                      <p className="text-xs font-medium text-brand-700 mb-1">stoaix yanıtı</p>
+                      <p className="text-sm text-slate-700">{ticket.admin_notes}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Main Settings Page ───────────────────────────────────────────────────────
+
+type SettingsTab = 'moduller' | 'billing' | 'support'
+
+function SettingsPageInner() {
+  const searchParams = useSearchParams()
+  const initialTab = (searchParams.get('tab') as SettingsTab) ?? 'moduller'
+  const [activeTab, setActiveTab] = useState<SettingsTab>(
+    ['moduller', 'billing', 'support'].includes(initialTab) ? initialTab : 'moduller'
+  )
+
+  const tabs: { key: SettingsTab; label: string }[] = [
+    { key: 'moduller', label: 'Modüller' },
+    { key: 'billing',  label: 'Plan & Fatura' },
+    { key: 'support',  label: 'Destek Talebi' },
+  ]
+
+  return (
+    <div className="max-w-6xl mx-auto py-8 px-4">
       <div className="flex items-center gap-3 mb-6">
         <Settings size={22} className="text-brand-600" />
-        <h1 className="text-xl font-semibold text-slate-800">Ayarlar</h1>
+        <h1 className="text-xl font-semibold text-slate-800">Hesap Ayarları</h1>
       </div>
 
       {/* Tab nav */}
       <div className="flex gap-1 mb-6 bg-slate-100 p-1 rounded-xl w-fit">
-        {(['kanallar', 'moduller'] as SettingsTab[]).map(tab => (
+        {tabs.map(tab => (
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              activeTab === tab
+              activeTab === tab.key
                 ? 'bg-white text-slate-800 shadow-sm'
                 : 'text-slate-500 hover:text-slate-700'
             }`}
           >
-            {tab === 'kanallar' ? 'Kanallar' : 'Modüller'}
+            {tab.label}
           </button>
         ))}
       </div>
 
-      {activeTab === 'kanallar' && (
-        <div className="space-y-6">
-          <Suspense fallback={<div className="bg-white rounded-xl border border-slate-200 p-6 text-sm text-slate-400">Yükleniyor...</div>}>
-            <WhatsAppSection />
-          </Suspense>
-          <Suspense fallback={<div className="bg-white rounded-xl border border-slate-200 p-6 text-sm text-slate-400">Yükleniyor...</div>}>
-            <InstagramSection />
-          </Suspense>
-          <Suspense fallback={<div className="bg-white rounded-xl border border-slate-200 p-6 text-sm text-slate-400">Yükleniyor...</div>}>
-            <CalendarSection />
-          </Suspense>
-          <ExcludedPhonesSection />
-        </div>
-      )}
-
       {activeTab === 'moduller' && <ModulesSection />}
+      {activeTab === 'billing'  && <BillingSection />}
+      {activeTab === 'support'  && <SupportSection />}
     </div>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsPageInner />
+    </Suspense>
   )
 }

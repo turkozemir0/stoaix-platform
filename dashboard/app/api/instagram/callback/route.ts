@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   const state      = searchParams.get('state')
   const oauthError = searchParams.get('error')
 
-  const fallbackBase = '/dashboard/settings'
+  const fallbackBase = '/dashboard/integrations'
 
   if (oauthError || !code || !state) {
     const reason = oauthError ?? 'cancelled'

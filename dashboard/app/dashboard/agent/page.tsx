@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare, ListChecks,
@@ -8,9 +8,48 @@ import {
   ArrowUpRight, CheckCircle2, BookOpen, AlertTriangle, X, Lock, Star,
   ArrowLeft, ArrowRight, Info,
 } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
 import AgentTestPanel from '@/components/agent/AgentTestPanel'
 import { VOICE_TEMPLATES, WHATSAPP_TEMPLATES } from '@/lib/agent-templates'
 import type { AgentTemplate } from '@/lib/agent-templates'
+import KnowledgeClient from '../knowledge/KnowledgeClient'
+import type { KnowledgeItem } from '@/lib/types'
+
+// ─── Knowledge tab content ────────────────────────────────────────────────────
+
+function KnowledgeTabSection({ orgId }: { orgId: string }) {
+  const [items, setItems] = useState<KnowledgeItem[]>([])
+  const [sector, setSector] = useState('other')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function load() {
+      const supabase = createClient()
+      const [itemsRes, orgRes] = await Promise.all([
+        supabase
+          .from('knowledge_items')
+          .select('id, organization_id, item_type, title, description_for_ai, data, tags, is_active, created_at, updated_at')
+          .eq('organization_id', orgId)
+          .order('updated_at', { ascending: false }),
+        supabase.from('organizations').select('sector').eq('id', orgId).single(),
+      ])
+      setItems((itemsRes.data ?? []) as KnowledgeItem[])
+      setSector(orgRes.data?.sector ?? 'other')
+      setLoading(false)
+    }
+    load()
+  }, [orgId])
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-slate-400 py-12 justify-center">
+        <Loader2 size={16} className="animate-spin" /> Yükleniyor...
+      </div>
+    )
+  }
+
+  return <KnowledgeClient items={items} orgId={orgId} sector={sector} />
+}
 
 type Channel = 'voice' | 'whatsapp'
 type EditorTab = 'settings' | 'modules' | 'routing' | 'test'
@@ -108,7 +147,11 @@ const tipToneStyles: Record<ImprovementTip['tone'], string> = {
   warning: 'border-amber-200 bg-amber-50/80 text-amber-700',
 }
 
-export default function AgentPage() {
+function AgentPageInner() {
+  const searchParams = useSearchParams()
+  const initialPageTab = searchParams.get('tab') === 'knowledge' ? 'knowledge' : 'agent'
+  const [pageTab, setPageTab] = useState<'agent' | 'knowledge'>(initialPageTab as 'agent' | 'knowledge')
+
   const [orgId, setOrgId] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -605,14 +648,62 @@ export default function AgentPage() {
 
   const isSaved = savedChannel === activeChannel
 
+  // ─── Tab nav helper ───────────────────────────────────────────────────────
+  const pageTabs = [
+    { key: 'agent',     label: 'AI Asistan',    icon: Bot },
+    { key: 'knowledge', label: 'Bilgi Bankası',  icon: BookOpen },
+  ] as const
+
   // ─── PHASE 1 ──────────────────────────────────────────────────────────────
   if (!editorView) {
+    if (pageTab === 'knowledge') {
+      return (
+        <div className="p-6 space-y-6">
+          {/* Header + Tab nav */}
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              <Bot size={20} className="text-brand-500" /> AI Asistan
+            </h1>
+            <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+              {pageTabs.map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setPageTab(tab.key)}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    pageTab === tab.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <tab.icon size={14} /> {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <KnowledgeTabSection orgId={orgId} />
+        </div>
+      )
+    }
+
     return (
       <div className="p-6 space-y-8">
-        {/* Header */}
-        <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-          <Bot size={20} className="text-brand-500" /> AI Asistan
-        </h1>
+        {/* Header + Tab nav */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+            <Bot size={20} className="text-brand-500" /> AI Asistan
+          </h1>
+          <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+            {pageTabs.map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setPageTab(tab.key)}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  pageTab === tab.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <tab.icon size={14} /> {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Yapılandırılmış asistanlar */}
         {(voice.id || whatsapp.id) && (
@@ -1540,5 +1631,13 @@ function ConfiguredCard({
       </div>
       <ArrowRight size={14} className="text-slate-400 flex-shrink-0" />
     </button>
+  )
+}
+
+export default function AgentPage() {
+  return (
+    <Suspense fallback={null}>
+      <AgentPageInner />
+    </Suspense>
   )
 }

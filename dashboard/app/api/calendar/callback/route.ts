@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   const oauthError  = searchParams.get('error')
 
   // User denied or Google returned an error (state may be missing, fall back to settings)
-  const fallbackBase = '/dashboard/settings'
+  const fallbackBase = '/dashboard/integrations'
   if (oauthError || !code || !state) {
     const reason = oauthError ?? 'cancelled'
     return NextResponse.redirect(new URL(`${fallbackBase}?calendar_error=${reason}`, req.url))
