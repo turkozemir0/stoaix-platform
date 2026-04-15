@@ -11,7 +11,7 @@ export function OnboardingSuccess({ clinicName }: { clinicName: string }) {
   useEffect(() => {
     setIsVisible(true)
     const timer = setTimeout(() => {
-      router.push('/dashboard/agent')
+      router.push('/dashboard')
     }, 5000)
     return () => clearTimeout(timer)
   }, [router])
@@ -74,7 +74,7 @@ export function OnboardingSuccess({ clinicName }: { clinicName: string }) {
         {/* Action Buttons */}
         <div className="space-y-3">
           <button
-            onClick={() => router.push('/dashboard/agent')}
+            onClick={() => router.push('/dashboard')}
             className={`
               w-full flex items-center justify-center gap-2 px-6 py-4
               bg-gradient-to-r from-brand-500 to-accent-400 hover:from-brand-600 hover:to-accent-500
@@ -85,7 +85,7 @@ export function OnboardingSuccess({ clinicName }: { clinicName: string }) {
             `}
             style={{ transitionDelay: '0.3s' }}
           >
-            AI Asistanına Git
+            Dashboard'a Git
             <ArrowRight className="w-4 h-4" />
           </button>
 
