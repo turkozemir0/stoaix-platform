@@ -6,7 +6,9 @@ import { createClient } from '@/lib/supabase/client'
 import {
   CheckCircle2, ArrowRight, ArrowLeft, Phone, Mail, MapPin, Globe,
   Pencil, Check, Plus, X, ChevronDown, ChevronUp, Sparkles, ShieldCheck, Bot,
+  Mic, MessageSquare,
 } from 'lucide-react'
+import { VOICE_TEMPLATES, WHATSAPP_TEMPLATES } from '@/lib/agent-templates'
 import { FormInput } from '@/components/FormInput'
 import { FormTextarea } from '@/components/FormTextarea'
 import { FormSelect } from '@/components/FormSelect'
@@ -14,7 +16,7 @@ import { Button } from '@/components/Button'
 import { StepIndicator } from '@/components/StepIndicator'
 import { OnboardingSuccess } from '@/components/OnboardingSuccess'
 
-type Step = 1 | 2 | 3
+type Step = 1 | 2 | 3 | 4
 
 // ─── Per-clinic pre-fill data ─────────────────────────────────────────────────
 
@@ -282,6 +284,8 @@ function OnboardingForm() {
   const config = CLINIC_CONFIG[clinicType] ?? CLINIC_CONFIG.other
 
   const [step, setStep] = useState<Step>(1)
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('receptionist_voice')
+  const [agentName, setAgentName] = useState<string>('Elif')
   const [orgId, setOrgId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -404,7 +408,7 @@ function OnboardingForm() {
   }
 
   // ── Step 3 / complete ──
-  async function handleComplete() {
+  async function handleStep3() {
     setLoading(true); setError('')
     try {
       const kbCalls = []
@@ -459,6 +463,57 @@ function OnboardingForm() {
       }
 
       await Promise.all(kbCalls)
+      setStep(4)
+    } catch { setError('Bağlantı hatası') }
+    finally { setLoading(false) }
+  }
+
+  async function handleComplete() {
+    setLoading(true); setError('')
+    try {
+      const supabase = createClient()
+      const allTemplates = [...VOICE_TEMPLATES, ...WHATSAPP_TEMPLATES]
+      const template = allTemplates.find(t => t.id === selectedTemplateId)
+
+      if (template) {
+        const playbookData = {
+          organization_id: orgId,
+          channel: template.channel,
+          name: template.channel === 'voice' ? 'Sesli Asistan' : 'WhatsApp Asistanı',
+          system_prompt_template: template.playbook.systemPrompt,
+          opening_message: template.playbook.openingMessage,
+          hard_blocks: template.playbook.blocks.map((b: any, i: number) => ({
+            trigger_id: `block_${i}`,
+            action: 'soft_block',
+            keywords: b.keywords.split(',').map((k: string) => k.trim()),
+            response: b.response,
+          })),
+          features: template.playbook.features,
+          few_shot_examples: template.playbook.fewShots,
+          fallback_responses: { no_kb_match: template.playbook.noKbMatch },
+          version: 1,
+          is_active: true,
+        }
+
+        const { data: existing } = await supabase
+          .from('agent_playbooks')
+          .select('id')
+          .eq('organization_id', orgId)
+          .eq('channel', template.channel)
+          .maybeSingle()
+
+        if (existing) {
+          await supabase.from('agent_playbooks').update(playbookData).eq('id', existing.id)
+        } else {
+          await supabase.from('agent_playbooks').insert(playbookData)
+        }
+
+        if (agentName.trim()) {
+          await supabase.from('organizations').update({
+            ai_persona: { name: agentName.trim(), tone: template.description },
+          }).eq('id', orgId)
+        }
+      }
 
       const res = await fetch('/api/onboarding/complete', {
         method: 'POST',
@@ -860,17 +915,111 @@ function OnboardingForm() {
           Geri
         </Button>
         <Button type="button" variant="success" fullWidth isLoading={loading}
-          onClick={handleComplete}
-          icon={<CheckCircle2 className="w-4 h-4" />} iconPosition="right">
-          Kurulumu Tamamla
+          onClick={handleStep3}
+          icon={<ArrowRight className="w-4 h-4" />} iconPosition="right">
+          Devam Et
         </Button>
       </div>
     </div>
   )
 
+  const renderStep4 = () => {
+    const displayTemplates = [
+      VOICE_TEMPLATES.find(t => t.id === 'receptionist_voice'),
+      WHATSAPP_TEMPLATES.find(t => t.id === 'faq_bot_wa'),
+      VOICE_TEMPLATES.find(t => t.id === 'appointment_confirm_voice'),
+      WHATSAPP_TEMPLATES.find(t => t.id === 'reactivation_wa'),
+    ].filter(Boolean) as typeof VOICE_TEMPLATES
+
+    return (
+      <div className="space-y-6">
+        {/* Agent name */}
+        <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-5">
+          <label className="text-sm font-semibold text-slate-700 block mb-1">Asistan Adı</label>
+          <p className="text-xs text-slate-400 mb-3">Müşterilerinize bu isimle seslenecek</p>
+          <input
+            type="text"
+            value={agentName}
+            onChange={e => setAgentName(e.target.value)}
+            placeholder="ör. Elif, Mia, Zeynep..."
+            className="w-full text-sm border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand-400"
+          />
+        </div>
+
+        {/* Template selection */}
+        <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-5">
+          <label className="text-sm font-semibold text-slate-700 block mb-1">Başlangıç Şablonu</label>
+          <p className="text-xs text-slate-400 mb-3">
+            Asistanınızın davranışını belirler. AI Asistan sayfasından istediğiniz zaman değiştirebilirsiniz.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {displayTemplates.map(template => {
+              const selected = selectedTemplateId === template.id
+              return (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => setSelectedTemplateId(template.id)}
+                  className={`flex flex-col gap-2 p-4 rounded-xl border-2 text-left transition-all duration-150 ${
+                    selected
+                      ? 'border-brand-400 bg-brand-50'
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      {template.channel === 'voice'
+                        ? <Mic className="w-4 h-4 text-brand-500 flex-shrink-0" />
+                        : <MessageSquare className="w-4 h-4 text-accent-500 flex-shrink-0" />
+                      }
+                      <span className="text-sm font-semibold text-slate-800">{template.name}</span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {template.recommended && (
+                        <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">Önerilen</span>
+                      )}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                        template.channel === 'voice'
+                          ? 'bg-brand-100 text-brand-700'
+                          : 'bg-accent-100 text-accent-700'
+                      }`}>
+                        {template.channel === 'voice' ? 'Ses' : 'WhatsApp'}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-4">{template.description}</p>
+                  {selected && (
+                    <div className="flex items-center gap-1 text-brand-600 mt-0.5">
+                      <Check className="w-3.5 h-3.5" />
+                      <span className="text-xs font-medium">Seçildi</span>
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <div className="flex gap-3 pt-2">
+          <Button type="button" variant="secondary" fullWidth onClick={() => setStep(3)}
+            icon={<ArrowLeft className="w-4 h-4" />}>
+            Geri
+          </Button>
+          <Button type="button" variant="success" fullWidth isLoading={loading}
+            onClick={handleComplete}
+            icon={<CheckCircle2 className="w-4 h-4" />} iconPosition="right">
+            Kurulumu Tamamla
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   if (isCompleted) return <OnboardingSuccess clinicName={clinicName} />
 
-  const stepLabels = ['Bilgiler', 'Hizmetler', 'AI Kurulumu']
+  const stepLabels = ['Bilgiler', 'Hizmetler', 'AI Kurulumu', 'AI Asistan']
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_24%),radial-gradient(circle_at_top_right,_rgba(20,184,166,0.10),_transparent_22%),linear-gradient(180deg,_#f9fbff_0%,_#f3f6fb_100%)]">
@@ -919,7 +1068,7 @@ function OnboardingForm() {
           </div>
 
           <div className="mt-5">
-            <StepIndicator currentStep={step} totalSteps={3} steps={stepLabels} />
+            <StepIndicator currentStep={step} totalSteps={4} steps={stepLabels} />
           </div>
         </div>
       </div>
@@ -948,6 +1097,12 @@ function OnboardingForm() {
                 <p className="text-sm text-slate-500 mt-1">Asistanınızın kullanacağı soru-cevapları ve fiyatları onaylayın</p>
               </>
             )}
+            {step === 4 && (
+              <>
+                <h2 className="text-xl font-bold text-slate-900">AI Asistanı Seçin</h2>
+                <p className="text-sm text-slate-500 mt-1">Başlangıç şablonunu belirleyin — daha sonra özelleştirebilirsiniz</p>
+              </>
+            )}
           </div>
 
           {/* Info banner */}
@@ -967,6 +1122,7 @@ function OnboardingForm() {
           {step === 1 && renderStep1()}
           {step === 2 && renderStep2()}
           {step === 3 && renderStep3()}
+          {step === 4 && renderStep4()}
           </div>
 
           <aside className="space-y-4 lg:sticky lg:top-28 lg:self-start">
@@ -976,11 +1132,13 @@ function OnboardingForm() {
                 {step === 1 && 'Temel iletişim bilgileri'}
                 {step === 2 && 'Klinik profili ve hizmetler'}
                 {step === 3 && 'AI bilgi bankası hazırlığı'}
+                {step === 4 && 'AI asistan şablonu'}
               </h3>
               <p className="mt-3 text-sm leading-6 text-slate-600">
                 {step === 1 && 'Bu bölüm telefon, e-posta ve lokasyon bilgisini Supabase onboarding akışına taşır.'}
                 {step === 2 && 'Bu bölümde seçtikleriniz knowledge item olarak oluşturulacak içeriklerin temelini hazırlar.'}
                 {step === 3 && 'Bu adımda seçilen SSS ve fiyatlar AI asistanının cevap kalitesini doğrudan etkiler.'}
+                {step === 4 && 'Seçtiğiniz şablon agent_playbooks tablosuna yazılır. Kurulum sonrası AI Asistan sayfasından sistem promptunu ve kural bloklarını özelleştirebilirsiniz.'}
               </p>
             </div>
 
