@@ -45,7 +45,7 @@
       "parameters": {
         "resume": "timeInterval",
         "unit": "hours",
-        "amount": "={{ $('Webhook').item.json.config?.hours_after ?? 24 }}"
+        "amount": "={{ $('Webhook').first().json.body.config?.hours_after ?? 24 }}"
       },
       "webhookId": "c5-wait-delay"
     },
@@ -57,7 +57,7 @@
       "typeVersion": 2,
       "position": [860, 300],
       "parameters": {
-        "jsCode": "const cfg     = $('Config').first().json;\nconst payload = $('Webhook').item.json;\nconst cfg2    = payload.config || {};\n\nconst tzOff  = parseInt(cfg.TZ_OFFSET_HOURS, 10);\nconst hStart = cfg2.working_hours_start ? parseInt(cfg2.working_hours_start.split(':')[0], 10) : 9;\nconst hEnd   = cfg2.working_hours_end   ? parseInt(cfg2.working_hours_end.split(':')[0],   10) : 19;\n\nconst nowUtc   = new Date();\nconst nowLocal = new Date(nowUtc.getTime() + tzOff * 3600 * 1000);\nconst hour     = nowLocal.getUTCHours();\nconst day      = nowLocal.getUTCDay();\n\nif (day === 0) return [];\nif (hour < hStart || hour >= hEnd) return [];\n\nreturn [{ json: payload }];"
+        "jsCode": "const cfg     = $('Config').first().json;\nconst payload = $('Webhook').first().json.body;\nconst cfg2    = payload.config || {};\n\nconst tzOff  = parseInt(cfg.TZ_OFFSET_HOURS, 10);\nconst hStart = cfg2.working_hours_start ? parseInt(cfg2.working_hours_start.split(':')[0], 10) : 9;\nconst hEnd   = cfg2.working_hours_end   ? parseInt(cfg2.working_hours_end.split(':')[0],   10) : 19;\n\nconst nowUtc   = new Date();\nconst nowLocal = new Date(nowUtc.getTime() + tzOff * 3600 * 1000);\nconst hour     = nowLocal.getUTCHours();\nconst day      = nowLocal.getUTCDay();\n\nif (day === 0) return [];\nif (hour < hStart || hour >= hEnd) return [];\n\nreturn [{ json: payload }];"
       }
     },
 
@@ -80,7 +80,7 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id",     "value": "={{ 'eq.' + $('Webhook').item.json.org_id }}" },
+            { "name": "id",     "value": "={{ 'eq.' + $('Webhook').first().json.body.org_id }}" },
             { "name": "select", "value": "id,name,channel_config,ai_persona" },
             { "name": "limit",  "value": "1" }
           ]
@@ -95,7 +95,7 @@
       "typeVersion": 2,
       "position": [1300, 300],
       "parameters": {
-        "jsCode": "const orgArr  = $('Fetch Org WA Credentials').all();\nconst org     = orgArr[0]?.json ?? {};\nconst payload = $('Webhook').item.json;\n\nconst wa    = org.channel_config?.whatsapp;\nconst creds = wa?.credentials;\n\nif (!wa?.active || !creds?.phone_number_id || !creds?.access_token) {\n  return [{ json: {\n    skip: true,\n    run_id:       payload.run_id,\n    callback_url: payload.callback_url,\n    phone:        payload.phone,\n  } }];\n}\n\nconst lang         = org.ai_persona?.language || 'tr';\nconst templateLang = lang === 'en' ? 'en_US' : 'tr';\nconst templateName = payload.config?.message_template || 'satisfaction_survey_v1';\n\nreturn [{ json: {\n  skip:             false,\n  phone_number_id:  creds.phone_number_id,\n  access_token:     creds.access_token,\n  to_phone:         payload.phone.replace(/^\\+/, ''),\n  template_name:    templateName,\n  template_lang:    templateLang,\n  run_id:           payload.run_id,\n  callback_url:     payload.callback_url,\n} }];"
+        "jsCode": "const orgArr  = $('Fetch Org WA Credentials').all();\nconst org     = orgArr[0]?.json ?? {};\nconst payload = $('Webhook').first().json.body;\n\nconst wa    = org.channel_config?.whatsapp;\nconst creds = wa?.credentials;\n\nif (!wa?.active || !creds?.phone_number_id || !creds?.access_token) {\n  return [{ json: {\n    skip: true,\n    run_id:       payload.run_id,\n    callback_url: payload.callback_url,\n    phone:        payload.phone,\n  } }];\n}\n\nconst lang         = org.ai_persona?.language || 'tr';\nconst templateLang = lang === 'en' ? 'en_US' : 'tr';\nconst templateName = payload.config?.message_template || 'satisfaction_survey_v1';\n\nreturn [{ json: {\n  skip:             false,\n  phone_number_id:  creds.phone_number_id,\n  access_token:     creds.access_token,\n  to_phone:         payload.phone.replace(/^\\+/, ''),\n  template_name:    templateName,\n  template_lang:    templateLang,\n  run_id:           payload.run_id,\n  callback_url:     payload.callback_url,\n} }];"
       }
     },
 

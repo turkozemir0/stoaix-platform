@@ -44,7 +44,7 @@
       "parameters": {
         "resume": "timeInterval",
         "unit": "minutes",
-        "amount": "={{ $('Webhook').item.json.config?.delay_minutes ?? 0 }}"
+        "amount": "={{ $('Webhook').first().json.body.config?.delay_minutes ?? 0 }}"
       },
       "webhookId": "c3-wait-delay"
     },
@@ -68,7 +68,7 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id",     "value": "={{ 'eq.' + $('Webhook').item.json.org_id }}" },
+            { "name": "id",     "value": "={{ 'eq.' + $('Webhook').first().json.body.org_id }}" },
             { "name": "select", "value": "id,channel_config,ai_persona" },
             { "name": "limit",  "value": "1" }
           ]
@@ -83,7 +83,7 @@
       "typeVersion": 2,
       "position": [1080, 300],
       "parameters": {
-        "jsCode": "const orgArr  = $('Fetch Org WA Credentials').all();\nconst org     = orgArr[0]?.json ?? {};\nconst payload = $('Webhook').item.json;\n\nconst wa    = org.channel_config?.whatsapp;\nconst creds = wa?.credentials;\n\nif (!wa?.active || !creds?.phone_number_id || !creds?.access_token) {\n  return [{ json: {\n    skip: true,\n    run_id:       payload.run_id,\n    callback_url: payload.callback_url,\n  } }];\n}\n\nconst lang        = org.ai_persona?.language || 'tr';\nconst contactName = payload.contact_data?.name || '';\nconst apptTime    = payload.contact_data?.appointment_time || payload.config?.appointment_time || '';\nconst orgName     = org.name || '';\n\n// Direct text message for appointment confirm (24h window)\nconst bodyText = lang === 'en'\n  ? `Hello ${contactName}! This is a reminder for your appointment at ${orgName} on ${apptTime}. Please reply YES to confirm or NO to reschedule.`\n  : `Merhaba ${contactName}! ${orgName} randevunuzu hatırlatmak istedik: ${apptTime}. Onaylamak için EVET, yeniden planlamak için HAYIR yazabilir misiniz?`;\n\nreturn [{ json: {\n  skip:             false,\n  phone_number_id:  creds.phone_number_id,\n  access_token:     creds.access_token,\n  to_phone:         payload.phone.replace(/^\\+/, ''),\n  body_text:        bodyText,\n  run_id:           payload.run_id,\n  callback_url:     payload.callback_url,\n} }];"
+        "jsCode": "const orgArr  = $('Fetch Org WA Credentials').all();\nconst org     = orgArr[0]?.json ?? {};\nconst payload = $('Webhook').first().json.body;\n\nconst wa    = org.channel_config?.whatsapp;\nconst creds = wa?.credentials;\n\nif (!wa?.active || !creds?.phone_number_id || !creds?.access_token) {\n  return [{ json: {\n    skip: true,\n    run_id:       payload.run_id,\n    callback_url: payload.callback_url,\n  } }];\n}\n\nconst lang        = org.ai_persona?.language || 'tr';\nconst contactName = payload.contact_data?.name || '';\nconst apptTime    = payload.contact_data?.appointment_time || payload.config?.appointment_time || '';\nconst orgName     = org.name || '';\n\n// Direct text message for appointment confirm (24h window)\nconst bodyText = lang === 'en'\n  ? `Hello ${contactName}! This is a reminder for your appointment at ${orgName} on ${apptTime}. Please reply YES to confirm or NO to reschedule.`\n  : `Merhaba ${contactName}! ${orgName} randevunuzu hatırlatmak istedik: ${apptTime}. Onaylamak için EVET, yeniden planlamak için HAYIR yazabilir misiniz?`;\n\nreturn [{ json: {\n  skip:             false,\n  phone_number_id:  creds.phone_number_id,\n  access_token:     creds.access_token,\n  to_phone:         payload.phone.replace(/^\\+/, ''),\n  body_text:        bodyText,\n  run_id:           payload.run_id,\n  callback_url:     payload.callback_url,\n} }];"
       }
     },
 

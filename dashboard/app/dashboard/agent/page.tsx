@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare, ListChecks, FlaskConical, PhoneForwarded, Clock, ToggleLeft, ToggleRight, Lightbulb, ArrowUpRight, CheckCircle2, BookOpen } from 'lucide-react'
+import { Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare, ListChecks, FlaskConical, PhoneForwarded, Clock, ToggleLeft, ToggleRight, Lightbulb, ArrowUpRight, CheckCircle2, BookOpen, LayoutTemplate, AlertTriangle, X } from 'lucide-react'
 import AgentTestPanel from '@/components/agent/AgentTestPanel'
+import AgentTemplateModal from '@/components/agent/AgentTemplateModal'
+import type { AgentTemplate } from '@/lib/agent-templates'
 
 type Channel = 'voice' | 'whatsapp'
 type PageTab = 'settings' | 'routing' | 'test'
@@ -113,6 +115,9 @@ export default function AgentPage() {
   const [saving, setSaving] = useState(false)
   const [savedChannel, setSavedChannel] = useState<Channel | null>(null)
   const [voiceActive, setVoiceActive] = useState(false)
+  const [hasCalendar, setHasCalendar] = useState(false)
+  const [templateModalOpen, setTemplateModalOpen] = useState(false)
+  const [calendarWarning, setCalendarWarning] = useState(false)
   const [error, setError] = useState('')
   const [persona, setPersona] = useState({ name: '', tone: 'warm-professional' })
   const [pageTab, setPageTab] = useState<PageTab>('settings')
@@ -223,6 +228,7 @@ export default function AgentPage() {
         .single()
       const cc = (orgData?.channel_config ?? {}) as Record<string, any>
       setVoiceActive(cc?.voice_inbound?.active === true || cc?.voice_outbound?.active === true)
+      setHasCalendar(cc?.calendar?.provider != null)
       const ap = (orgData?.ai_persona ?? {}) as Record<string, any>
       setPersona({ name: ap.persona_name || '', tone: ap.tone || 'warm-professional' })
 
@@ -417,6 +423,17 @@ export default function AgentPage() {
     }
   }
 
+  function applyTemplate(t: AgentTemplate) {
+    const data = { ...t.playbook }
+    if (t.requiresCalendar && !hasCalendar) {
+      data.features = { ...data.features, calendar_booking: false }
+      setCalendarWarning(true)
+    }
+    if (activeChannel === 'voice')    setVoice(prev    => ({ ...prev, ...data }))
+    if (activeChannel === 'whatsapp') setWhatsapp(prev => ({ ...prev, ...data }))
+    setTemplateModalOpen(false)
+  }
+
   function updateRule(idx: number, patch: Partial<RoutingRule>) {
     setRoutingConfig(prev => ({
       ...prev,
@@ -544,6 +561,7 @@ export default function AgentPage() {
   const isSaved = savedChannel === activeChannel
 
   return (
+    <>
     <div className="p-6 xl:grid xl:grid-cols-[1fr_300px] xl:gap-8 xl:items-start">
       <div className="space-y-6">
       {/* Header */}
@@ -558,14 +576,23 @@ export default function AgentPage() {
           </p>
         </div>
         {pageTab === 'settings' && (
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
-          >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            {isSaved ? 'Kaydedildi ✓' : 'Kaydet'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setTemplateModalOpen(true)}
+              className="flex items-center gap-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-sm font-medium px-3 py-2.5 rounded-lg transition-colors"
+            >
+              <LayoutTemplate size={14} />
+              Şablon Uygula
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+            >
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              {isSaved ? 'Kaydedildi ✓' : 'Kaydet'}
+            </button>
+          </div>
         )}
         {pageTab === 'routing' && (
           <button
@@ -937,16 +964,45 @@ export default function AgentPage() {
 
       {/* Henüz yapılandırılmamış uyarısı */}
       {!current.id && !current.systemPrompt && (
-        <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex items-start gap-3">
-          <Sparkles size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
+        <div className="bg-gradient-to-br from-brand-50 to-slate-50 border border-brand-100 rounded-xl p-6 flex flex-col items-center text-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-brand-100 flex items-center justify-center">
+            <LayoutTemplate size={18} className="text-brand-600" />
+          </div>
           <div>
-            <p className="text-sm font-medium text-amber-800">
+            <p className="text-sm font-semibold text-slate-800">
               {activeChannel === 'voice' ? 'Sesli görüşme' : 'Mesajlaşma'} asistanı henüz yapılandırılmamış.
             </p>
-            <p className="text-xs text-amber-600 mt-0.5">
-              Bilgi bankasındaki verilerden otomatik prompt oluşturmak için "AI ile Oluştur" butonuna basın.
+            <p className="text-xs text-slate-500 mt-1">
+              Hazır bir şablonla başlayın veya AI ile otomatik oluşturun.
             </p>
           </div>
+          <button
+            onClick={() => setTemplateModalOpen(true)}
+            className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
+          >
+            <LayoutTemplate size={14} />
+            Hazır Şablonla Başla
+          </button>
+        </div>
+      )}
+
+      {/* Takvim bağlantısı uyarısı */}
+      {calendarWarning && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+          <AlertTriangle size={15} className="text-amber-500 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-800">Takvim bağlantısı gerekiyor</p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              Randevu alma özelliği devre dışı bırakıldı. Aktifleştirmek için takvim bağlayın.{' '}
+              <a href="/dashboard/settings" className="underline font-medium">Ayarlar → Takvim</a>
+            </p>
+          </div>
+          <button
+            onClick={() => setCalendarWarning(false)}
+            className="text-amber-400 hover:text-amber-600 transition-colors"
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
 
@@ -1403,5 +1459,14 @@ export default function AgentPage() {
         </div>
       </aside>
     </div>
+
+    <AgentTemplateModal
+      open={templateModalOpen}
+      channel={activeChannel}
+      hasCalendar={hasCalendar}
+      onClose={() => setTemplateModalOpen(false)}
+      onApply={applyTemplate}
+    />
+    </>
   )
 }

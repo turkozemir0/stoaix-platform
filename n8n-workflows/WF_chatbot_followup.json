@@ -44,7 +44,7 @@
       "parameters": {
         "resume": "timeInterval",
         "unit": "hours",
-        "amount": "={{ $('Webhook').item.json.config?.no_reply_hours ?? 4 }}"
+        "amount": "={{ $('Webhook').first().json.body.config?.no_reply_hours ?? 4 }}"
       },
       "webhookId": "c2-wait-delay"
     },
@@ -68,9 +68,9 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "conversation_id", "value": "={{ 'eq.' + $('Webhook').item.json.contact_data.conversation_id }}" },
+            { "name": "conversation_id", "value": "={{ 'eq.' + $('Webhook').first().json.body.contact_data.conversation_id }}" },
             { "name": "sender_type",     "value": "eq.contact" },
-            { "name": "created_at",      "value": "={{ 'gte.' + $('Webhook').item.json.contact_data.last_ai_message_at }}" },
+            { "name": "created_at",      "value": "={{ 'gte.' + $('Webhook').first().json.body.contact_data.last_ai_message_at }}" },
             { "name": "select",          "value": "id" },
             { "name": "limit",           "value": "1" }
           ]
@@ -119,7 +119,7 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id",     "value": "={{ 'eq.' + $('Webhook').item.json.org_id }}" },
+            { "name": "id",     "value": "={{ 'eq.' + $('Webhook').first().json.body.org_id }}" },
             { "name": "select", "value": "id,channel_config,ai_persona" },
             { "name": "limit",  "value": "1" }
           ]
@@ -134,7 +134,7 @@
       "typeVersion": 2,
       "position": [1520, 200],
       "parameters": {
-        "jsCode": "const orgArr  = $('Fetch Org WA Credentials').all();\nconst org     = orgArr[0]?.json ?? {};\nconst payload = $('Webhook').item.json;\n\nconst wa    = org.channel_config?.whatsapp;\nconst creds = wa?.credentials;\n\nif (!wa?.active || !creds?.phone_number_id || !creds?.access_token) {\n  return [{ json: {\n    skip: true,\n    run_id:       payload.run_id,\n    callback_url: payload.callback_url,\n    phone:        payload.phone,\n  } }];\n}\n\nconst lang = org.ai_persona?.language || 'tr';\nconst templateLang = lang === 'en' ? 'en_US' : 'tr';\nconst templateName = payload.config?.message_template || 're_engagement_v1';\n\nreturn [{ json: {\n  skip:             false,\n  phone_number_id:  creds.phone_number_id,\n  access_token:     creds.access_token,\n  to_phone:         payload.phone.replace(/^\\+/, ''),\n  template_name:    templateName,\n  template_lang:    templateLang,\n  run_id:           payload.run_id,\n  callback_url:     payload.callback_url,\n} }];"
+        "jsCode": "const orgArr  = $('Fetch Org WA Credentials').all();\nconst org     = orgArr[0]?.json ?? {};\nconst payload = $('Webhook').first().json.body;\n\nconst wa    = org.channel_config?.whatsapp;\nconst creds = wa?.credentials;\n\nif (!wa?.active || !creds?.phone_number_id || !creds?.access_token) {\n  return [{ json: {\n    skip: true,\n    run_id:       payload.run_id,\n    callback_url: payload.callback_url,\n    phone:        payload.phone,\n  } }];\n}\n\nconst lang = org.ai_persona?.language || 'tr';\nconst templateLang = lang === 'en' ? 'en_US' : 'tr';\nconst templateName = payload.config?.message_template || 're_engagement_v1';\n\nreturn [{ json: {\n  skip:             false,\n  phone_number_id:  creds.phone_number_id,\n  access_token:     creds.access_token,\n  to_phone:         payload.phone.replace(/^\\+/, ''),\n  template_name:    templateName,\n  template_lang:    templateLang,\n  run_id:           payload.run_id,\n  callback_url:     payload.callback_url,\n} }];"
       }
     },
 

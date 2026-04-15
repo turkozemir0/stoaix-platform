@@ -44,7 +44,7 @@
       "parameters": {
         "resume": "timeInterval",
         "unit": "minutes",
-        "amount": "={{ $('Webhook').item.json.config?.delay_minutes ?? 2 }}"
+        "amount": "={{ $('Webhook').first().json.body.config?.delay_minutes ?? 2 }}"
       },
       "webhookId": "c1-wait-delay"
     },
@@ -68,7 +68,7 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "id",     "value": "={{ 'eq.' + $('Webhook').item.json.org_id }}" },
+            { "name": "id",     "value": "={{ 'eq.' + $('Webhook').first().json.body.org_id }}" },
             { "name": "select", "value": "id,channel_config,ai_persona" },
             { "name": "limit",  "value": "1" }
           ]
@@ -83,7 +83,7 @@
       "typeVersion": 2,
       "position": [1080, 300],
       "parameters": {
-        "jsCode": "const orgArr  = $('Fetch Org WA Credentials').all();\nconst org     = orgArr[0]?.json ?? {};\nconst payload = $('Webhook').item.json;\n\nconst wa    = org.channel_config?.whatsapp;\nconst creds = wa?.credentials;\n\nif (!wa?.active || !creds?.phone_number_id || !creds?.access_token) {\n  // WA not configured — send failure callback\n  return [{ json: {\n    skip: true,\n    run_id:       payload.run_id,\n    callback_url: payload.callback_url,\n    phone:        payload.phone,\n  } }];\n}\n\nconst lang = org.ai_persona?.language || 'tr';\nconst templateLang = lang === 'en' ? 'en_US' : 'tr';\nconst templateName = payload.config?.message_template || 're_engagement_v1';\n\nreturn [{ json: {\n  skip:             false,\n  phone_number_id:  creds.phone_number_id,\n  access_token:     creds.access_token,\n  to_phone:         payload.phone.replace(/^\\+/, ''),  // Meta API: no leading +\n  template_name:    templateName,\n  template_lang:    templateLang,\n  run_id:           payload.run_id,\n  callback_url:     payload.callback_url,\n} }];"
+        "jsCode": "const orgArr  = $('Fetch Org WA Credentials').all();\nconst org     = orgArr[0]?.json ?? {};\nconst payload = $('Webhook').first().json.body;\n\nconst wa    = org.channel_config?.whatsapp;\nconst creds = wa?.credentials;\n\nif (!wa?.active || !creds?.phone_number_id || !creds?.access_token) {\n  // WA not configured — send failure callback\n  return [{ json: {\n    skip: true,\n    run_id:       payload.run_id,\n    callback_url: payload.callback_url,\n    phone:        payload.phone,\n  } }];\n}\n\nconst lang = org.ai_persona?.language || 'tr';\nconst templateLang = lang === 'en' ? 'en_US' : 'tr';\nconst templateName = payload.config?.message_template || 're_engagement_v1';\n\nreturn [{ json: {\n  skip:             false,\n  phone_number_id:  creds.phone_number_id,\n  access_token:     creds.access_token,\n  to_phone:         payload.phone.replace(/^\\+/, ''),  // Meta API: no leading +\n  template_name:    templateName,\n  template_lang:    templateLang,\n  run_id:           payload.run_id,\n  callback_url:     payload.callback_url,\n} }];"
       }
     },
 

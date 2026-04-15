@@ -43,8 +43,8 @@ const replacements = [
   ['YOUR_LIVEKIT_API_KEY',           env.LIVEKIT_API_KEY],
   ['YOUR_LIVEKIT_API_SECRET',        env.LIVEKIT_API_SECRET],
   ['YOUR_LIVEKIT_AGENT_NAME',        env.LIVEKIT_AGENT_NAME],
-  ['YOUR_LIVEKIT_SIP_TRUNK_ID',      env.LIVEKIT_SIP_TRUNK_ID || 'FILL_SIP_TRUNK_ID'],
 ]
+// Note: LIVEKIT_SIP_TRUNK_ID is per-organization — read from org.channel_config.voice_outbound.livekit_sip_outbound_trunk_id at runtime
 
 // ── Output dir ─────────────────────────────────────────────────────────────
 const outDir = path.join(__dirname, 'configured')
