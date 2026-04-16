@@ -185,7 +185,7 @@ async function runChatEngine(
   // Load channel-specific playbook; fall back to 'whatsapp' if no dedicated one exists
   let { data: playbook } = await supabase
     .from('agent_playbooks')
-    .select('system_prompt_template, fallback_responses, hard_blocks, features, handoff_bridge_message')
+    .select('system_prompt_template, fallback_responses, hard_blocks, features, few_shot_examples, handoff_bridge_message')
     .eq('organization_id', orgId)
     .eq('channel', channel)
     .order('version', { ascending: false })
@@ -195,7 +195,7 @@ async function runChatEngine(
   if (!playbook && channel !== 'whatsapp') {
     const { data: fallback } = await supabase
       .from('agent_playbooks')
-      .select('system_prompt_template, fallback_responses, hard_blocks, features, handoff_bridge_message')
+      .select('system_prompt_template, fallback_responses, hard_blocks, features, few_shot_examples, handoff_bridge_message')
       .eq('organization_id', orgId)
       .eq('channel', 'whatsapp')
       .order('version', { ascending: false })
@@ -265,6 +265,24 @@ async function runChatEngine(
     profileSection = `\n\n━━━ MÜŞTERİ PROFİLİ (önceki mesajlardan toplanan bilgiler) ━━━\n${lines}\nBu bilgileri bağlam olarak kullanabilirsin, tekrar sormak zorunda değilsin. Kullanıcı düzeltirse güncellediğini kabul et.`
   }
 
+  // Model selection — from playbook features, fallback to gpt-4o-mini
+  const model = (playbook.features as any)?.model ?? 'gpt-4o-mini'
+
+  // Few-shot examples section
+  const fewShots = (playbook.few_shot_examples ?? []) as Array<{ user: string; assistant: string }>
+  const fewShotSection = fewShots.length > 0
+    ? '\n\n━━━ ÖRNEK KONUŞMALAR ━━━\n' +
+      fewShots.map(ex => `Kullanıcı: ${ex.user}\nAsistan: ${ex.assistant}`).join('\n\n')
+    : ''
+
+  // Hard guardrails — always appended, not overrideable
+  const CHAT_GUARDRAILS = `\n\n━━━ MESAJLAŞMA KURALLARI (değiştirilemez) ━━━
+- Her mesajda yalnızca 1 soru sor
+- Yanıtlar maks 2-3 cümle, düz metin
+- Markdown kullanma (* ** # gibi)
+- Medikal teşhis, ilaç tavsiyesi veya tedavi önerisi YAPMA
+- Fiyat garantisi verme`
+
   // Build system prompt
   const persona      = org.ai_persona as Record<string, string>
   const systemPrompt = [
@@ -273,6 +291,8 @@ async function runChatEngine(
     profileSection,
     `\nOrganizasyon: ${org.name}`,
     persona?.persona_name ? `\nSenin adın: ${persona.persona_name}` : '',
+    fewShotSection,
+    CHAT_GUARDRAILS,
   ].filter(Boolean).join('')
 
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
@@ -282,23 +302,43 @@ async function runChatEngine(
 
   let reply = ''
   try {
-    const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')!}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model:      'gpt-4o-mini',
-        max_tokens: 160,
-        messages:   [{ role: 'system', content: systemPrompt }, ...messages],
-      }),
-    })
-    if (!openaiRes.ok) throw new Error(`OpenAI ${openaiRes.status}`)
-    const openaiData = await openaiRes.json()
-    reply = openaiData.choices?.[0]?.message?.content ?? ''
+    if (model.startsWith('claude-')) {
+      const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': Deno.env.get('ANTHROPIC_API_KEY')!,
+          'anthropic-version': '2023-06-01',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 240,
+          system: systemPrompt,
+          messages,
+        }),
+      })
+      if (!claudeRes.ok) throw new Error(`Claude ${claudeRes.status}`)
+      const claudeData = await claudeRes.json()
+      reply = claudeData.content?.[0]?.text ?? ''
+    } else {
+      const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')!}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 240,
+          messages:   [{ role: 'system', content: systemPrompt }, ...messages],
+        }),
+      })
+      if (!openaiRes.ok) throw new Error(`OpenAI ${openaiRes.status}`)
+      const openaiData = await openaiRes.json()
+      reply = openaiData.choices?.[0]?.message?.content ?? ''
+    }
   } catch (err) {
-    console.error('OpenAI error:', err)
+    console.error('LLM error:', err)
     reply = fallbackResponses['error'] ??
       fallbackResponses['no_kb_match'] ??
       'Şu an bir sorun yaşıyorum. Lütfen birazdan tekrar yazın.'

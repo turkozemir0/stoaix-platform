@@ -89,7 +89,7 @@ interface PlaybookState {
   systemPrompt: string
   openingMessage: string
   blocks: { keywords: string; response: string }[]
-  features: { calendar_booking: boolean; voice_language?: string; tts_voice_id?: string }
+  features: { calendar_booking: boolean; voice_language?: string; tts_voice_id?: string; model?: string }
   fewShots: { user: string; assistant: string }[]
   noKbMatch: string
 }
@@ -130,6 +130,20 @@ const VOICE_LANGUAGES = [
   { value: 'it', label: '🇮🇹 Italiano' },
   { value: 'pt', label: '🇵🇹 Português' },
   { value: 'pl', label: '🇵🇱 Polski' },
+]
+
+const VOICE_MODEL_OPTIONS = [
+  { value: 'claude-sonnet-4-6',        label: 'Claude Sonnet 4.6 (Önerilen)' },
+  { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (Hızlı)' },
+  { value: 'gpt-4o-mini',              label: 'GPT-4o Mini' },
+  { value: 'gpt-4o',                   label: 'GPT-4o' },
+]
+
+const CHAT_MODEL_OPTIONS = [
+  { value: 'gpt-4o-mini',              label: 'GPT-4o Mini (Önerilen)' },
+  { value: 'gpt-4o',                   label: 'GPT-4o' },
+  { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+  { value: 'claude-sonnet-4-6',        label: 'Claude Sonnet 4.6' },
 ]
 
 interface ImprovementTip {
@@ -179,6 +193,7 @@ function AgentPageInner() {
   const [generating, setGenerating]         = useState(false)
   const [saving, setSaving]                 = useState(false)
   const [savedChannel, setSavedChannel]     = useState<Channel | null>(null)
+  const [orgName, setOrgName]               = useState('')
   const [voiceActive, setVoiceActive]       = useState(false)
   const [hasCalendar, setHasCalendar]       = useState(false)
   const [calendarWarning, setCalendarWarning] = useState(false)
@@ -288,7 +303,7 @@ function AgentPageInner() {
       // Voice aktif mi? + ai_persona yükle
       const { data: orgData } = await supabase
         .from('organizations')
-        .select('channel_config, ai_persona')
+        .select('name, channel_config, ai_persona')
         .eq('id', resolvedOrgId)
         .single()
       const cc = (orgData?.channel_config ?? {}) as Record<string, any>
@@ -296,6 +311,7 @@ function AgentPageInner() {
       setHasCalendar(cc?.calendar?.provider != null)
       const ap = (orgData?.ai_persona ?? {}) as Record<string, any>
       setPersona({ name: ap.persona_name || '', tone: ap.tone || 'warm-professional' })
+      setOrgName(orgData?.name || '')
 
       // Routing config yükle
       try {
@@ -504,6 +520,12 @@ function AgentPageInner() {
       data.features = { ...data.features, calendar_booking: false }
       setCalendarWarning(true)
     }
+    // Placeholder substitution — persona.name ve orgName henüz boşsa placeholder kalır
+    const sub = (s: string) =>
+      s.replace(/\{PERSONA_ADI\}/g, persona.name || '{PERSONA_ADI}')
+       .replace(/\{KLINIK_ADI\}/g,  orgName      || '{KLINIK_ADI}')
+    data.systemPrompt   = sub(data.systemPrompt)
+    data.openingMessage = sub(data.openingMessage)
     if (ch === 'voice')    setVoice(prev    => ({ ...prev, ...data }))
     if (ch === 'whatsapp') setWhatsapp(prev => ({ ...prev, ...data }))
   }
@@ -1262,6 +1284,29 @@ function AgentPageInner() {
                 />
               </div>
             )}
+
+            {/* AI Modeli */}
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 flex items-start gap-4">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-slate-800">AI Modeli</p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Bu kanal için kullanılacak yapay zeka modeli.
+                </p>
+              </div>
+              <select
+                value={current.features.model ?? (editorView.channel === 'voice' ? 'claude-sonnet-4-6' : 'gpt-4o-mini')}
+                onChange={e => setCurrent(prev => ({
+                  ...prev,
+                  features: { ...prev.features, model: e.target.value },
+                }))}
+                className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                {editorView.channel === 'voice'
+                  ? VOICE_MODEL_OPTIONS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)
+                  : CHAT_MODEL_OPTIONS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)
+                }
+              </select>
+            </div>
 
             {error && (
               <p className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-lg">{error}</p>
