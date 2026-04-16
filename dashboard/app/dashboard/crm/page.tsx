@@ -10,7 +10,9 @@ import {
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import KanbanBoard from '../leads/KanbanBoard'
+import PipelineSelector from '@/components/crm/PipelineSelector'
 import StatCard from '@/components/StatCard'
+import type { Pipeline } from '@/lib/types'
 import ManualTasksPanel from '@/components/followup/ManualTasksPanel'
 import FollowupTabs from '@/components/followup/FollowupTabs'
 
@@ -86,6 +88,8 @@ function LeadsTab({ orgId }: { orgId: string }) {
   const [page, setPage] = useState(0)
   const [total, setTotal] = useState(0)
   const [statusCounts, setStatusCounts] = useState({ all: 0, new: 0, handed_off: 0, in_progress: 0 })
+  const [pipelines, setPipelines] = useState<Pipeline[]>([])
+  const [activePipelineId, setActivePipelineId] = useState<string>('')
 
   useEffect(() => {
     async function loadCounts() {
@@ -100,6 +104,18 @@ function LeadsTab({ orgId }: { orgId: string }) {
     }
     loadCounts()
   }, [orgId])
+
+  useEffect(() => {
+    fetch('/api/pipelines')
+      .then(r => r.json())
+      .then(data => {
+        const list: Pipeline[] = data.pipelines ?? []
+        setPipelines(list)
+        const defaultP = list.find(p => p.is_default)
+        setActivePipelineId(defaultP?.id ?? list[0]?.id ?? '')
+      })
+      .catch(() => {})
+  }, [])
 
   const loadLeads = useCallback(async (filter: FilterStatus, page: number) => {
     setLoading(true)
@@ -131,6 +147,13 @@ function LeadsTab({ orgId }: { orgId: string }) {
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <p className="text-sm text-slate-500">{statusCounts.all} kayıt</p>
         <div className="flex items-center gap-2">
+          {viewMode === 'kanban' && pipelines.length > 0 && (
+            <PipelineSelector
+              pipelines={pipelines}
+              activePipelineId={activePipelineId}
+              onChange={setActivePipelineId}
+            />
+          )}
           <Link
             href="/dashboard/admin/import"
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 border border-slate-200 text-slate-600 rounded-lg text-xs font-medium hover:bg-slate-200 transition-colors"
@@ -156,7 +179,10 @@ function LeadsTab({ orgId }: { orgId: string }) {
       </div>
 
       {viewMode === 'kanban' ? (
-        <KanbanBoard orgId={orgId} />
+        <KanbanBoard
+          orgId={orgId}
+          pipeline={pipelines.find(p => p.id === activePipelineId) ?? null}
+        />
       ) : (
         <>
           <div className="flex gap-2 mb-5 flex-wrap">
