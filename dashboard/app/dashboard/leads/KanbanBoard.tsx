@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { Flame, Search, Loader2 } from 'lucide-react'
+import { Flame, Search, Loader2, UserPlus, X } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 import type { Pipeline, PipelineStage } from '@/lib/types'
 
 type LeadStatus = 'new' | 'in_progress' | 'handed_off' | 'nurturing' | 'qualified' | 'converted' | 'lost'
@@ -65,6 +66,122 @@ function ScoreBadge({ score }: { score: number }) {
 
 function initCol(): ColState {
   return { leads: [], count: 0, loading: true, page: 0, search: '', hasMore: false }
+}
+
+// ── Add Lead Modal (Custom Pipeline) ──────────────────────────────────────────
+
+function AddLeadToStageModal({
+  pipelineId,
+  stageId,
+  stageName,
+  onAdded,
+  onClose,
+}: {
+  pipelineId: string
+  stageId: string
+  stageName: string
+  onAdded: () => void
+  onClose: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<any[]>([])
+  const [searching, setSearching] = useState(false)
+  const [adding, setAdding] = useState<string | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+
+  useEffect(() => {
+    if (query.length < 1) { setResults([]); return }
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true)
+      const sb = createClient()
+      const { data } = await sb
+        .from('leads')
+        .select('id, qualification_score, status, collected_data, contacts(full_name, phone)')
+        .or(`contacts.phone.ilike.%${query}%,contacts.full_name.ilike.%${query}%,collected_data->>full_name.ilike.%${query}%`)
+        .limit(20)
+      setResults((data as any[]) ?? [])
+      setSearching(false)
+    }, 350)
+  }, [query])
+
+  async function handleAdd(leadId: string) {
+    setAdding(leadId)
+    await fetch(`/api/pipelines/${pipelineId}/leads/${leadId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stage_id: stageId }),
+    })
+    setAdding(null)
+    onAdded()
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <p className="text-sm font-semibold text-slate-800">
+            <span className="text-brand-600">{stageName}</span> aşamasına lead ekle
+          </p>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-3">
+          <div className="relative">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <input
+              autoFocus
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="İsim veya telefon ile ara..."
+              className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-400"
+            />
+          </div>
+        </div>
+
+        <div className="max-h-64 overflow-y-auto divide-y divide-slate-50">
+          {searching && (
+            <div className="flex justify-center py-6 text-slate-400">
+              <Loader2 size={16} className="animate-spin" />
+            </div>
+          )}
+          {!searching && query.length >= 1 && results.length === 0 && (
+            <p className="text-sm text-slate-400 text-center py-6">Eşleşen lead bulunamadı.</p>
+          )}
+          {!searching && results.map((lead: any) => {
+            const name = lead.collected_data?.full_name || lead.contacts?.full_name
+            const phone = lead.contacts?.phone || lead.collected_data?.phone
+            const isAdding = adding === lead.id
+            return (
+              <div key={lead.id} className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-800 truncate">{name || <span className="text-slate-400">İsimsiz</span>}</p>
+                  {phone && <p className="text-xs text-slate-500 font-mono">{phone}</p>}
+                </div>
+                <button
+                  onClick={() => handleAdd(lead.id)}
+                  disabled={!!adding}
+                  className="ml-3 shrink-0 flex items-center gap-1 text-xs font-medium text-white bg-brand-600 hover:bg-brand-700 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {isAdding ? <Loader2 size={11} className="animate-spin" /> : <UserPlus size={11} />}
+                  Ekle
+                </button>
+              </div>
+            )
+          })}
+          {query.length === 0 && (
+            <p className="text-xs text-slate-400 text-center py-6">Aramak için yazmaya başlayın</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ── Default Pipeline Board ─────────────────────────────────────────────────────
@@ -172,6 +289,7 @@ function CustomKanban({ orgId, pipeline }: { orgId: string; pipeline: Pipeline }
   )
   const [movingId, setMovingId] = useState<string | null>(null)
   const debounceRefs = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const [addModal, setAddModal] = useState<{ stageId: string; stageName: string } | null>(null)
 
   const fetchCol = useCallback(async (stageId: string, search: string, page: number, append: boolean) => {
     setCols(prev => ({ ...prev, [stageId]: { ...prev[stageId], loading: true } }))
@@ -240,36 +358,48 @@ function CustomKanban({ orgId, pipeline }: { orgId: string; pipeline: Pipeline }
   }
 
   return (
-    <KanbanGrid
-      columns={stages.map(s => ({
-        id: s.id,
-        label: s.name,
-        color: 'bg-white border-slate-200',
-        headerColor: 'text-slate-700',
-        stageColor: s.color,
-      }))}
-      cols={cols}
-      movingId={movingId}
-      onSearch={handleSearch}
-      onLoadMore={loadMore}
-      renderMoveControl={(lead, colId) => (
-        <select
-          value={colId}
-          onChange={e => moveToStage(lead.id, colId, e.target.value)}
-          disabled={movingId === lead.id}
-          className="text-[10px] border border-slate-200 rounded px-1 py-1 text-slate-600 bg-white focus:outline-none focus:ring-1 focus:ring-brand-400 disabled:opacity-50"
-        >
-          {stages.map(s => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
+    <>
+      {addModal && (
+        <AddLeadToStageModal
+          pipelineId={pipeline.id}
+          stageId={addModal.stageId}
+          stageName={addModal.stageName}
+          onAdded={() => fetchCol(addModal.stageId, cols[addModal.stageId]?.search ?? '', 0, false)}
+          onClose={() => setAddModal(null)}
+        />
       )}
-      renderExtraBadge={(lead) => (
-        <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">
-          {STATUS_LABELS[lead.status]}
-        </span>
-      )}
-    />
+      <KanbanGrid
+        columns={stages.map(s => ({
+          id: s.id,
+          label: s.name,
+          color: 'bg-white border-slate-200',
+          headerColor: 'text-slate-700',
+          stageColor: s.color,
+        }))}
+        cols={cols}
+        movingId={movingId}
+        onSearch={handleSearch}
+        onLoadMore={loadMore}
+        onAddClick={(stageId, stageName) => setAddModal({ stageId, stageName })}
+        renderMoveControl={(lead, colId) => (
+          <select
+            value={colId}
+            onChange={e => moveToStage(lead.id, colId, e.target.value)}
+            disabled={movingId === lead.id}
+            className="text-[10px] border border-slate-200 rounded px-1 py-1 text-slate-600 bg-white focus:outline-none focus:ring-1 focus:ring-brand-400 disabled:opacity-50"
+          >
+            {stages.map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        )}
+        renderExtraBadge={(lead) => (
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">
+            {STATUS_LABELS[lead.status]}
+          </span>
+        )}
+      />
+    </>
   )
 }
 
@@ -289,6 +419,7 @@ function KanbanGrid({
   movingId,
   onSearch,
   onLoadMore,
+  onAddClick,
   renderMoveControl,
   renderExtraBadge,
 }: {
@@ -297,6 +428,7 @@ function KanbanGrid({
   movingId: string | null
   onSearch: (colId: string, val: string) => void
   onLoadMore: (colId: string) => void
+  onAddClick?: (colId: string, label: string) => void
   renderMoveControl: (lead: Lead, colId: string) => React.ReactNode
   renderExtraBadge?: (lead: Lead) => React.ReactNode
 }) {
@@ -322,12 +454,23 @@ function KanbanGrid({
                   )}
                   <span className="text-xs font-semibold">{col.label}</span>
                 </div>
-                <span className="text-xs font-bold opacity-70 flex items-center gap-1">
-                  {state.loading && state.leads.length === 0
-                    ? <Loader2 size={10} className="animate-spin" />
-                    : state.count.toLocaleString('tr-TR')
-                  }
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold opacity-70 flex items-center gap-1">
+                    {state.loading && state.leads.length === 0
+                      ? <Loader2 size={10} className="animate-spin" />
+                      : state.count.toLocaleString('tr-TR')
+                    }
+                  </span>
+                  {onAddClick && (
+                    <button
+                      onClick={() => onAddClick(col.id, col.label)}
+                      title="Lead Ekle"
+                      className="opacity-70 hover:opacity-100 transition-opacity"
+                    >
+                      <UserPlus size={12} />
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="relative">
                 <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 opacity-50 pointer-events-none" />
