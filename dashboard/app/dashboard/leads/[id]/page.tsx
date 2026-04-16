@@ -5,6 +5,7 @@ import LeadBadge from '@/components/LeadBadge'
 import { t } from '@/lib/i18n'
 import { ArrowLeft } from 'lucide-react'
 import LeadDetailClient from './LeadDetailClient'
+import LeadAppointmentsClient from './LeadAppointmentsClient'
 
 export default async function LeadDetailPage({ params }: { params: { id: string } }) {
   const supabase = createClient()
@@ -160,6 +161,9 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
           </div>
         </div>
       )}
+
+      {/* Randevular */}
+      <LeadAppointmentsClient leadId={lead.id} />
 
       {/* Proposals */}
       <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">

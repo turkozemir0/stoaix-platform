@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Calendar, Plus, Loader2, ChevronLeft, ChevronRight,
   Clock, User, X, Link2, Search, RefreshCw, Pencil,
+  CheckCircle2, UserX, XCircle,
 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -150,6 +151,23 @@ export default function CalendarPage() {
   const [saving, setSaving]       = useState(false)
   const [formError, setFormError] = useState('')
 
+  // Status update
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
+
+  async function updateStatus(apptId: string, newStatus: string) {
+    setUpdatingStatus(apptId)
+    try {
+      await fetch(`/api/appointments/${apptId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+      await loadAppointments()
+    } finally {
+      setUpdatingStatus(null)
+    }
+  }
+
   // Edit modal
   const [editAppt, setEditAppt]     = useState<Appointment | null>(null)
   const [editForm, setEditForm]     = useState({ title: '', appointment_type: 'consultation' as AppointmentType, notes: '' })
@@ -239,9 +257,10 @@ export default function CalendarPage() {
     else setViewMonth(m => m + 1)
   }
 
-  // Build appointment lookup keyed by YYYY-MM-DD
+  // Build appointment lookup keyed by YYYY-MM-DD (exclude cancelled)
   const apptByDay: Record<string, Appointment[]> = {}
   for (const a of appointments) {
+    if (a.status === 'cancelled') continue
     const day = a.scheduled_at.slice(0, 10)
     if (!apptByDay[day]) apptByDay[day] = []
     apptByDay[day].push(a)
@@ -544,13 +563,39 @@ export default function CalendarPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-1">
                             <p className="text-sm font-medium text-slate-800 truncate">{name}</p>
-                            <button
-                              onClick={() => openEdit(appt)}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600 shrink-0"
-                              title="Düzenle"
-                            >
-                              <Pencil size={13} />
-                            </button>
+                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                              {['scheduled', 'confirmed', 'rescheduled'].includes(appt.status) && (
+                                <>
+                                  <button
+                                    onClick={() => updateStatus(appt.id, 'attended')}
+                                    disabled={updatingStatus === appt.id}
+                                    className="p-1 rounded hover:bg-green-100 text-slate-300 hover:text-green-600 transition-colors disabled:opacity-40"
+                                    title="Katıldı">
+                                    <CheckCircle2 size={13} />
+                                  </button>
+                                  <button
+                                    onClick={() => updateStatus(appt.id, 'no_show')}
+                                    disabled={updatingStatus === appt.id}
+                                    className="p-1 rounded hover:bg-orange-100 text-slate-300 hover:text-orange-500 transition-colors disabled:opacity-40"
+                                    title="Gelmedi">
+                                    <UserX size={13} />
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                onClick={() => updateStatus(appt.id, 'cancelled')}
+                                disabled={updatingStatus === appt.id}
+                                className="p-1 rounded hover:bg-red-100 text-slate-300 hover:text-red-500 transition-colors disabled:opacity-40"
+                                title="İptal Et">
+                                <XCircle size={13} />
+                              </button>
+                              <button
+                                onClick={() => openEdit(appt)}
+                                className="p-1 rounded hover:bg-slate-200 text-slate-300 hover:text-slate-600 transition-colors"
+                                title="Düzenle">
+                                <Pencil size={13} />
+                              </button>
+                            </div>
                           </div>
                           <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-0.5">
                             <Clock size={11} />
