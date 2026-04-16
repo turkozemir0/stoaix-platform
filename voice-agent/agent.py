@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
@@ -803,6 +804,33 @@ async def save_call(
         logger.warning(f"voice_call save failed: {e}")
 
 
+def normalize_phone(phone: str) -> str:
+    """
+    Normalize a phone string to E.164 format (e.g. "+905551234567").
+    Safe conversions only — no country-code guessing for local formats.
+
+      "+905551234567"   → "+905551234567"  (already E.164, keep)
+      "905551234567"    → "+905551234567"  (bare international digits)
+      "00905551234567"  → "+905551234567"  (00-prefix → +)
+      "05551234567"     → "05551234567"    (local format, leave unchanged)
+    """
+    if not phone:
+        return phone
+    cleaned = re.sub(r'[\s\-\(\)\.]+', '', phone)
+    if cleaned.startswith('+'):
+        digits = re.sub(r'\D', '', cleaned[1:])
+        return ('+' + digits) if 7 <= len(digits) <= 15 else phone
+    digits = re.sub(r'\D', '', cleaned)
+    if not digits:
+        return phone
+    if digits.startswith('00') and len(digits) >= 9:
+        stripped = digits[2:]
+        return ('+' + stripped) if 7 <= len(stripped) <= 15 else phone
+    if re.match(r'^\d{9,15}$', digits) and not digits.startswith('0'):
+        return '+' + digits
+    return phone  # local format or ambiguous — leave unchanged
+
+
 async def upsert_contact_and_lead(
     org_id:     str,
     phone_from: str,
@@ -813,6 +841,10 @@ async def upsert_contact_and_lead(
         sb = get_supabase()
         contact_id = None
         lead_id    = None
+
+        # Normalize to E.164 before any DB lookup/insert
+        if phone_from:
+            phone_from = normalize_phone(phone_from)
 
         if phone_from:
             existing = sb.table("contacts") \

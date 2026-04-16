@@ -26,6 +26,36 @@ export interface InboundMessageOptions {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEBOUNCE_MS            = 3500
+
+// ─── Phone normalization ──────────────────────────────────────────────────────
+
+/**
+ * Normalize a phone string to E.164 (e.g. "+905551234567").
+ * Safe conversions only — no country-code guessing for ambiguous local formats.
+ *
+ *   "+905551234567"   → "+905551234567"  (already E.164)
+ *   "905551234567"    → "+905551234567"  (bare international digits)
+ *   "00905551234567"  → "+905551234567"  (00-prefix → +)
+ *   "05551234567"     → null             (local format, ambiguous)
+ */
+function normalizePhoneE164(phone: string): string | null {
+  if (!phone) return null
+  const cleaned = phone.replace(/[\s\-\(\)\.]+/g, '')
+  if (cleaned.startsWith('+')) {
+    const digits = cleaned.replace(/\D/g, '')
+    return digits.length >= 7 && digits.length <= 15 ? `+${digits}` : null
+  }
+  const digits = cleaned.replace(/\D/g, '')
+  if (!digits) return null
+  if (digits.startsWith('00') && digits.length >= 9) {
+    const stripped = digits.slice(2)
+    return stripped.length >= 7 && stripped.length <= 15 ? `+${stripped}` : null
+  }
+  if (/^\d{9,15}$/.test(digits) && !digits.startsWith('0')) {
+    return `+${digits}`
+  }
+  return null
+}
 const MAX_HISTORY            = 6    // reduced from 8 for token efficiency
 const PROCESSING_TIMEOUT_MS  = 120_000  // 2 min — auto-release locks from crashed workers
 
@@ -698,6 +728,7 @@ export async function handleInboundMessage(opts: InboundMessageOptions): Promise
   let contactId: string
   let isNewContact = false
 
+  // Step 1: Look up by channel identifier (fast, channel-specific)
   const { data: existingContact } = await supabase
     .from('contacts')
     .select('id')
@@ -708,27 +739,63 @@ export async function handleInboundMessage(opts: InboundMessageOptions): Promise
   if (existingContact?.id) {
     contactId = existingContact.id
   } else {
-    const { data: newContact, error } = await supabase
-      .from('contacts')
-      .insert({
-        organization_id: orgId,
-        phone: phone || null,
-        channel_identifiers: {
-          [channelIdentifierKey]: providerContactId,
-          ...(phone ? { phone } : {}),
-        },
-        source_channel: channel,
-        status: 'new',
-      })
-      .select('id')
-      .single()
+    // Step 2: Phone-first cross-channel dedup
+    // BSUID guard: Meta WA may send Business-Scoped User IDs (contain '.') from June 2026+
+    // BSUIDs are not phone numbers — skip phone dedup for them
+    const isBSUID = providerContactId.includes('.')
+    const normalizedPhone = (phone && !isBSUID) ? normalizePhoneE164(phone) : null
 
-    if (error || !newContact?.id) {
-      console.error('Contact insert failed:', error)
-      return
+    let foundByPhone: { id: string } | null = null
+    if (normalizedPhone) {
+      const { data: byPhone } = await supabase
+        .from('contacts')
+        .select('id')
+        .eq('organization_id', orgId)
+        .eq('phone', normalizedPhone)
+        .maybeSingle()
+      foundByPhone = byPhone
     }
-    contactId    = newContact.id
-    isNewContact = true
+
+    if (foundByPhone?.id) {
+      // Cross-channel match — reuse existing contact, merge channel_identifiers
+      contactId = foundByPhone.id
+      const { data: contactData } = await supabase
+        .from('contacts')
+        .select('channel_identifiers')
+        .eq('id', contactId)
+        .single()
+      const mergedIdentifiers = {
+        ...((contactData?.channel_identifiers ?? {}) as Record<string, unknown>),
+        [channelIdentifierKey]: providerContactId,
+      }
+      await supabase
+        .from('contacts')
+        .update({ channel_identifiers: mergedIdentifiers })
+        .eq('id', contactId)
+    } else {
+      // Step 3: No match found — create new contact
+      const { data: newContact, error } = await supabase
+        .from('contacts')
+        .insert({
+          organization_id: orgId,
+          phone: normalizedPhone ?? phone ?? null,
+          channel_identifiers: {
+            [channelIdentifierKey]: providerContactId,
+            ...(normalizedPhone ? { phone: normalizedPhone } : phone ? { phone } : {}),
+          },
+          source_channel: channel,
+          status: 'new',
+        })
+        .select('id')
+        .single()
+
+      if (error || !newContact?.id) {
+        console.error('Contact insert failed:', error)
+        return
+      }
+      contactId    = newContact.id
+      isNewContact = true
+    }
   }
 
   // ── Upsert lead ──
