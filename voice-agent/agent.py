@@ -34,7 +34,22 @@ from livekit.agents import (
     llm,
 )
 from livekit.plugins import cartesia, deepgram, openai, anthropic, silero
-from livekit.plugins.turn_detector import MultilingualModel
+
+try:
+    from livekit.plugins.turn_detector import MultilingualModel
+    _TURN_DETECTOR_CLS = MultilingualModel
+except ImportError:
+    try:
+        from livekit.plugins.turn_detector import EOUModel
+        _TURN_DETECTOR_CLS = EOUModel
+        logging.getLogger("stoaix-platform").warning(
+            "MultilingualModel unavailable — falling back to EOUModel"
+        )
+    except ImportError:
+        _TURN_DETECTOR_CLS = None
+        logging.getLogger("stoaix-platform").warning(
+            "turn_detector plugin unavailable — VAD-only mode"
+        )
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -1334,7 +1349,7 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
             language=tts_lang,
         ),
         vad=silero.VAD.load(),
-        turn_detection=MultilingualModel(),   # Semantik cümle tamamlanma (Türkçe uyumlu)
+        **({"turn_detection": _TURN_DETECTOR_CLS()} if _TURN_DETECTOR_CLS else {}),
         allow_interruptions=True,
         interrupt_speech_duration=0.3,        # 300ms gerçek barge-in
         interrupt_min_words=1,
