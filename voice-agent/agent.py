@@ -321,7 +321,45 @@ def get_calendar_adapter(org: dict) -> CalendarAdapter | None:
     return None
 
 
-# ── Appointment reminder helpers ────────────────────────────────────────────────
+# ── Appointment helpers ─────────────────────────────────────────────────────────
+
+async def save_appointment_to_db(
+    supabase,
+    org_id:           str,
+    contact_id:       str | None,
+    lead_id:          str | None,
+    conv_id:          str | None,
+    datetime_str:     str,
+    duration_minutes: int = 60,
+    notes:            str = "",
+    source:           str = "ai",
+    external_id:      str | None = None,
+) -> None:
+    """
+    Inserts a row into appointments table.
+    Fire-and-forget — failure only logs a warning.
+    """
+    try:
+        scheduled_at = datetime_str if "T" in datetime_str else f"{datetime_str}T00:00:00"
+        supabase.table("appointments").insert({
+            "organization_id":  org_id,
+            "contact_id":       contact_id,
+            "lead_id":          lead_id,
+            "conversation_id":  conv_id,
+            "scheduled_at":     scheduled_at,
+            "duration_minutes": duration_minutes,
+            "status":           "confirmed",
+            "appointment_type": "consultation",
+            "title":            None,
+            "source":           source,
+            "external_id":      external_id,
+            "notes":            notes or None,
+            "metadata":         {"booked_by": "voice_agent"},
+        }).execute()
+        logger.info(f"Appointment saved to DB for org={org_id}, dt={datetime_str}")
+    except Exception as e:
+        logger.warning(f"save_appointment_to_db failed: {e}")
+
 
 async def create_appointment_reminders(
     org_id:       str,
@@ -380,6 +418,7 @@ def build_system_prompt(
     kb_context: str,
     calendar_enabled: bool = False,
     lang: str = "tr",
+    few_shots: list = None,
 ) -> str:
     persona      = org.get("ai_persona", {})
     persona_name = persona.get("persona_name", "Asistan")
@@ -415,6 +454,16 @@ def build_system_prompt(
 
     triggers = playbook.get("handoff_triggers", {}) if playbook else {}
     handoff_keywords = ", ".join(triggers.get("keywords", []))
+
+    # Few-shot section
+    shots = few_shots or (playbook.get("few_shot_examples", []) if playbook else [])
+    few_shot_section = ""
+    if shots:
+        few_shot_section = "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nFEW-SHOT ÖRNEK KONUŞMALAR:\n"
+        few_shot_section += "\n\n".join(
+            f"Arayan: {ex.get('user', '')}\nAsistan: {ex.get('assistant', '')}"
+            for ex in shots
+        )
 
     base_prompt = playbook.get("system_prompt_template", "") if playbook else ""
 
@@ -458,7 +507,7 @@ HANDOFF TETİKLEYİCİLER:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 HALÜSİNASYON KURALI:
 {fallback_no_kb}
-{calendar_section}"""
+{calendar_section}{few_shot_section}"""
 
 
 # ── Agent sınıfı ───────────────────────────────────────────────────────────────
@@ -865,24 +914,28 @@ async def entrypoint(ctx: JobContext):
     if not org_id:
         raise ValueError("organization_id missing in room metadata and PLATFORM_ORG_ID env not set")
 
-    # metadata'dan model oku, default Claude Sonnet 4.6
-    llm_model = meta.get("model", "claude-sonnet-4-6")
+    org      = await load_org(org_id)
+    playbook = await load_playbook(org_id, channel="voice")
+    intake   = await load_intake_schema(org_id, channel="voice")
+
+    # Model öncelik sırası: 1. playbook features, 2. room metadata, 3. default
+    features  = (playbook or {}).get("features", {}) if playbook else {}
+    llm_model = (
+        features.get("model")
+        or meta.get("model")
+        or "claude-sonnet-4-6"
+    )
     if llm_model.startswith("claude-"):
         llm_instance = anthropic.LLM(model=llm_model)
     else:
         llm_instance = openai.LLM(model=llm_model)
-
-    org      = await load_org(org_id)
-    playbook = await load_playbook(org_id, channel="voice")
-    intake   = await load_intake_schema(org_id, channel="voice")
 
     persona      = org.get("ai_persona", {})
     persona_name = persona.get("persona_name", "Asistan")
     lang         = meta.get("lang") or persona.get("language", "tr")
     room_name    = ctx.room.name
 
-    # Calendar feature — provider-agnostic adapter
-    features         = (playbook or {}).get("features", {}) if playbook else {}
+    # Calendar feature — provider-agnostic adapter (features already loaded above)
     calendar_adapter = get_calendar_adapter(org) if features.get("calendar_booking", False) else None
     calendar_enabled = calendar_adapter is not None
 
@@ -1174,9 +1227,16 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
             ) -> str:
                 result = await calendar_adapter.create_appointment(name, phone, datetime_str, notes)
                 if result["success"]:
+                    sb = get_supabase()
                     # Create voice reminder tasks (-24h and -2h)
                     asyncio.create_task(create_appointment_reminders(
                         org_id, contact_id, lead_id, conv_id, datetime_str
+                    ))
+                    # Save to appointments table (canonical DB source)
+                    asyncio.create_task(save_appointment_to_db(
+                        sb, org_id, contact_id, lead_id, conv_id,
+                        datetime_str, notes=notes,
+                        external_id=result.get("appointment_id"),
                     ))
                     return f"Randevunuz oluşturuldu: {name}, {datetime_str}. Onay bilgisi size iletilecektir."
                 return "Randevu oluşturulurken bir sorun oluştu. Lütfen tekrar deneyin veya bizi arayın."

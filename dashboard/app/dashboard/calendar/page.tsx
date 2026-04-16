@@ -1,20 +1,31 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Calendar, Plus, Loader2, ChevronRight, Clock, User, X, ExternalLink, Link2, Search } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import {
+  Calendar, Plus, Loader2, ChevronRight, Clock, User,
+  X, Link2, Search, RefreshCw,
+} from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 
-interface GCalEvent {
+type AppointmentType = 'consultation' | 'operation' | 'follow_up' | 'other'
+type AppointmentSource = 'platform' | 'google' | 'ai' | 'ghl'
+type SourceFilter = 'all' | AppointmentSource
+
+interface Appointment {
   id: string
-  summary?: string
-  description?: string
-  start:  { dateTime?: string; date?: string }
-  end:    { dateTime?: string; date?: string }
-  attendees?: { email: string; displayName?: string; responseStatus?: string }[]
-  htmlLink?: string
-  extendedProperties?: { private?: { lead_id?: string }; shared?: { lead_id?: string } }
-  status?: string
+  title?: string | null
+  scheduled_at: string
+  duration_minutes: number
+  status: string
+  appointment_type: AppointmentType
+  source: AppointmentSource
+  external_id?: string | null
+  notes?: string | null
+  contact_id?: string | null
+  lead_id?: string | null
+  contacts?: { full_name?: string; phone?: string } | null
+  leads?: { qualification_score?: number; status?: string } | null
 }
 
 interface Lead {
@@ -23,19 +34,50 @@ interface Lead {
   qualification_score?: number
 }
 
-interface NewEventForm {
+interface NewAppointmentForm {
   title: string
   date: string
   startTime: string
   endTime: string
-  attendeeEmail: string
-  description: string
+  appointment_type: AppointmentType
+  notes: string
   leadId: string
+  contactId: string
 }
 
-const EMPTY_FORM: NewEventForm = {
+const EMPTY_FORM: NewAppointmentForm = {
   title: '', date: '', startTime: '09:00', endTime: '10:00',
-  attendeeEmail: '', description: '', leadId: '',
+  appointment_type: 'consultation', notes: '', leadId: '', contactId: '',
+}
+
+const TYPE_LABELS: Record<AppointmentType, string> = {
+  consultation: 'Konsültasyon',
+  operation:    'Operasyon',
+  follow_up:    'Kontrol',
+  other:        'Diğer',
+}
+
+const SOURCE_LABELS: Record<AppointmentSource, string> = {
+  platform: 'Platform',
+  google:   'Google',
+  ai:       'AI Asistan',
+  ghl:      'GHL',
+}
+
+// Left-bar color by source
+const SOURCE_BAR_CLASS: Record<AppointmentSource, string> = {
+  platform: 'bg-brand-400',
+  google:   'bg-blue-400',
+  ai:       'bg-emerald-400',
+  ghl:      'bg-amber-400',
+}
+
+// Chip badge color by source
+const SOURCE_BADGE_CLASS: Record<AppointmentSource, string> = {
+  platform: 'bg-brand-50 text-brand-600 border-brand-100',
+  google:   'bg-blue-50 text-blue-600 border-blue-100',
+  ai:       'bg-emerald-50 text-emerald-600 border-emerald-100',
+  ghl:      'bg-amber-50 text-amber-600 border-amber-100',
 }
 
 function formatDate(iso: string) {
@@ -44,44 +86,97 @@ function formatDate(iso: string) {
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
 }
-function groupByDate(events: GCalEvent[]) {
-  const groups: Record<string, GCalEvent[]> = {}
-  for (const ev of events) {
-    const dt  = ev.start.dateTime ?? ev.start.date ?? ''
-    const day = dt.slice(0, 10)
+function timeAgo(iso: string) {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000)
+  if (diff < 1)  return 'az önce'
+  if (diff < 60) return `${diff} dk önce`
+  const h = Math.floor(diff / 60)
+  if (h < 24)    return `${h} saat önce`
+  return `${Math.floor(h / 24)} gün önce`
+}
+function groupByDate(appointments: Appointment[]) {
+  const groups: Record<string, Appointment[]> = {}
+  for (const appt of appointments) {
+    const day = appt.scheduled_at.slice(0, 10)
     if (!groups[day]) groups[day] = []
-    groups[day].push(ev)
+    groups[day].push(appt)
   }
   return groups
 }
 
 export default function CalendarPage() {
-  const [connected, setConnected]     = useState<boolean | null>(null)
   const [provider, setProvider]       = useState<string>('none')
-  const [dentsoftPending, setDentsoftPending] = useState(false)
-  const [events, setEvents]           = useState<GCalEvent[]>([])
+  const [appointments, setAppointments] = useState<Appointment[]>([])
+  const [lastSynced, setLastSynced]   = useState<string | null>(null)
+  const [syncing, setSyncing]         = useState(false)
   const [loading, setLoading]         = useState(true)
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
+
   const [showModal, setShowModal]     = useState(false)
-  const [form, setForm]               = useState<NewEventForm>(EMPTY_FORM)
+  const [form, setForm]               = useState<NewAppointmentForm>(EMPTY_FORM)
   const [saving, setSaving]           = useState(false)
   const [formError, setFormError]     = useState('')
   const [leads, setLeads]             = useState<Lead[]>([])
   const [leadSearch, setLeadSearch]   = useState('')
   const [leadsLoading, setLeadsLoading] = useState(false)
 
-  async function load() {
+  const loadAppointments = useCallback(async () => {
+    const params = new URLSearchParams()
+    if (sourceFilter !== 'all') params.set('source', sourceFilter)
+    const res  = await fetch(`/api/calendar/events?${params}`)
+    const data = await res.json()
+    setProvider(data.provider ?? 'none')
+    setLastSynced(data.last_synced_at ?? null)
+    setAppointments(data.appointments ?? [])
+  }, [sourceFilter])
+
+  const load = useCallback(async () => {
     setLoading(true)
+    let detectedProvider = 'none'
     try {
       const res  = await fetch('/api/calendar/events')
       const data = await res.json()
-      setConnected(data.connected ?? false)
-      setProvider(data.provider ?? 'none')
-      setDentsoftPending(data.dentsoft_pending ?? false)
-      setEvents(data.events ?? [])
-    } catch {
-      setConnected(false)
+      detectedProvider = data.provider ?? 'none'
+      setProvider(detectedProvider)
+      setLastSynced(data.last_synced_at ?? null)
+      setAppointments(data.appointments ?? [])
     } finally {
       setLoading(false)
+    }
+    // Auto-sync Google in background (non-blocking)
+    if (detectedProvider === 'google') {
+      setSyncing(true)
+      try {
+        const syncRes  = await fetch('/api/calendar/sync', { method: 'POST' })
+        const syncData = await syncRes.json()
+        if (syncRes.ok) {
+          setLastSynced(syncData.last_synced_at)
+          if (syncData.synced > 0) await loadAppointments()
+        }
+      } finally {
+        setSyncing(false)
+      }
+    }
+  }, [loadAppointments])
+
+  useEffect(() => { load() }, [])
+
+  // Reload when filter changes
+  useEffect(() => {
+    loadAppointments()
+  }, [sourceFilter])
+
+  async function manualSync() {
+    setSyncing(true)
+    try {
+      const syncRes  = await fetch('/api/calendar/sync', { method: 'POST' })
+      const syncData = await syncRes.json()
+      if (syncRes.ok) {
+        setLastSynced(syncData.last_synced_at)
+        await loadAppointments()
+      }
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -104,8 +199,6 @@ export default function CalendarPage() {
       .limit(20)
 
     if (search) {
-      // Filter via contacts full_name — use ilike on a joined column isn't directly possible
-      // so we do a contacts search first
       const { data: contactMatches } = await sb
         .from('contacts')
         .select('id')
@@ -122,9 +215,6 @@ export default function CalendarPage() {
     setLeadsLoading(false)
   }
 
-  useEffect(() => { load() }, [])
-
-  // Load leads when modal opens
   useEffect(() => {
     if (showModal) loadLeads()
   }, [showModal])
@@ -135,48 +225,59 @@ export default function CalendarPage() {
     return () => clearTimeout(t)
   }, [leadSearch, showModal])
 
-  async function createEvent() {
+  async function createAppointment() {
     if (!form.title || !form.date || !form.startTime || !form.endTime) {
       setFormError('Başlık, tarih ve saatler zorunlu')
       return
     }
     setSaving(true)
     setFormError('')
+
     const startDateTime = `${form.date}T${form.startTime}:00`
-    const endDateTime   = `${form.date}T${form.endTime}:00`
+    const [endH, endM]  = form.endTime.split(':').map(Number)
+    const [startH, startM] = form.startTime.split(':').map(Number)
+    const durationMinutes = Math.max(15, (endH * 60 + endM) - (startH * 60 + startM))
 
-    const body: Record<string, string | undefined> = {
-      title: form.title,
-      startDateTime,
-      endDateTime,
-      description:   form.description || undefined,
-      attendeeEmail: form.attendeeEmail || undefined,
+    const selectedLead = leads.find(l => l.id === form.leadId)
+    const contactId    = selectedLead?.contacts ? form.leadId
+      ? (await resolveContactId(form.leadId)) : form.contactId
+      : form.contactId
+
+    const body: Record<string, any> = {
+      scheduled_at:     startDateTime,
+      duration_minutes: durationMinutes,
+      title:            form.title,
+      appointment_type: form.appointment_type,
+      notes:            form.notes || undefined,
+      lead_id:          form.leadId || undefined,
+      contact_id:       contactId || undefined,
+      source:           'platform',
     }
-    if (form.leadId) body.description = [form.description, `[stoaix:lead_id:${form.leadId}]`].filter(Boolean).join('\n')
 
-    const res  = await fetch('/api/calendar/events', {
-      method: 'POST',
+    const res  = await fetch('/api/appointments', {
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body:    JSON.stringify(body),
     })
     const data = await res.json()
     if (!res.ok) { setFormError(data.error ?? 'Oluşturulamadı'); setSaving(false); return }
+
     setShowModal(false)
     setForm(EMPTY_FORM)
     setLeadSearch('')
-    load()
+    await loadAppointments()
     setSaving(false)
   }
 
-  // Extract lead_id from event description if stored
-  function getLeadIdFromEvent(ev: GCalEvent): string | null {
-    const desc = ev.description ?? ''
-    const match = desc.match(/\[stoaix:lead_id:([a-f0-9-]{36})\]/i)
-    return match ? match[1] : null
+  async function resolveContactId(leadId: string): Promise<string | null> {
+    const sb = createClient()
+    const { data } = await sb.from('leads').select('contact_id').eq('id', leadId).maybeSingle()
+    return data?.contact_id ?? null
   }
 
-  const grouped    = groupByDate(events)
+  const grouped      = groupByDate(appointments)
   const selectedLead = leads.find(l => l.id === form.leadId)
+  const hasEntries   = appointments.length > 0
 
   return (
     <div className="max-w-3xl mx-auto py-8 px-4">
@@ -185,20 +286,51 @@ export default function CalendarPage() {
         <div className="flex items-center gap-3">
           <Calendar size={22} className="text-brand-600" />
           <h1 className="text-xl font-semibold text-slate-800">Takvim</h1>
-          {connected && provider && provider !== 'none' && (
-            <span className="text-xs bg-brand-50 text-brand-600 border border-brand-100 px-2 py-0.5 rounded-full font-medium capitalize">
-              {provider === 'google' ? 'Google Takvim' : provider}
+          {provider && provider !== 'none' && (
+            <span className="text-xs bg-brand-50 text-brand-600 border border-brand-100 px-2 py-0.5 rounded-full font-medium">
+              {provider === 'google' ? 'Google Takvim bağlı' : provider}
             </span>
           )}
         </div>
-        {connected && provider === 'google' && (
+        <button
+          onClick={() => setShowModal(true)}
+          className="flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
+        >
+          <Plus size={15} />
+          Yeni Randevu
+        </button>
+      </div>
+
+      {/* Filter chips + Sync */}
+      <div className="flex items-center gap-2 mb-5 flex-wrap">
+        {(['all', 'platform', 'google', 'ai', 'ghl'] as const).map(f => (
           <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
+            key={f}
+            onClick={() => setSourceFilter(f)}
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+              sourceFilter === f
+                ? 'bg-brand-600 text-white border-brand-600'
+                : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+            }`}
           >
-            <Plus size={15} />
-            Yeni Randevu
+            {f === 'all' ? 'Tümü' : SOURCE_LABELS[f]}
           </button>
+        ))}
+
+        {provider === 'google' && (
+          <div className="ml-auto flex items-center gap-2">
+            {lastSynced && (
+              <span className="text-xs text-slate-400">Son senkron: {timeAgo(lastSynced)}</span>
+            )}
+            <button
+              onClick={manualSync}
+              disabled={syncing}
+              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-brand-600 border border-slate-200 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
+              {syncing ? 'Senkronize ediliyor...' : 'Senkronize Et'}
+            </button>
+          </div>
         )}
       </div>
 
@@ -207,99 +339,96 @@ export default function CalendarPage() {
           <Loader2 size={18} className="animate-spin" />
           <span className="text-sm">Yükleniyor...</span>
         </div>
-      ) : !connected ? (
-        /* Not connected */
+      ) : !hasEntries ? (
+        /* No appointments */
         <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center">
           <Calendar size={40} className="text-slate-300 mx-auto mb-4" />
-          <p className="text-slate-600 font-medium mb-1">Takvim henüz bağlı değil</p>
-          <p className="text-sm text-slate-400 mb-5">
-            Randevu özelliğini kullanmak için Google Takvim veya Dentsoft bağlayın.
+          <p className="text-slate-600 font-medium mb-1">
+            {sourceFilter !== 'all'
+              ? `${SOURCE_LABELS[sourceFilter]} kaynağından randevu yok`
+              : 'Yaklaşan randevu yok'}
           </p>
-          <Link
-            href="/dashboard/settings"
-            className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
-          >
-            Takvimi Bağla
-            <ChevronRight size={15} />
-          </Link>
-        </div>
-      ) : dentsoftPending ? (
-        /* Dentsoft — not yet implemented */
-        <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center">
-          <Calendar size={40} className="text-slate-300 mx-auto mb-4" />
-          <p className="text-slate-600 font-medium mb-1">Dentsoft Takvim</p>
           <p className="text-sm text-slate-400 mb-5">
-            Dentsoft takvim entegrasyonu geliştirme aşamasındadır. API bağlantısı kurulduktan sonra randevular burada görünecek.
+            {provider === 'none'
+              ? 'Google Takvim veya Dentsoft bağlamak için Ayarlar sayfasına gidin.'
+              : 'Yeni bir randevu oluşturmak için butona tıklayın.'}
           </p>
-          <Link
-            href="/dashboard/settings"
-            className="inline-flex items-center gap-2 text-brand-600 text-sm font-medium hover:underline"
-          >
-            Entegrasyon Ayarları
-            <ChevronRight size={15} />
-          </Link>
-        </div>
-      ) : events.length === 0 ? (
-        /* Connected but no events */
-        <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center">
-          <Calendar size={40} className="text-slate-300 mx-auto mb-4" />
-          <p className="text-slate-600 font-medium mb-1">Yaklaşan randevu yok</p>
-          <p className="text-sm text-slate-400 mb-5">Yeni bir randevu oluşturmak için butona tıklayın.</p>
-          <button
-            onClick={() => setShowModal(true)}
-            className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
-          >
-            <Plus size={15} />
-            Yeni Randevu
-          </button>
+          {provider === 'none' ? (
+            <Link
+              href="/dashboard/settings"
+              className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
+            >
+              Takvimi Bağla
+              <ChevronRight size={15} />
+            </Link>
+          ) : (
+            <button
+              onClick={() => setShowModal(true)}
+              className="inline-flex items-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
+            >
+              <Plus size={15} />
+              Yeni Randevu
+            </button>
+          )}
         </div>
       ) : (
-        /* Events list grouped by date */
+        /* Appointments grouped by date */
         <div className="space-y-6">
-          {Object.entries(grouped).map(([day, dayEvents]) => (
+          {Object.entries(grouped).map(([day, dayAppts]) => (
             <div key={day}>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
                 {formatDate(day + 'T00:00:00')}
               </p>
               <div className="space-y-2">
-                {dayEvents.map(ev => {
-                  const leadId = getLeadIdFromEvent(ev)
+                {dayAppts.map(appt => {
+                  const barClass    = SOURCE_BAR_CLASS[appt.source] ?? 'bg-slate-300'
+                  const badgeClass  = SOURCE_BADGE_CLASS[appt.source] ?? 'bg-slate-50 text-slate-500 border-slate-100'
+                  const contactName = appt.contacts?.full_name
+                  const displayName = appt.title ?? contactName ?? '(Başlıksız)'
+                  const endTime     = new Date(
+                    new Date(appt.scheduled_at).getTime() + appt.duration_minutes * 60_000
+                  ).toISOString()
+
                   return (
-                    <div key={ev.id} className="bg-white rounded-xl border border-slate-200 px-5 py-4 flex items-start gap-4 hover:border-brand-200 transition-colors">
-                      <div className="mt-0.5 w-1 h-12 rounded-full bg-brand-400 shrink-0" />
+                    <div
+                      key={appt.id}
+                      className="bg-white rounded-xl border border-slate-200 px-5 py-4 flex items-start gap-4 hover:border-brand-200 transition-colors"
+                    >
+                      <div className={`mt-0.5 w-1 h-12 rounded-full shrink-0 ${barClass}`} />
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-slate-800 truncate">{ev.summary ?? '(Başlıksız)'}</p>
-                        {ev.start.dateTime && (
-                          <div className="flex items-center gap-1.5 text-sm text-slate-500 mt-1">
-                            <Clock size={13} />
-                            {formatTime(ev.start.dateTime)}
-                            {ev.end.dateTime && ` — ${formatTime(ev.end.dateTime)}`}
-                          </div>
-                        )}
-                        {ev.attendees && ev.attendees.length > 0 && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-medium text-slate-800 truncate">{displayName}</p>
+                          <span className={`text-xs border px-1.5 py-0.5 rounded-full font-medium ${badgeClass}`}>
+                            {TYPE_LABELS[appt.appointment_type] ?? appt.appointment_type}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-sm text-slate-500 mt-1">
+                          <Clock size={13} />
+                          {formatTime(appt.scheduled_at)} — {formatTime(endTime)}
+                        </div>
+                        {contactName && appt.title && (
                           <div className="flex items-center gap-1.5 text-sm text-slate-400 mt-0.5">
                             <User size={13} />
-                            {ev.attendees.map(a => a.displayName ?? a.email).join(', ')}
+                            {contactName}
                           </div>
                         )}
-                        {ev.description && !ev.description.includes('lead_id:') && (
-                          <p className="text-sm text-slate-400 mt-1 truncate">{ev.description}</p>
+                        {appt.notes && (
+                          <p className="text-sm text-slate-400 mt-1 truncate">{appt.notes}</p>
                         )}
-                        {leadId && (
-                          <Link href={`/dashboard/leads/${leadId}`}
-                            className="inline-flex items-center gap-1 text-xs text-brand-500 hover:text-brand-700 mt-1 transition-colors">
+                        {appt.lead_id && (
+                          <Link
+                            href={`/dashboard/leads/${appt.lead_id}`}
+                            className="inline-flex items-center gap-1 text-xs text-brand-500 hover:text-brand-700 mt-1 transition-colors"
+                          >
                             <Link2 size={11} />
                             Lead detayı
                           </Link>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 mt-1 shrink-0">
-                        {ev.htmlLink && (
-                          <a href={ev.htmlLink} target="_blank" rel="noopener noreferrer"
-                            className="text-slate-300 hover:text-brand-500 transition-colors">
-                            <ExternalLink size={15} />
-                          </a>
-                        )}
+                      <div className="shrink-0 flex flex-col items-end gap-1">
+                        <span className={`text-xs border px-1.5 py-0.5 rounded-full font-medium ${badgeClass}`}>
+                          {SOURCE_LABELS[appt.source] ?? appt.source}
+                        </span>
                       </div>
                     </div>
                   )
@@ -310,14 +439,16 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* New Event Modal */}
+      {/* New Appointment Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h2 className="font-semibold text-slate-800">Yeni Randevu</h2>
-              <button onClick={() => { setShowModal(false); setForm(EMPTY_FORM); setFormError(''); setLeadSearch('') }}
-                className="text-slate-400 hover:text-slate-600">
+              <button
+                onClick={() => { setShowModal(false); setForm(EMPTY_FORM); setFormError(''); setLeadSearch('') }}
+                className="text-slate-400 hover:text-slate-600"
+              >
                 <X size={18} />
               </button>
             </div>
@@ -332,6 +463,20 @@ export default function CalendarPage() {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Randevu Tipi</label>
+                <select
+                  value={form.appointment_type}
+                  onChange={e => setForm(f => ({ ...f, appointment_type: e.target.value as AppointmentType }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  {(Object.entries(TYPE_LABELS) as [AppointmentType, string][]).map(([val, label]) => (
+                    <option key={val} value={val}>{label}</option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Tarih *</label>
                 <input
@@ -341,6 +486,7 @@ export default function CalendarPage() {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Başlangıç *</label>
@@ -415,26 +561,23 @@ export default function CalendarPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Katılımcı e-posta</label>
-                <input
-                  type="email"
-                  value={form.attendeeEmail}
-                  onChange={e => setForm(f => ({ ...f, attendeeEmail: e.target.value }))}
-                  placeholder="ornek@gmail.com"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Açıklama</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Notlar</label>
                 <textarea
-                  value={form.description}
-                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  value={form.notes}
+                  onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                   placeholder="İsteğe bağlı not..."
                   rows={2}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
             </div>
+
+            {provider === 'google' && (
+              <p className="text-xs text-slate-400 mt-3 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
+                Google Takvim'e otomatik eklenecek
+              </p>
+            )}
 
             {formError && <p className="text-sm text-red-500 mt-3">{formError}</p>}
 
@@ -446,7 +589,7 @@ export default function CalendarPage() {
                 İptal
               </button>
               <button
-                onClick={createEvent}
+                onClick={createAppointment}
                 disabled={saving}
                 className="flex items-center gap-2 bg-brand-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors"
               >
