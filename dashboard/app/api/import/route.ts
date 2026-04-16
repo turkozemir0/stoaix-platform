@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
       status: 'new',
       qualification_score: 5,
       source_channel: chunk[idx]?.source ?? 'import',
-      collected_data: {},
+      collected_data: { _bulk_import: true },
     }))
 
     await service.from('leads').insert(leadRows)
