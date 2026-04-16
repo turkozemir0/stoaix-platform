@@ -7,7 +7,7 @@ function getServiceClient() {
   return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 
-// PATCH — Randevu durumu güncelle (attended, no_show, confirmed, cancelled, rescheduled)
+// PATCH — Randevu güncelle (status, title, appointment_type, notes, scheduled_at)
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -28,23 +28,41 @@ export async function PATCH(
   }
 
   const body = await request.json()
-  const { status, notes, scheduled_at } = body
+  const { status, notes, scheduled_at, title, appointment_type } = body
 
   const VALID_STATUSES = ['scheduled', 'confirmed', 'attended', 'no_show', 'cancelled', 'rescheduled']
-  if (!status || !VALID_STATUSES.includes(status)) {
+  const VALID_TYPES    = ['consultation', 'operation', 'follow_up', 'other']
+
+  if (status !== undefined && !VALID_STATUSES.includes(status)) {
     return NextResponse.json({
-      error: `status gerekli. Geçerli değerler: ${VALID_STATUSES.join(', ')}`,
+      error: `Geçersiz status. Geçerli değerler: ${VALID_STATUSES.join(', ')}`,
+    }, { status: 400 })
+  }
+  if (appointment_type !== undefined && !VALID_TYPES.includes(appointment_type)) {
+    return NextResponse.json({
+      error: `Geçersiz appointment_type. Geçerli değerler: ${VALID_TYPES.join(', ')}`,
     }, { status: 400 })
   }
 
-  const now = new Date().toISOString()
-  const updates: Record<string, any> = { status, updated_at: now }
+  // Require at least one field
+  if (status === undefined && notes === undefined && scheduled_at === undefined &&
+      title === undefined && appointment_type === undefined) {
+    return NextResponse.json({ error: 'Güncellenecek alan yok' }, { status: 400 })
+  }
 
-  if (status === 'attended')  updates.attended_at  = now
-  if (status === 'no_show')   updates.no_show_at   = now
-  if (status === 'confirmed') updates.confirmed_at = now
-  if (notes !== undefined)    updates.notes        = notes
-  if (scheduled_at)           updates.scheduled_at = scheduled_at
+  const now = new Date().toISOString()
+  const updates: Record<string, any> = { updated_at: now }
+
+  if (status !== undefined) {
+    updates.status = status
+    if (status === 'attended')  updates.attended_at  = now
+    if (status === 'no_show')   updates.no_show_at   = now
+    if (status === 'confirmed') updates.confirmed_at = now
+  }
+  if (notes !== undefined)            updates.notes            = notes
+  if (scheduled_at !== undefined)     updates.scheduled_at     = scheduled_at
+  if (title !== undefined)            updates.title            = title
+  if (appointment_type !== undefined) updates.appointment_type = appointment_type
 
   const service = getServiceClient()
   const { data, error } = await service
@@ -60,7 +78,7 @@ export async function PATCH(
 
   // Sync to Google Calendar if appointment has an external_id and source != 'google'
   if (data.external_id && data.source !== 'google') {
-    syncToGoogle(data, orgUser.organization_id, status, scheduled_at)
+    syncToGoogle(data, orgUser.organization_id, status, scheduled_at, title, notes)
       .catch(err => console.warn('[calendar] Google sync failed:', err))
   }
 
@@ -74,48 +92,57 @@ export async function PATCH(
 async function syncToGoogle(
   appointment: any,
   orgId: string,
-  newStatus: string,
+  newStatus: string | undefined,
   newScheduledAt: string | undefined,
+  newTitle: string | undefined,
+  newNotes: string | undefined,
 ) {
   try {
     const service = getServiceClient()
     const { data: org } = await service
-      .from('organizations')
-      .select('channel_config')
-      .eq('id', orgId)
-      .single()
+      .from('organizations').select('channel_config').eq('id', orgId).single()
 
     const cal = (org?.channel_config as any)?.calendar
-    if (!cal || cal.provider !== 'google' || !cal.access_token) return
+    const provider = cal?.provider ?? (cal?.access_token ? 'google' : 'none')
+    if (provider !== 'google' || !cal?.access_token) return
 
     const token = await getValidToken(orgId, cal)
     if (!token) return
 
-    const calId = encodeURIComponent(cal.calendar_id || 'primary')
+    const calId   = encodeURIComponent(cal.calendar_id || 'primary')
     const eventId = appointment.external_id
 
     if (newStatus === 'cancelled') {
-      // Delete the Google Calendar event
       await fetch(
         `https://www.googleapis.com/calendar/v3/calendars/${calId}/events/${eventId}`,
         { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
       )
-    } else if (newScheduledAt) {
-      // Update the Google Calendar event time
+      return
+    }
+
+    // Build PATCH payload for any field updates
+    const patch: Record<string, any> = {}
+
+    if (newTitle !== undefined)   patch.summary     = newTitle
+    if (newNotes !== undefined)   patch.description = newNotes
+
+    if (newScheduledAt) {
       const parsed = new Date(newScheduledAt)
       const endAt  = new Date(parsed.getTime() + (appointment.duration_minutes ?? 60) * 60_000)
-      await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/${calId}/events/${eventId}`,
-        {
-          method:  'PATCH',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            start: { dateTime: parsed.toISOString(), timeZone: 'Europe/Istanbul' },
-            end:   { dateTime: endAt.toISOString(),   timeZone: 'Europe/Istanbul' },
-          }),
-        }
-      )
+      patch.start = { dateTime: parsed.toISOString(), timeZone: 'Europe/Istanbul' }
+      patch.end   = { dateTime: endAt.toISOString(),  timeZone: 'Europe/Istanbul' }
     }
+
+    if (Object.keys(patch).length === 0) return
+
+    await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${calId}/events/${eventId}`,
+      {
+        method:  'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body:    JSON.stringify(patch),
+      }
+    )
   } catch (err) {
     console.warn('[calendar] syncToGoogle error:', err)
   }

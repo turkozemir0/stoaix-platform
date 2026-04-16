@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Calendar, Plus, Loader2, ChevronLeft, ChevronRight,
-  Clock, User, X, Link2, Search, RefreshCw,
+  Clock, User, X, Link2, Search, RefreshCw, Pencil,
 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -149,6 +149,12 @@ export default function CalendarPage() {
   const [form, setForm]           = useState<NewAppointmentForm>(EMPTY_FORM)
   const [saving, setSaving]       = useState(false)
   const [formError, setFormError] = useState('')
+
+  // Edit modal
+  const [editAppt, setEditAppt]     = useState<Appointment | null>(null)
+  const [editForm, setEditForm]     = useState({ title: '', appointment_type: 'consultation' as AppointmentType, notes: '' })
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError]   = useState('')
   const [leads, setLeads]         = useState<Lead[]>([])
   const [leadSearch, setLeadSearch] = useState('')
   const [leadsLoading, setLeadsLoading] = useState(false)
@@ -278,6 +284,35 @@ export default function CalendarPage() {
     const t = setTimeout(() => loadLeads(leadSearch), 300)
     return () => clearTimeout(t)
   }, [leadSearch, showModal])
+
+  function openEdit(appt: Appointment) {
+    setEditAppt(appt)
+    setEditForm({
+      title:            appt.title ?? '',
+      appointment_type: appt.appointment_type,
+      notes:            appt.notes ?? '',
+    })
+    setEditError('')
+  }
+
+  async function saveEdit() {
+    if (!editAppt) return
+    setEditSaving(true); setEditError('')
+    const res = await fetch(`/api/appointments/${editAppt.id}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title:            editForm.title            || null,
+        appointment_type: editForm.appointment_type,
+        notes:            editForm.notes            || null,
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setEditError(data.error ?? 'Kaydedilemedi'); setEditSaving(false); return }
+    setEditAppt(null)
+    await loadAppointments()
+    setEditSaving(false)
+  }
 
   async function createAppointment() {
     if (!form.title || !form.date || !form.startTime || !form.endTime) {
@@ -504,10 +539,19 @@ export default function CalendarPage() {
                     const barCls  = SOURCE_BAR_CLASS[appt.source] ?? 'bg-slate-300'
                     const name    = appt.title ?? appt.contacts?.full_name ?? '(Başlıksız)'
                     return (
-                      <div key={appt.id} className="px-4 py-3 flex gap-3 hover:bg-slate-50 transition-colors">
+                      <div key={appt.id} className="px-4 py-3 flex gap-3 hover:bg-slate-50 transition-colors group">
                         <div className={`w-1 rounded-full shrink-0 ${barCls}`} />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-800 truncate">{name}</p>
+                          <div className="flex items-start justify-between gap-1">
+                            <p className="text-sm font-medium text-slate-800 truncate">{name}</p>
+                            <button
+                              onClick={() => openEdit(appt)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600 shrink-0"
+                              title="Düzenle"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                          </div>
                           <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-0.5">
                             <Clock size={11} />
                             {fmtTime(appt.scheduled_at)} — {fmtTime(endTime)}
@@ -549,6 +593,82 @@ export default function CalendarPage() {
 
       {/* ── Upcoming Appointments (next 14 days) ── */}
       <UpcomingSection appointments={appointments} />
+
+      {/* ── Edit Appointment Modal ── */}
+      {editAppt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="font-semibold text-slate-800">Randevu Düzenle</h2>
+              <button onClick={() => setEditAppt(null)} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Başlık</label>
+                <input
+                  value={editForm.title}
+                  onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))}
+                  placeholder="Randevu başlığı"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Randevu Tipi</label>
+                <select
+                  value={editForm.appointment_type}
+                  onChange={e => setEditForm(f => ({ ...f, appointment_type: e.target.value as AppointmentType }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  {(Object.entries(TYPE_LABELS) as [AppointmentType, string][]).map(([v, l]) => (
+                    <option key={v} value={v}>{l}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Açıklama / Not</label>
+                <textarea
+                  value={editForm.notes}
+                  onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="İsteğe bağlı not..."
+                  rows={3}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
+            </div>
+
+            {editAppt.source === 'platform' && (
+              <p className="text-xs text-slate-400 mt-3 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
+                Google Takvim'e otomatik yansıyacak
+              </p>
+            )}
+
+            {editError && <p className="text-sm text-red-500 mt-3">{editError}</p>}
+
+            <div className="flex justify-end gap-3 mt-5">
+              <button
+                onClick={() => setEditAppt(null)}
+                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800"
+              >
+                İptal
+              </button>
+              <button
+                onClick={saveEdit}
+                disabled={editSaving}
+                className="flex items-center gap-2 bg-brand-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors"
+              >
+                {editSaving ? <Loader2 size={14} className="animate-spin" /> : null}
+                Kaydet
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── New Appointment Modal ── */}
       {showModal && (
