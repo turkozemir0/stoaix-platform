@@ -34,7 +34,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .single()
 
   if (error || !org) return NextResponse.json({ error: 'Org bulunamadı' }, { status: 404 })
-  return NextResponse.json(org)
+
+  // Plan bilgisini ekle (voice language tier check için)
+  const { data: sub } = await service
+    .from('org_subscriptions')
+    .select('plan_id, status')
+    .eq('organization_id', params.id)
+    .limit(1)
+    .maybeSingle()
+
+  return NextResponse.json({ ...org, _plan: sub?.plan_id ?? 'legacy' })
 }
 
 // PATCH — channel_config ve/veya crm_config güncelle

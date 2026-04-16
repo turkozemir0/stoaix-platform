@@ -46,9 +46,14 @@ interface CalendarConfig {
   clinic_id?: string
 }
 
+interface VoiceLanguageConfig {
+  language?: string
+}
+
 interface ChannelConfig {
   voice_inbound:  VoiceInboundConfig
   voice_outbound: VoiceOutboundConfig
+  voice?:         VoiceLanguageConfig
   whatsapp:       WhatsAppChannelConfig
   instagram:      { active: boolean; provider?: string; credentials?: Record<string, string> }
   calendar?:      CalendarConfig
@@ -69,6 +74,7 @@ interface OrgDetail {
   name: string
   channel_config: ChannelConfig
   crm_config: CrmConfig
+  _plan?: string
 }
 
 interface Props {
@@ -118,6 +124,23 @@ const OUTBOUND_CONNECTION_TYPES = [
   { value: 'livekit_sip', label: 'LiveKit SIP', desc: 'LiveKit outbound SIP trunk' },
   { value: 'other',       label: 'Diğer',       desc: 'Başka provider' },
 ]
+
+const VOICE_LANGUAGES_BASE = [
+  { value: 'tr', label: 'Türkçe (TR)' },
+  { value: 'en', label: 'İngilizce (EN)' },
+]
+
+const VOICE_LANGUAGES_ADVANCED = [
+  ...VOICE_LANGUAGES_BASE,
+  { value: 'ru', label: 'Rusça (RU)' },
+  { value: 'fr', label: 'Fransızca (FR)' },
+  { value: 'es', label: 'İspanyolca (ES)' },
+  { value: 'it', label: 'İtalyanca (IT)' },
+  { value: 'pt', label: 'Portekizce (PT)' },
+  { value: 'zh', label: 'Çince (ZH)' },
+]
+
+const MULTILANG_PLANS = new Set(['advanced', 'agency', 'legacy'])
 
 const TABS = [
   { key: 'channels',  label: 'Kanallar & Mesajlaşma' },
@@ -225,6 +248,10 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
   const [webhookTesting, setWebhookTesting]     = useState(false)
   const [webhookTestResult, setWebhookTestResult] = useState<'ok' | 'fail' | null>(null)
 
+  // ── Voice language state ──
+  const [voiceLang, setVoiceLang]         = useState('tr')
+  const [orgPlan, setOrgPlan]             = useState<string>('legacy')
+
   // ── Calendar state ──
   const [calProvider, setCalProvider]     = useState<CalendarConfig['provider']>('none')
   const [calGoogleConnected, setCalGoogleConnected] = useState(false)
@@ -258,6 +285,10 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
       setInbBridgeTwiml(inb?.bridge_twiml_url ?? '')
       setInbLkDispatch(inb?.livekit_dispatch_rule_id ?? '')
       setInbLkTrunk(inb?.livekit_sip_trunk_id ?? '')
+
+      // voice language
+      setVoiceLang(cc.voice?.language ?? 'tr')
+      setOrgPlan((data as OrgDetail)._plan ?? 'legacy')
 
       // outbound
       const out = cc.voice_outbound as VoiceOutboundConfig | undefined
@@ -390,6 +421,7 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
     const channelConfig: ChannelConfig = {
       voice_inbound:  voiceInbound,
       voice_outbound: voiceOutbound,
+      voice: { language: voiceLang },
       whatsapp: waActive ? { active: true, provider: waProvider, credentials: waCreds } : { active: false },
       // Preserve Instagram OAuth credentials — only toggle active flag here
       instagram: { ...existingCC.instagram, active: igActive },
@@ -606,6 +638,33 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
                           </div>
                         </div>
                       )}
+                    </div>
+                  </div>
+
+                  {/* Voice Language */}
+                  <div>
+                    <SectionLabel>Konuşma Dili</SectionLabel>
+                    <div className="border border-slate-100 rounded-xl p-4 space-y-3">
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1">AI Agent Dili</label>
+                        <select
+                          value={voiceLang}
+                          onChange={e => setVoiceLang(e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+                        >
+                          {(MULTILANG_PLANS.has(orgPlan) ? VOICE_LANGUAGES_ADVANCED : VOICE_LANGUAGES_BASE).map(l => (
+                            <option key={l.value} value={l.value}>{l.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {!MULTILANG_PLANS.has(orgPlan) && (
+                        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                          TR/EN dışı diller Advanced veya Agency plan gerektirir. Mevcut plan: <strong>{orgPlan || 'lite/plus'}</strong>
+                        </p>
+                      )}
+                      <p className="text-xs text-slate-400">
+                        Ses ID'leri Vercel'de <code className="font-mono">CARTESIA_VOICE_ID_XX</code> env var ile ayarlanır.
+                      </p>
                     </div>
                   </div>
 

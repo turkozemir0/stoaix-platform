@@ -34,6 +34,7 @@ from livekit.agents import (
     llm,
 )
 from livekit.plugins import cartesia, deepgram, openai, anthropic, silero
+from livekit.plugins.turn_detector import MultilingualModel
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -57,7 +58,16 @@ async def load_org(org_id: str) -> dict:
     res = sb.table("organizations").select("*").eq("id", org_id).single().execute()
     if not res.data:
         raise ValueError(f"Organization not found: {org_id}")
-    return res.data
+    org = res.data
+
+    # Subscription plan — tier check için (Advanced+ = çok dilli ses)
+    sub = sb.table("org_subscriptions") \
+        .select("plan_id, status") \
+        .eq("organization_id", org_id) \
+        .limit(1) \
+        .execute()
+    org["_plan"] = sub.data[0]["plan_id"] if sub.data else "legacy"
+    return org
 
 
 async def load_playbook(org_id: str, channel: str = "voice") -> dict | None:
@@ -636,9 +646,12 @@ Sadece JSON döndür. Örnek: {{"full_name": "Ali Veli", "phone": null, "budget"
             max_tokens=500,
         )
         return json.loads(resp.choices[0].message.content)
+    except json.JSONDecodeError as e:
+        logger.error(f"extract_collected_data JSON parse failed: {e}")
+        return {"_extraction_failed": True, "_error": "json_parse"}
     except Exception as e:
-        logger.warning(f"collected_data extraction failed: {e}")
-        return {}
+        logger.error(f"extract_collected_data API failed: {e}", exc_info=True)
+        return {"_extraction_failed": True, "_error": str(e)[:100]}
 
 
 def calculate_qualification_score(intake_fields: list, collected_data: dict) -> int:
@@ -693,8 +706,11 @@ Konuşma:
         )
         return resp.choices[0].message.content.strip()
     except Exception as e:
-        logger.warning(f"summary generation failed: {e}")
+        logger.error(f"generate_call_summary failed: {e}", exc_info=True)
         return ""
+
+
+PROTECTED_STATUSES = {"qualified", "handed_off", "converted", "lost", "nurturing"}
 
 
 async def update_lead_data(lead_id: str, intake_fields: list, collected_data: dict, summary: str = ""):
@@ -702,6 +718,7 @@ async def update_lead_data(lead_id: str, intake_fields: list, collected_data: di
     if not lead_id:
         return
     try:
+        sb = get_supabase()
         must_keys = {f["key"] for f in intake_fields if f.get("priority") == "must"}
 
         completeness = {
@@ -711,17 +728,21 @@ async def update_lead_data(lead_id: str, intake_fields: list, collected_data: di
         missing = [k for k in must_keys if not collected_data.get(k)]
         score   = calculate_qualification_score(intake_fields, collected_data)
 
+        # Mevcut lead status'ünü çek — korunan statüleri geçme
+        current_res = sb.table("leads").select("status").eq("id", lead_id).single().execute()
+        current_status = (current_res.data or {}).get("status", "new")
+
         update_payload = {
             "collected_data":      collected_data,
             "data_completeness":   completeness,
             "missing_fields":      missing,
             "qualification_score": score,
-            "status":              "in_progress" if collected_data else "new",
         }
+        if current_status not in PROTECTED_STATUSES:
+            update_payload["status"] = "in_progress" if collected_data else "new"
         if summary:
             update_payload["ai_summary"] = summary
 
-        sb = get_supabase()
         sb.table("leads").update(update_payload).eq("id", lead_id).execute()
         logger.info(f"lead updated — score: {score}, missing: {missing}")
     except Exception as e:
@@ -797,7 +818,7 @@ async def save_call(
             "livekit_room_name": (metadata or {}).get("livekit_room"),
             "started_at":      call_start.isoformat(),
             "ended_at":        datetime.now(timezone.utc).isoformat(),
-            **({"metadata": metadata} if metadata else {}),
+            "metadata":        metadata or {},
         }).execute()
         logger.info(f"voice_call saved — {direction}, {duration}s")
     except Exception as e:
@@ -1260,35 +1281,65 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
                 result = await calendar_adapter.create_appointment(name, phone, datetime_str, notes)
                 if result["success"]:
                     sb = get_supabase()
-                    # Create voice reminder tasks (-24h and -2h)
-                    asyncio.create_task(create_appointment_reminders(
-                        org_id, contact_id, lead_id, conv_id, datetime_str
-                    ))
-                    # Save to appointments table (canonical DB source)
-                    asyncio.create_task(save_appointment_to_db(
-                        sb, org_id, contact_id, lead_id, conv_id,
-                        datetime_str, notes=notes,
-                        external_id=result.get("appointment_id"),
-                    ))
-                    return f"Randevunuz oluşturuldu: {name}, {datetime_str}. Onay bilgisi size iletilecektir."
+                    try:
+                        # Save to appointments table (canonical DB source) — await for error propagation
+                        await save_appointment_to_db(
+                            sb, org_id, contact_id, lead_id, conv_id,
+                            datetime_str, notes=notes,
+                            external_id=result.get("appointment_id"),
+                        )
+                        # Reminder tasks fire-and-forget (opsiyonel, failure is non-blocking)
+                        asyncio.create_task(create_appointment_reminders(
+                            org_id, contact_id, lead_id, conv_id, datetime_str
+                        ))
+                        return f"Randevunuz oluşturuldu: {name}, {datetime_str}. Onay bilgisi size iletilecektir."
+                    except Exception as e:
+                        logger.error(f"book_appointment DB save failed: {e}")
+                        return "Kayıt hatası oluştu, lütfen tekrar deneyin."
                 return "Randevu oluşturulurken bir sorun oluştu. Lütfen tekrar deneyin veya bizi arayın."
 
     # ── Session ───────────────────────────────────────────────────────────────
-    VOICE_IDS = {
+    CARTESIA_VOICES = {
         "tr": os.environ.get("CARTESIA_VOICE_ID_TR", "c1cfee3d-532d-47f8-8dd2-8e5b2b66bf1d"),
         "en": os.environ.get("CARTESIA_VOICE_ID_EN", "62ae83ad-4f6a-430b-af41-a9bede9286ca"),
+        "ru": os.environ.get("CARTESIA_VOICE_ID_RU", ""),
+        "fr": os.environ.get("CARTESIA_VOICE_ID_FR", ""),
+        "es": os.environ.get("CARTESIA_VOICE_ID_ES", ""),
+        "it": os.environ.get("CARTESIA_VOICE_ID_IT", ""),
+        "pt": os.environ.get("CARTESIA_VOICE_ID_PT", ""),
+        "zh": os.environ.get("CARTESIA_VOICE_ID_ZH", ""),
     }
-    tts_lang = lang if lang in VOICE_IDS else "tr"
+    MULTILANG_PLANS = {"advanced", "agency", "legacy"}
+
+    # Dil önceliği: channel_config.voice.language > meta/persona lang
+    org_lang_raw = org.get("channel_config", {}).get("voice", {}).get("language") or lang
+
+    # Tier kısıtlaması: Lite/Plus → sadece TR/EN
+    org_plan = org.get("_plan", "legacy")
+    if org_lang_raw not in ("tr", "en") and org_plan not in MULTILANG_PLANS:
+        logger.info(f"Plan {org_plan} → multi-language blocked, fallback to TR")
+        tts_lang = "tr"
+    else:
+        # Ses ID'si yoksa (env boş) TR'ye düş
+        tts_lang = org_lang_raw if CARTESIA_VOICES.get(org_lang_raw) else "tr"
+
+    voice_id = CARTESIA_VOICES.get(tts_lang) or CARTESIA_VOICES["tr"]
 
     session = AgentSession(
         stt=deepgram.STT(model="nova-3", language=tts_lang),
         llm=llm_instance,
         tts=cartesia.TTS(
             model="sonic-3",
-            voice=VOICE_IDS[tts_lang],
+            voice=voice_id,
             language=tts_lang,
         ),
         vad=silero.VAD.load(),
+        turn_detection=MultilingualModel(),   # Semantik cümle tamamlanma (Türkçe uyumlu)
+        allow_interruptions=True,
+        interrupt_speech_duration=0.3,        # 300ms gerçek barge-in
+        interrupt_min_words=1,
+        min_endpointing_delay=0.5,
+        max_endpointing_delay=6.0,            # Türkçe uzun cümle desteği
         **({"fnc_ctx": fnc_ctx} if fnc_ctx else {}),
     )
 
@@ -1332,22 +1383,27 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
 
     @ctx.room.on("disconnected")
     def on_disconnected():
-        asyncio.create_task(_save_all(
-            org_id=org_id,
-            direction=direction,
-            call_start=call_start,
-            transcript=transcript,
-            phone_from=phone_from,
-            phone_to=phone_to,
-            contact_id=contact_id,
-            lead_id=lead_id,
-            conv_id=conv_id,
-            intake=intake,
-            handoff_reason=handoff_reason,
-            room_name=room_name,
-            run_id=meta.get("run_id"),
-            callback_url=meta.get("callback_url"),
-        ))
+        async def _safe_save():
+            try:
+                await _save_all(
+                    org_id=org_id,
+                    direction=direction,
+                    call_start=call_start,
+                    transcript=transcript,
+                    phone_from=phone_from,
+                    phone_to=phone_to,
+                    contact_id=contact_id,
+                    lead_id=lead_id,
+                    conv_id=conv_id,
+                    intake=intake,
+                    handoff_reason=handoff_reason,
+                    room_name=room_name,
+                    run_id=meta.get("run_id"),
+                    callback_url=meta.get("callback_url"),
+                )
+            except Exception as e:
+                logger.error(f"CRITICAL _save_all failed — call may not be recorded: {e}", exc_info=True)
+        asyncio.create_task(_safe_save())
 
     await session.generate_reply(instructions=opening)
 
@@ -1377,7 +1433,9 @@ async def _save_all(
 
     # 3. Handoff log
     if handoff_reason:
-        summary = f"Handoff tetiklendi ({handoff_reason}). Konuşma süresi: {duration}s."
+        ai_summary_for_handoff = await generate_call_summary(transcript, collected_data, org_id)
+        summary = ai_summary_for_handoff or \
+            f"Handoff tetiklendi ({handoff_reason}). Süre: {duration}s. Özet üretilemedi."
         await save_handoff(
             org_id=org_id,
             lead_id=lead_id,
@@ -1394,7 +1452,14 @@ async def _save_all(
         if conv_id:
             await close_conversation(conv_id)
 
-    # 5. Voice call kaydet
+    # 5. Voice call kaydet — debug metadata ile
+    call_metadata = {
+        "livekit_room":       room_name,
+        "extraction_status":  "failed" if collected_data.get("_extraction_failed") else "ok",
+        "extraction_error":   collected_data.get("_error"),
+        "summary_generated":  bool(summary),
+        "save_version":       "v2",
+    }
     await save_call(
         org_id=org_id,
         direction=direction,
@@ -1406,7 +1471,7 @@ async def _save_all(
         contact_id=contact_id,
         lead_id=lead_id,
         conversation_id=conv_id,
-        metadata={"livekit_room": room_name},
+        metadata=call_metadata,
     )
 
     logger.info(f"All data saved — duration: {duration}s, handoff: {handoff_reason}")
