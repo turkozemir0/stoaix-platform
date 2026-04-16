@@ -95,12 +95,39 @@ function AddLeadToStageModal({
     debounceRef.current = setTimeout(async () => {
       setSearching(true)
       const sb = createClient()
-      const { data } = await sb
-        .from('leads')
+
+      // 1. contacts tablosunda ara → contact_id listesi
+      const { data: contacts } = await sb
+        .from('contacts')
+        .select('id')
+        .or(`phone.ilike.%${query}%,full_name.ilike.%${query}%`)
+        .limit(200)
+
+      const contactIds = (contacts ?? []).map((c: any) => c.id)
+
+      // 2. leads: contact_id eşleşenleri + collected_data->full_name eşleşenleri
+      const byContact = contactIds.length > 0
+        ? await sb.from('leads')
+            .select('id, qualification_score, status, collected_data, contacts(full_name, phone)')
+            .in('contact_id', contactIds)
+            .limit(20)
+        : { data: [] }
+
+      const byName = await sb.from('leads')
         .select('id, qualification_score, status, collected_data, contacts(full_name, phone)')
-        .or(`contacts.phone.ilike.%${query}%,contacts.full_name.ilike.%${query}%,collected_data->>full_name.ilike.%${query}%`)
+        .ilike('collected_data->>full_name', `%${query}%`)
         .limit(20)
-      setResults((data as any[]) ?? [])
+
+      const results = [byContact, byName]
+      const merged: any[] = []
+      const seen = new Set<string>()
+      for (const r of results) {
+        for (const lead of r.data ?? []) {
+          if (!seen.has(lead.id)) { seen.add(lead.id); merged.push(lead) }
+        }
+      }
+
+      setResults(merged)
       setSearching(false)
     }, 350)
   }, [query])
