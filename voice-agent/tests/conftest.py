@@ -6,6 +6,7 @@ DB tamamen mock — gerçek Supabase, LiveKit veya telefon bağlantısı yok.
 
 import os
 import pytest
+from tests.fixtures.clinic_fixtures import CLINIC_FIXTURES
 
 # Test ortamı için sahte env vars (agent.py load_dotenv öncesi gerekli)
 os.environ.setdefault("PLATFORM_SUPABASE_URL", "https://test.supabase.co")
@@ -67,6 +68,28 @@ def mock_supabase(mocker, mock_org, mock_playbook, mock_intake):
     mocker.patch("agent.load_playbook", return_value=mock_playbook)
     mocker.patch("agent.load_intake_schema", return_value=mock_intake)
     mocker.patch("agent.vector_search_kb", return_value="")
+    mocker.patch("agent.get_supabase")
+    mocker.patch("agent.save_messages")
+    mocker.patch("agent.save_call")
+    mocker.patch("agent.update_lead_data")
+    mocker.patch("agent.close_conversation")
+    mocker.patch("agent.create_conversation", return_value="test-conv-id")
+    mocker.patch("agent.upsert_contact_and_lead", return_value=("test-contact-id", "test-lead-id"))
+
+
+@pytest.fixture(params=list(CLINIC_FIXTURES.keys()))
+def sector_fixture(request):
+    """8 sektör için parametrize fixture — her test 8 kez çalışır."""
+    return CLINIC_FIXTURES[request.param]
+
+
+@pytest.fixture
+def sector_mock_supabase(mocker, sector_fixture):
+    """Sektöre özgü mock — gerçek DB/LLM yok."""
+    mocker.patch("agent.load_org",           return_value=sector_fixture["org"])
+    mocker.patch("agent.load_playbook",      return_value=sector_fixture["playbook"])
+    mocker.patch("agent.load_intake_schema", return_value=sector_fixture["intake"])
+    mocker.patch("agent.vector_search_kb",   return_value="")
     mocker.patch("agent.get_supabase")
     mocker.patch("agent.save_messages")
     mocker.patch("agent.save_call")

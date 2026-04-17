@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import AgentTestPanel from '@/components/agent/AgentTestPanel'
-import { VOICE_TEMPLATES, WHATSAPP_TEMPLATES } from '@/lib/agent-templates'
+import { getWhatsappTemplates, getVoiceTemplates } from '@/lib/agent-templates'
 import type { AgentTemplate } from '@/lib/agent-templates'
 import KnowledgeClient from '../knowledge/KnowledgeClient'
 import type { KnowledgeItem } from '@/lib/types'
@@ -194,6 +194,7 @@ function AgentPageInner() {
   const [saving, setSaving]                 = useState(false)
   const [savedChannel, setSavedChannel]     = useState<Channel | null>(null)
   const [orgName, setOrgName]               = useState('')
+  const [clinicType, setClinicType]         = useState('other')
   const [voiceActive, setVoiceActive]       = useState(false)
   const [hasCalendar, setHasCalendar]       = useState(false)
   const [calendarWarning, setCalendarWarning] = useState(false)
@@ -312,6 +313,7 @@ function AgentPageInner() {
       const ap = (orgData?.ai_persona ?? {}) as Record<string, any>
       setPersona({ name: ap.persona_name || '', tone: ap.tone || 'warm-professional' })
       setOrgName(orgData?.name || '')
+      setClinicType(ap.clinic_type || 'other')
 
       // Routing config yükle
       try {
@@ -727,25 +729,48 @@ function AgentPageInner() {
           </div>
         </div>
 
-        {/* Yapılandırılmış asistanlar */}
-        {(voice.id || whatsapp.id) && (
-          <section className="space-y-3">
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-              Yapılandırılmış Asistanlar
-            </h2>
-            <div className="flex flex-wrap gap-4">
-              {voice.id && (
-                <ConfiguredCard channel="voice" onClick={() => openEditor('voice', 'custom')} />
-              )}
+        {/* Asistanlar hazır banner */}
+        {(voice.id || whatsapp.id || !hasVoiceEntitlement) && (
+          <section className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={18} className="text-emerald-500" />
+              <div>
+                <p className="text-sm font-bold text-slate-800">Asistanlarınız hazır</p>
+                <p className="text-xs text-slate-500">Kliniğinize özel optimize edildi — hemen test edebilir veya özelleştirebilirsiniz.</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {!hasVoiceEntitlement
+                ? <VoiceUpgradeCard />
+                : voice.id && (
+                  <ConfiguredCard
+                    channel="voice"
+                    onEdit={() => openEditor('voice', 'custom')}
+                    onTest={() => { openEditor('voice', 'custom'); setEditorTab('test') }}
+                  />
+                )
+              }
               {whatsapp.id && (
-                <ConfiguredCard channel="whatsapp" onClick={() => openEditor('whatsapp', 'custom')} />
+                <ConfiguredCard
+                  channel="whatsapp"
+                  onEdit={() => openEditor('whatsapp', 'custom')}
+                  onTest={() => { openEditor('whatsapp', 'custom'); setEditorTab('test') }}
+                />
               )}
             </div>
           </section>
         )}
 
+        {/* Şablon değiştir */}
+        <section className="space-y-5">
+          <div className="flex items-center gap-2">
+            <div className="h-px flex-1 bg-slate-100" />
+            <p className="text-xs text-slate-400 font-medium shrink-0">Farklı şablon denemek ister misiniz?</p>
+            <div className="h-px flex-1 bg-slate-100" />
+          </div>
+
         {/* Sesli şablonlar */}
-        <section className="space-y-3">
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-700">Sesli Görüşme</h2>
             {!hasVoiceEntitlement && (
@@ -758,7 +783,7 @@ function AgentPageInner() {
             )}
           </div>
           <div className="flex flex-wrap gap-4">
-            {VOICE_TEMPLATES.map(t => (
+            {getVoiceTemplates(clinicType, hasCalendar).map(t => (
               <Phase1Card
                 key={t.id}
                 template={t}
@@ -768,13 +793,13 @@ function AgentPageInner() {
               />
             ))}
           </div>
-        </section>
+        </div>
 
         {/* WA şablonlar */}
-        <section className="space-y-3">
+        <div className="space-y-3">
           <h2 className="text-sm font-semibold text-slate-700">Mesajlaşma (WhatsApp)</h2>
           <div className="flex flex-wrap gap-4">
-            {WHATSAPP_TEMPLATES.map(t => (
+            {getWhatsappTemplates(clinicType).map(t => (
               <Phase1Card
                 key={t.id}
                 template={t}
@@ -784,6 +809,7 @@ function AgentPageInner() {
               />
             ))}
           </div>
+        </div>
         </section>
       </div>
     )
@@ -1653,29 +1679,81 @@ function Phase1Card({
 
 function ConfiguredCard({
   channel,
-  onClick,
+  onEdit,
+  onTest,
 }: {
   channel: 'voice' | 'whatsapp'
-  onClick: () => void
+  onEdit: () => void
+  onTest: () => void
 }) {
+  const isVoice = channel === 'voice'
   return (
-    <button
-      onClick={onClick}
-      className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border-2 border-brand-100 bg-brand-50/40 hover:border-brand-300 transition-all w-64"
-    >
-      <div className="flex items-center gap-2">
-        {channel === 'voice'
-          ? <Mic size={15} className="text-brand-500" />
-          : <MessageSquare size={15} className="text-brand-500" />}
-        <div className="text-left">
-          <p className="text-sm font-medium text-slate-800">
-            {channel === 'voice' ? 'Sesli Görüşme' : 'Mesajlaşma'}
-          </p>
-          <p className="text-xs text-slate-400">Özelleştirilmiş yapılandırma</p>
+    <div className="flex-1 min-w-[220px] rounded-2xl border-2 border-emerald-100 bg-emerald-50/40 p-4 flex flex-col gap-3">
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-2">
+          <div className="p-2 rounded-lg bg-emerald-100">
+            {isVoice
+              ? <Mic size={16} className="text-emerald-600" />
+              : <MessageSquare size={16} className="text-emerald-600" />}
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-800">
+              {isVoice ? 'Sesli Asistan' : 'WhatsApp / Chat Botu'}
+            </p>
+            <p className="text-xs text-slate-500">
+              {isVoice ? 'Gelen aramaları karşılar' : 'Mesajları yanıtlar, lead niteler'}
+            </p>
+          </div>
         </div>
+        <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" /> Aktif
+        </span>
       </div>
-      <ArrowRight size={14} className="text-slate-400 flex-shrink-0" />
-    </button>
+      <div className="flex gap-2 mt-1">
+        <button
+          onClick={onTest}
+          className="flex-1 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors flex items-center justify-center gap-1"
+        >
+          <FlaskConical size={12} /> Test Et
+        </button>
+        <button
+          onClick={onEdit}
+          className="flex-1 text-xs font-medium px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white transition-colors flex items-center justify-center gap-1"
+        >
+          Düzenle <ArrowRight size={12} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function VoiceUpgradeCard() {
+  return (
+    <div className="flex-1 min-w-[220px] rounded-2xl border-2 border-amber-100 bg-amber-50/40 p-4 flex flex-col gap-3">
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-2">
+          <div className="p-2 rounded-lg bg-amber-100">
+            <Mic size={16} className="text-amber-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Sesli Asistan</p>
+            <p className="text-xs text-slate-500">Gelen aramaları otomatik karşılar</p>
+          </div>
+        </div>
+        <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full shrink-0">
+          <Lock size={9} /> Kilitli
+        </span>
+      </div>
+      <p className="text-xs text-slate-500 leading-relaxed">
+        Mevcut paketinizde sesli asistan özelliği bulunmuyor. Aktif etmek için planınızı yükseltin.
+      </p>
+      <a
+        href="/dashboard/billing"
+        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors flex items-center justify-center gap-1"
+      >
+        Paketi Yükselt <ArrowUpRight size={12} />
+      </a>
+    </div>
   )
 }
 
