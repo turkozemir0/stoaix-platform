@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabase } from '@supabase/supabase-js'
+import { WORKFLOW_TEMPLATES } from '@/lib/workflow-templates'
 
 function getServiceClient() {
   return createSupabase(
@@ -108,6 +109,19 @@ export async function POST(req: Request) {
       enabled: false,
       reason: 'user_disabled',
     }, { onConflict: 'organization_id,feature_key' })
+
+    // Bu feature_key'e bağlı workflow'ları otomatik deaktif et
+    const relatedTemplateIds = WORKFLOW_TEMPLATES
+      .filter(t => t.required_feature === feature_key)
+      .map(t => t.id)
+
+    if (relatedTemplateIds.length > 0) {
+      await service
+        .from('org_workflows')
+        .update({ is_active: false })
+        .eq('organization_id', orgId)
+        .in('template_id', relatedTemplateIds)
+    }
   } else {
     // Aç: sadece user_disabled override'ı kaldır (admin override'larını dokunma)
     const { data: existing } = await service
