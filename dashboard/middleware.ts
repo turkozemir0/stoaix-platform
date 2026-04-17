@@ -62,6 +62,7 @@ export async function middleware(request: NextRequest) {
     .from('org_users')
     .select('id, role, organizations(onboarding_status)')
     .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
     .maybeSingle()
 
   if (orgUser) {

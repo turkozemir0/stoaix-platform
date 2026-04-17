@@ -17,6 +17,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .from('org_users')
     .select('organization_id, role, organization:organizations(id, name, slug, sector)')
     .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
     .maybeSingle()
 
   const { data: superAdmin } = await supabase

@@ -33,6 +33,7 @@ async function getOrgId(supabase: any, userId: string) {
     .from('org_users')
     .select('organization_id')
     .eq('user_id', userId)
+    .order('created_at', { ascending: false })
     .maybeSingle()
 
   return orgUser?.organization_id ?? null
