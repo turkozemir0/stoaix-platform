@@ -1371,6 +1371,8 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
         vad=silero.VAD.load(),
         **({"turn_detection": _TURN_DETECTOR_CLS()} if _TURN_DETECTOR_CLS else {}),
         allow_interruptions=True,
+        min_interruption_duration=0.3,        # 300ms barge-in eşiği
+        min_interruption_words=1,             # 1 kelime ile interrupt
         min_endpointing_delay=0.5,
         max_endpointing_delay=6.0,            # Türkçe uzun cümle desteği
         **({"fnc_ctx": fnc_ctx} if fnc_ctx else {}),
