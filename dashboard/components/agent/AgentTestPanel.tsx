@@ -457,8 +457,12 @@ function VoiceTest({ orgId, model }: { orgId: string; model: string }) {
         body: JSON.stringify({ orgId, model }),
       })
       if (!res.ok) throw new Error('Token alınamadı')
-      const { token, url } = await res.json()
-      setConnDetails({ token, url })
+      const data = await res.json()
+      if (!data.dispatchOk) {
+        console.warn('[VoiceTest] Dispatch failed:', data.dispatchError)
+      }
+      console.log('[VoiceTest] Token OK, dispatch:', data.dispatchOk ? 'success' : data.dispatchError)
+      setConnDetails({ token: data.token, url: data.url })
       setPhase('active')
     } catch (e: any) {
       setPhase('error')

@@ -37,20 +37,25 @@ export async function POST(req: NextRequest) {
   const token = await at.toJwt()
 
   // Agent'ı bu odaya explicit dispatch ile çağır
+  let dispatchOk = false
+  let dispatchError = ''
   try {
     const httpUrl = LIVEKIT_URL.replace('wss://', 'https://').replace('ws://', 'http://')
     const dispatch = new AgentDispatchClient(httpUrl, LIVEKIT_KEY, LIVEKIT_SECRET)
     await dispatch.createDispatch(roomName, 'stoaix-platform', {
       metadata: JSON.stringify({ organization_id: orgId, test_mode: true, model }),
     })
-  } catch (e) {
-    console.warn('Agent dispatch failed (agent may not be running):', e)
-    // Token hala geçerli — kullanıcı bağlanabilir, agent yoksa uyarı gösterilir
+    dispatchOk = true
+  } catch (e: any) {
+    dispatchError = e?.message || String(e)
+    console.warn('Agent dispatch failed:', dispatchError)
   }
 
   return NextResponse.json({
     token,
     url: LIVEKIT_URL,
     roomName,
+    dispatchOk,
+    dispatchError,
   })
 }
