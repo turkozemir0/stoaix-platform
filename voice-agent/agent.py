@@ -997,11 +997,11 @@ async def entrypoint(ctx: JobContext):
     playbook = await load_playbook(org_id, channel="voice")
     intake   = await load_intake_schema(org_id, channel="voice")
 
-    # Model öncelik sırası: 1. playbook features, 2. room metadata, 3. default
+    # Model öncelik sırası: 1. room metadata (test UI / dispatch), 2. playbook features, 3. default
     features  = (playbook or {}).get("features", {}) if playbook else {}
     llm_model = (
-        features.get("model")
-        or meta.get("model")
+        meta.get("model")
+        or features.get("model")
         or "claude-sonnet-4-6"
     )
     if llm_model.startswith("claude-"):
