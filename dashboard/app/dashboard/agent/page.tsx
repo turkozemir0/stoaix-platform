@@ -6,7 +6,7 @@ import {
   Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare, ListChecks,
   FlaskConical, PhoneForwarded, Clock, ToggleLeft, ToggleRight, Lightbulb,
   ArrowUpRight, CheckCircle2, BookOpen, AlertTriangle, X, Lock, Star,
-  ArrowLeft, ArrowRight, Info,
+  ArrowLeft, ArrowRight, Info, Zap,
 } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import AgentTestPanel from '@/components/agent/AgentTestPanel'
@@ -82,6 +82,20 @@ interface WorkingHours {
   saturday?: string
   sunday?: string | null
   timezone?: string
+}
+
+interface HandoffConfig {
+  keywords: string[]
+  frustration_keywords: string[]
+  missing_required_after_turns: number
+  kb_empty_consecutive: number
+}
+
+interface WorkflowStatus {
+  id: string
+  name: string
+  channel: string
+  is_active: boolean
 }
 
 interface PlaybookState {
@@ -203,6 +217,13 @@ function AgentPageInner() {
 
   // Routing state
   const [routingConfig, setRoutingConfig] = useState<RoutingConfig>({ transfer_numbers: {}, rules: [] })
+  const [handoffConfig, setHandoffConfig] = useState<HandoffConfig>({
+    keywords: ['insan', 'danışman', 'müdür', 'temsilci', 'yönetici'],
+    frustration_keywords: ['saçma', 'berbat', 'rezalet', 'şikayet'],
+    missing_required_after_turns: 10,
+    kb_empty_consecutive: 3,
+  })
+  const [workflows, setWorkflows] = useState<WorkflowStatus[]>([])
   const [workingHours, setWorkingHours]   = useState<WorkingHours>({
     weekdays: '09:30-19:00', saturday: '10:00-17:00', sunday: null, timezone: 'Europe/Istanbul',
   })
@@ -250,7 +271,7 @@ function AgentPageInner() {
       // Her iki kanalı da yükle
       const { data: playbooks } = await supabase
         .from('agent_playbooks')
-        .select('id, channel, system_prompt_template, opening_message, hard_blocks, features, few_shot_examples, fallback_responses')
+        .select('id, channel, system_prompt_template, opening_message, hard_blocks, features, few_shot_examples, fallback_responses, handoff_triggers')
         .eq('organization_id', resolvedOrgId)
         .eq('is_active', true)
         .in('channel', ['voice', 'whatsapp', 'chat', 'all'])
@@ -277,6 +298,20 @@ function AgentPageInner() {
         const whatsappPb = playbooks.find(p => p.channel === 'whatsapp') || playbooks.find(p => p.channel === 'chat') || playbooks.find(p => p.channel === 'all')
         if (voicePb)    setVoice(parsePlaybook(voicePb))
         if (whatsappPb) setWhatsapp(parsePlaybook(whatsappPb))
+
+        // Handoff triggers yükle (voice playbook'tan)
+        const activePb = voicePb || whatsappPb
+        if (activePb) {
+          const ht = (activePb as any).handoff_triggers as Record<string, any> | null
+          if (ht) {
+            setHandoffConfig({
+              keywords: Array.isArray(ht.keywords) ? ht.keywords : ['insan', 'danışman', 'müdür', 'temsilci', 'yönetici'],
+              frustration_keywords: Array.isArray(ht.frustration_keywords) ? ht.frustration_keywords : ['saçma', 'berbat', 'rezalet', 'şikayet'],
+              missing_required_after_turns: ht.missing_required_after_turns ?? 10,
+              kb_empty_consecutive: ht.kb_empty_consecutive ?? 3,
+            })
+          }
+        }
       }
 
       // Intake schema yükle
@@ -322,6 +357,15 @@ function AgentPageInner() {
           const rData = await rRes.json()
           if (rData.routing_rules) setRoutingConfig(rData.routing_rules)
           if (rData.working_hours && Object.keys(rData.working_hours).length) setWorkingHours(rData.working_hours)
+          if (rData.handoff_triggers) {
+            const ht = rData.handoff_triggers
+            setHandoffConfig({
+              keywords: Array.isArray(ht.keywords) ? ht.keywords : ['insan', 'danışman', 'müdür', 'temsilci', 'yönetici'],
+              frustration_keywords: Array.isArray(ht.frustration_keywords) ? ht.frustration_keywords : ['saçma', 'berbat', 'rezalet', 'şikayet'],
+              missing_required_after_turns: ht.missing_required_after_turns ?? 10,
+              kb_empty_consecutive: ht.kb_empty_consecutive ?? 3,
+            })
+          }
         }
       } catch {}
 
@@ -331,6 +375,17 @@ function AgentPageInner() {
         if (limRes.ok) {
           const limData = await limRes.json()
           setHasVoiceEntitlement(limData.entitlements?.voice_agent_inbound?.enabled ?? true)
+        }
+      } catch {}
+
+      // Workflow durumları yükle
+      try {
+        const wfRes = await fetch('/api/workflows/templates')
+        if (wfRes.ok) {
+          const wfData = await wfRes.json()
+          if (Array.isArray(wfData)) {
+            setWorkflows(wfData.map((w: any) => ({ id: w.id, name: w.name, channel: w.channel || 'multi', is_active: !!w.is_active })))
+          }
         }
       } catch {}
 
@@ -503,7 +558,11 @@ function AgentPageInner() {
       const res = await fetch('/api/agent/routing-rules', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ routing_rules: routingConfig, working_hours: workingHours }),
+        body: JSON.stringify({
+          routing_rules: routingConfig,
+          working_hours: workingHours,
+          handoff_triggers: handoffConfig,
+        }),
       })
       if (!res.ok) throw new Error()
       setRoutingSaved(true)
@@ -546,12 +605,6 @@ function AgentPageInner() {
     setEditorView(null)
   }
 
-  function updateRule(idx: number, patch: Partial<RoutingRule>) {
-    setRoutingConfig(prev => ({
-      ...prev,
-      rules: prev.rules.map((r, i) => i === idx ? { ...r, ...patch } : r),
-    }))
-  }
 
   function addBlock() {
     setCurrent(prev => ({ ...prev, blocks: [...prev.blocks, { keywords: '', response: '' }] }))
@@ -799,7 +852,7 @@ function AgentPageInner() {
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-slate-700">Mesajlaşma (WhatsApp)</h2>
           <div className="flex flex-wrap gap-4">
-            {getWhatsappTemplates(clinicType).map(t => (
+            {getWhatsappTemplates(clinicType, hasCalendar).map(t => (
               <Phase1Card
                 key={t.id}
                 template={t}
@@ -1334,6 +1387,42 @@ function AgentPageInner() {
               </select>
             </div>
 
+            {/* İlgili İş Akışları */}
+            {workflows.length > 0 && (() => {
+              const channelFilter = editorView.channel === 'voice' ? 'voice' : 'whatsapp'
+              const relevant = workflows.filter(w => w.channel === channelFilter || w.channel === 'multi')
+              if (relevant.length === 0) return null
+              return (
+                <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                      <Zap size={15} className="text-brand-500" /> İlgili İş Akışları
+                    </h3>
+                    <a
+                      href="/dashboard/workflows"
+                      className="text-xs text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1"
+                    >
+                      İş Akışlarını Yönet <ArrowUpRight size={11} />
+                    </a>
+                  </div>
+                  <div className="space-y-2">
+                    {relevant.map(w => (
+                      <div key={w.id} className="flex items-center justify-between py-1.5">
+                        <span className="text-sm text-slate-700">{w.name}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          w.is_active
+                            ? 'bg-emerald-50 text-emerald-600'
+                            : 'bg-slate-100 text-slate-400'
+                        }`}>
+                          {w.is_active ? 'Aktif' : 'Pasif'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
+
             {error && (
               <p className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-lg">{error}</p>
             )}
@@ -1344,44 +1433,6 @@ function AgentPageInner() {
         {editorTab === 'routing' && editorView.channel === 'voice' && (
           <div className="space-y-5">
 
-            {/* Transfer Numaraları */}
-            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-                  <PhoneForwarded size={15} className="text-brand-500" /> Transfer Numaraları
-                </h2>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Tier 1 kurallar tetiklendiğinde arama bu numaraya aktarılır.
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">Call Center (Transfer)</label>
-                  <input
-                    value={routingConfig.transfer_numbers.primary ?? ''}
-                    onChange={e => setRoutingConfig(prev => ({
-                      ...prev,
-                      transfer_numbers: { ...prev.transfer_numbers, primary: e.target.value },
-                    }))}
-                    placeholder="02122446600"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">Voice Agent Hattı</label>
-                  <input
-                    value={routingConfig.transfer_numbers.voice_agent ?? ''}
-                    onChange={e => setRoutingConfig(prev => ({
-                      ...prev,
-                      transfer_numbers: { ...prev.transfer_numbers, voice_agent: e.target.value },
-                    }))}
-                    placeholder="02127098709"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  />
-                </div>
-              </div>
-            </div>
-
             {/* Mesai Saatleri */}
             <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
               <div>
@@ -1389,7 +1440,7 @@ function AgentPageInner() {
                   <Clock size={15} className="text-brand-500" /> Mesai Saatleri
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Mesai içinde Tier 1 kurallar transfere, mesai dışında callback vaadiyle notlara yönlenir.
+                  Mesai dışında AI geri arama sözü verir ve not oluşturur.
                 </p>
               </div>
               <div className="space-y-3">
@@ -1434,99 +1485,91 @@ function AgentPageInner() {
               </div>
             </div>
 
-            {/* Yönlendirme Kuralları */}
+            {/* Devir Anahtar Kelimeleri */}
             <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
               <div>
-                <h2 className="text-sm font-semibold text-slate-800">Yönlendirme Kuralları</h2>
+                <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                  <PhoneForwarded size={15} className="text-brand-500" /> Devir Anahtar Kelimeleri
+                </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Tier 1 kurallar çağrıyı aktarır, Tier 2 kurallar not alıp geri arama yapar.
+                  Bu kelimeler algılandığında AI konuşmayı nazikçe kapatır ve danışmana devir oluşturur.
                 </p>
               </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Anahtar kelimeler <span className="text-slate-400">(virgülle ayır)</span></label>
+                <input
+                  value={handoffConfig.keywords.join(', ')}
+                  onChange={e => setHandoffConfig(prev => ({
+                    ...prev,
+                    keywords: e.target.value.split(',').map(k => k.trim()).filter(Boolean),
+                  }))}
+                  placeholder="insan, danışman, müdür, temsilci, yönetici"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
+            </div>
 
-              {routingConfig.rules.length === 0 && (
-                <p className="text-sm text-slate-400 py-2">Henüz yönlendirme kuralı eklenmemiş.</p>
-              )}
+            {/* Frustrasyon Kelimeleri */}
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-800">Frustrasyon Kelimeleri</h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Müşteri sinirli/kızgın olduğunda otomatik devir tetiklenir.
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Kelimeler <span className="text-slate-400">(virgülle ayır)</span></label>
+                <input
+                  value={handoffConfig.frustration_keywords.join(', ')}
+                  onChange={e => setHandoffConfig(prev => ({
+                    ...prev,
+                    frustration_keywords: e.target.value.split(',').map(k => k.trim()).filter(Boolean),
+                  }))}
+                  placeholder="saçma, berbat, rezalet, şikayet"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
+            </div>
 
-              <div className="space-y-3">
-                {routingConfig.rules.map((rule, idx) => {
-                  const tierLabel = rule.tier === 1 ? 'Transfer' : 'Not Al'
-                  const tierColor = rule.tier === 1 ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'
-                  const typeLabels: Record<string, string> = {
-                    kb_fallback:    'KB Fallback',
-                    intent:         'Niyet',
-                    topic_note:     'Konu',
-                    sentiment_note: 'Duygu',
-                  }
-                  const isTier1 = rule.tier === 1
-
-                  return (
-                    <div key={rule.id} className={`border rounded-xl p-4 space-y-3 transition-colors ${rule.active ? 'border-slate-100 bg-slate-50' : 'border-slate-100 bg-white opacity-50'}`}>
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => updateRule(idx, { active: !rule.active })}
-                            className={`relative inline-flex h-5 w-9 rounded-full transition-colors flex-shrink-0 ${rule.active ? 'bg-brand-500' : 'bg-slate-200'}`}
-                          >
-                            <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${rule.active ? 'translate-x-4' : ''}`} />
-                          </button>
-                          <span className="text-sm font-medium text-slate-800">
-                            {typeLabels[rule.type] ?? rule.type}
-                          </span>
-                          <span className="text-xs text-slate-400 font-mono">{rule.id}</span>
-                        </div>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${tierColor}`}>
-                          Tier {rule.tier} — {tierLabel}
-                        </span>
-                      </div>
-
-                      {rule.keywords && rule.keywords.length > 0 && (
-                        <div>
-                          <label className="block text-xs text-slate-500 mb-1">Anahtar kelimeler <span className="text-slate-400">(virgülle ayır)</span></label>
-                          <input
-                            value={rule.keywords.join(', ')}
-                            onChange={e => updateRule(idx, {
-                              keywords: e.target.value.split(',').map(k => k.trim()).filter(Boolean),
-                            })}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                          />
-                        </div>
-                      )}
-
-                      {isTier1 ? (
-                        <>
-                          <div>
-                            <label className="block text-xs text-slate-500 mb-1">Mesai içi mesajı</label>
-                            <textarea
-                              value={rule.transition_message ?? ''}
-                              onChange={e => updateRule(idx, { transition_message: e.target.value })}
-                              rows={2}
-                              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-slate-500 mb-1">Mesai dışı mesajı</label>
-                            <textarea
-                              value={rule.after_hours_message ?? ''}
-                              onChange={e => updateRule(idx, { after_hours_message: e.target.value })}
-                              rows={2}
-                              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
-                            />
-                          </div>
-                        </>
-                      ) : (
-                        <div>
-                          <label className="block text-xs text-slate-500 mb-1">Geri arama mesajı</label>
-                          <textarea
-                            value={rule.note_message ?? ''}
-                            onChange={e => updateRule(idx, { note_message: e.target.value })}
-                            rows={2}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+            {/* Otomatik Devir Eşikleri */}
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-800">Otomatik Devir Eşikleri</h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Belirli koşullar sağlandığında AI konuşmayı otomatik danışmana devreder.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Zorunlu bilgi toplanamadı (tur)</label>
+                  <input
+                    type="number"
+                    min={3}
+                    max={20}
+                    value={handoffConfig.missing_required_after_turns}
+                    onChange={e => setHandoffConfig(prev => ({
+                      ...prev,
+                      missing_required_after_turns: parseInt(e.target.value) || 10,
+                    }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">X turda zorunlu bilgi alınamazsa devret</p>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Art arda KB eşleşme yok</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={handoffConfig.kb_empty_consecutive}
+                    onChange={e => setHandoffConfig(prev => ({
+                      ...prev,
+                      kb_empty_consecutive: parseInt(e.target.value) || 3,
+                    }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">Art arda X kez KB boş gelirse devret</p>
+                </div>
               </div>
             </div>
 

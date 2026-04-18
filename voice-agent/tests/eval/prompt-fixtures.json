@@ -1,8 +1,8 @@
 {
   "_meta": {
-    "generated_at": "2026-04-18T19:44:54.582Z",
+    "generated_at": "2026-04-18T21:34:32.156Z",
     "source_file": "dashboard/lib/agent-templates.ts",
-    "source_hash": "5a39ddd437f6c44cba2800c340de95cc4ae298fd2a5c46743ebff5b32c64bca7"
+    "source_hash": "14c3d0631495bc0380d0c4eb0b6798e84ca98f48faf586bba4e936e1aff9465f"
   },
   "clinic_types": [
     "hair_transplant",
