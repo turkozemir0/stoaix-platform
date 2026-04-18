@@ -194,16 +194,16 @@ function getPlanIdFromSub(sub: Stripe.Subscription): string {
   // Price ID → plan eşleştirmesi (env var'lardan)
   const priceId = sub.items.data[0]?.price.id
   const priceMap: Record<string, string> = {
-    [process.env.STRIPE_PRICE_LITE_MONTHLY ?? '']:     'lite',
-    [process.env.STRIPE_PRICE_LITE_ANNUAL ?? '']:      'lite',
-    [process.env.STRIPE_PRICE_PLUS_MONTHLY ?? '']:     'plus',
-    [process.env.STRIPE_PRICE_PLUS_ANNUAL ?? '']:      'plus',
-    [process.env.STRIPE_PRICE_ADVANCED_MONTHLY ?? '']: 'advanced',
-    [process.env.STRIPE_PRICE_ADVANCED_ANNUAL ?? '']:  'advanced',
-    [process.env.STRIPE_PRICE_AGENCY_MONTHLY ?? '']:   'agency',
-    [process.env.STRIPE_PRICE_AGENCY_ANNUAL ?? '']:    'agency',
+    [process.env.STRIPE_PRICE_ESSENTIAL_MONTHLY ?? '']:    'essential',
+    [process.env.STRIPE_PRICE_ESSENTIAL_ANNUAL ?? '']:     'essential',
+    [process.env.STRIPE_PRICE_PROFESSIONAL_MONTHLY ?? '']: 'professional',
+    [process.env.STRIPE_PRICE_PROFESSIONAL_ANNUAL ?? '']:  'professional',
+    [process.env.STRIPE_PRICE_BUSINESS_MONTHLY ?? '']:     'business',
+    [process.env.STRIPE_PRICE_BUSINESS_ANNUAL ?? '']:      'business',
+    [process.env.STRIPE_PRICE_CUSTOM_MONTHLY ?? '']:       'custom',
+    [process.env.STRIPE_PRICE_CUSTOM_ANNUAL ?? '']:        'custom',
   }
-  return priceMap[priceId ?? ''] ?? 'lite'
+  return priceMap[priceId ?? ''] ?? 'essential'
 }
 
 async function getOrgIdByCustomer(customerId: string, service: ReturnType<typeof getServiceClient>): Promise<string | null> {

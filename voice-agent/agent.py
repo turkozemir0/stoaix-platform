@@ -20,6 +20,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from dotenv import load_dotenv
+from prompt_rules import (
+    PLATFORM_GUARDRAILS,
+    VOICE_CONVERSATION_RULES,
+    NATURALNESS_RULES,
+    REGISTER_RULES,
+    OBJECTION_RULES,
+)
 from livekit.agents import (
     Agent,
     AgentSession,
@@ -456,8 +463,10 @@ def build_system_prompt(
     calendar_section = (
         "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         "RANDEVU ALMA:\n"
-        "Kullanıcı randevu, görüşme veya uygun saat talep ederse check_availability tool'unu çağır.\n"
-        "Kullanıcı uygun bir saati seçince ad ve telefon al, ardından book_appointment tool'unu çağır.\n"
+        "1. Kullanıcı randevu/görüşme/uygun saat talep ederse → check_availability çağır.\n"
+        "2. Kullanıcı uygun bir saati seçince ve ad+telefon alınmışsa → book_appointment çağır.\n"
+        "3. Randevu onaylandığında tarih/saati yazıyla tekrarla ve teyit al.\n"
+        "SIRA ÖNEMLİ: Önce check_availability, sonra book_appointment. Tersini yapma."
     ) if calendar_enabled else ""
 
     must_fields  = [f for f in intake_fields if f.get("priority") == "must"]
@@ -493,17 +502,19 @@ def build_system_prompt(
 
     base_prompt = playbook.get("system_prompt_template", "") if playbook else ""
 
-    return f"""{base_prompt}
+    return f"""{PLATFORM_GUARDRAILS}
+
+{base_prompt}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KONUŞMA KURALLARI (KATI — İSTİSNASIZ UYGULANIR):
-- Her turda yalnızca 1 soru sor. Aynı anda iki soru sormak YASAK.
-- Yanıtların maksimum 2 cümle olsun. Monolog yapma.
-- Sayıları HER ZAMAN yazıyla söyle: "1500" yerine "bin beş yüz", "05321234567" yerine "sıfır beş üç iki bir iki üç dört beş altı yedi"
-- Fiyatları yazıyla söyle: "2.500 TL" yerine "iki bin beş yüz lira"
-- Tarihleri yazıyla söyle: "15.03.2026" yerine "on beş Mart iki bin yirmi altı"
-- 1.000 rakamı "bin"dir, "bir bin" YANLIŞ. Örnek: 1.400 → "bin dört yüz", 1.000 → "bin"
-- "Harika!", "Bunu düşünmenize bayıldım", "Mükemmel tercih!" gibi abartılı ifadeler YASAK. Doğal ve sade konuş.
+{VOICE_CONVERSATION_RULES}
+
+{NATURALNESS_RULES}
+
+{REGISTER_RULES}
+
+{OBJECTION_RULES}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BİLGİ TABANI (RAG — bu konuşma için ilgili içerik):
@@ -1277,7 +1288,11 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
 
         # ── Calendar tools (only if calendar adapter is available) ───────────
         if calendar_enabled and calendar_adapter is not None:
-            @fnc_ctx.ai_callable(description="Müsait randevu saatlerini listeler. Kullanıcı randevu/görüşme istediğinde çağır.")
+            @fnc_ctx.ai_callable(description=(
+                "Müsait randevu saatlerini listeler. "
+                "Kullanıcı randevu, görüşme veya müsait saat sorduğunda HEMEN çağır. "
+                "book_appointment'tan ÖNCE mutlaka bu tool'u çağır."
+            ))
             async def check_availability(
                 date: Annotated[str, llm.TypeInfo(description="Kontrol edilecek tarih, YYYY-MM-DD formatında. Belirtilmezse yakın 3 günü döndür.")] = ""
             ) -> str:
@@ -1286,7 +1301,12 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
                     return "TAKVİM_HATA: Takvime şu an erişemiyorum. Kullanıcıya ekibimizin en kısa sürede kendisini arayacağını söyle ve görüşmeyi nazikçe sonlandır."
                 return f"Müsait saatler:\n{slots}"
 
-            @fnc_ctx.ai_callable(description="Randevu oluşturur. Kullanıcı ad, telefon ve saat bilgisini verdikten sonra çağır.")
+            @fnc_ctx.ai_callable(description=(
+                "Randevu oluşturur. SADECE şu koşullar sağlandığında çağır: "
+                "(1) ad ve telefon alınmış, (2) check_availability ile uygun saat belirlenmiş, "
+                "(3) hasta randevu almak istediğini açıkça onaylamış. "
+                "Uygunluk kontrolü için bu tool'u DEĞİL check_availability'yi kullan."
+            ))
             async def book_appointment(
                 name: Annotated[str, llm.TypeInfo(description="Randevu sahibinin adı soyadı")],
                 phone: Annotated[str, llm.TypeInfo(description="Telefon numarası, +90 ile başlayan format")],
@@ -1324,7 +1344,7 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
         "pt": os.environ.get("CARTESIA_VOICE_ID_PT", ""),
         "zh": os.environ.get("CARTESIA_VOICE_ID_ZH", ""),
     }
-    MULTILANG_PLANS = {"advanced", "agency", "legacy"}
+    MULTILANG_PLANS = {"business", "custom", "legacy"}
 
     # Dil önceliği: channel_config.voice.language > meta/persona lang
     org_lang_raw = org.get("channel_config", {}).get("voice", {}).get("language") or lang

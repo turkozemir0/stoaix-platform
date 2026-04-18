@@ -4,43 +4,26 @@ agent-templates.ts → CLINIC_TYPE_CONTENT'in Python karşılığı.
 agent.py'deki build_system_prompt ile birleştirilerek tam prompt oluşturulur.
 """
 
-# ── Temel kurallar (tüm klinik tiplerinde aynı) ────────────────────────────────
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from prompt_rules import (
+    PLATFORM_GUARDRAILS,
+    VOICE_CONVERSATION_RULES,
+    NATURALNESS_RULES,
+    REGISTER_RULES,
+    OBJECTION_RULES,
+    CHAT_GUARDRAILS_TEXT,
+)
 
-BASE_VOICE_RULES = """
-# KESİN KONUŞMA KURALLARI (istisnasız uygulanır)
-- Her turda YALNIZCA 1 soru sor — 2 soru birden sormak KESİNLİKLE YASAK
-- Her yanıt maks 2 kısa cümle — sesli konuşma için yaz
-- Sayıları yazıyla söyle: "1500" yerine "bin beş yüz"
-- "Harika!", "Mükemmel!" gibi abartılı ifadeler YASAK — doğal ve sade konuş
-- Rakip klinikler hakkında yorum yapma
+# ── Backward compat alias ────────────────────────────────────────────────────
 
-# FİYAT KURALI — KESİN RAKAM VERME
-Hiçbir zaman kesin fiyat verme. Sadece:
-- "Fiyat [prosedüre/bölgeye] göre değişiyor, konsültasyonda net rakam alırsınız."
-- Geniş bir aralık zorunluysa: "Genel olarak [X] ile [Y] arasında düşünebilirsiniz." (yuvarlak, geniş)
-Kesin rakam ısrarla istenirse: "Net rakamı ancak uzmanımız değerlendirme sonrası verebilir."
-
-# MEDİKAL BİLGİ YASAĞI — İSTİSNASIZ
-- Sağlık tavsiyesi, egzersiz önerisi, beslenme/diyet tavsiyesi KESİNLİKLE YASAK
-- "Şunu yap, bunu kullan, şu ilacı al, bu egzersizi dene" türü yönlendirme YASAK
-- Semptom yorumlama veya hastalık açıklama YASAK
-- Her zaman: "Bu konuyu uzmanımıza sorunuz" veya "Muayene sonrası doktorunuz yanıtlar"
-
-# KRİTİK: İTİRAZ SONRASI NİTELEMEYE GERİ DÖN
-İtirazı (fiyat, garanti, şüphe, zaman, sağlık sorusu) tek cümleyle yanıtla, ardından HEMEN
-niteleme akışındaki bir sonraki soruya geç. Asla objection'da takılı kalma.
-YANLIŞ: "Fiyat greft sayısına göre değişiyor." ← soru yok, konuşma kesildi
-DOĞRU:  "Fiyat greft sayısına göre değişiyor. Saç dökülmeniz ne zamandır devam ediyor?"
-YANLIŞ: "Garanti veremeyiz ama başarı oranımız yüksek." ← konu kapandı
-DOĞRU:  "Garanti veremeyiz ama başarı oranımız çok yüksek. Hangi yöntemle ilgileniyorsunuz, FUE mi DHI mi?"
-
-# SAĞLIK TAVSİYESİ İSTEĞİNDE RANDEVUYA YÖNLENDİR
-Hasta sağlık tavsiyesi, ilaç önerisi veya ev tedavisi sorarsa:
-1. "Bu konuda tavsiye veremem, muayene sonrası doktorunuz yanıtlar." de (1 cümle)
-2. HEMEN ardından randevu/niteleme sorusuna geç: "Bir randevu ayarlayalım mı?" veya niteleme sorusu
-YANLIŞ: Sadece reddet, konuşmayı kes.
-DOĞRU:  "Bu konuda tavsiye veremem, doktorunuz yanıtlar. Randevu almak ister misiniz?"
-"""
+BASE_VOICE_RULES = "\n".join([
+    VOICE_CONVERSATION_RULES,
+    NATURALNESS_RULES,
+    REGISTER_RULES,
+    OBJECTION_RULES,
+])
 
 # ── Klinik tipine göre playbook içerikleri ─────────────────────────────────────
 
@@ -348,19 +331,7 @@ Sinirli veya şikayetçi müşteri → "Sizi ilgili birimimizle bağlıyorum" de
 
 # ── Chat (WhatsApp/Instagram) temel kurallar ────────────────────────────────────
 
-BASE_CHAT_RULES = """
-# MESAJLAŞMA KURALLARI
-- Tur başına en fazla 3 kısa cümle. Uzun paragraf yazma.
-- Tek soru: Aynı mesajda 2 soru sorma. Biri sor, yanıt bekle.
-- Emoji: Mesaj başına en fazla 1 emoji, sadece doğal yerlerde. Aşırı kullanma.
-- FİYAT: Kesin rakam verme. "Ortalama X-Y TL aralığında başlıyor" gibi ortalama/aralık belirt.
-  Kesin teklif için her zaman danışmana yönlendir.
-- TIBBİ TAVSİYE YASAK: Tanı, ilaç önerisi, egzersiz programı, diyet tavsiyesi yapma.
-  Sağlıkla ilgili her türlü spesifik öneri için "doktorumuz değerlendirir" de.
-- "Harika!", "Süper!", "Mükemmel!" gibi abartılı tepkiler yasak.
-- Hard block tetiklenince özür dileyerek doğru kaynağa yönlendir.
-- Toplanan zorunlu bilgiler tamamlandığında danışman devir mesajı gönder ve görüşmeyi bitir.
-""".strip()
+BASE_CHAT_RULES = CHAT_GUARDRAILS_TEXT
 
 # ── Chat klinik tipine göre playbook içerikleri ─────────────────────────────────
 
@@ -598,7 +569,7 @@ def build_chat_system_prompt(clinic_type: str, org_name: str, persona_name: str)
     template = ct["system_prompt_template"].format(
         org_name=org_name, persona_name=persona_name
     )
-    return f"{template}\n\n{BASE_CHAT_RULES}"
+    return f"{template}\n\n{CHAT_GUARDRAILS_TEXT}"
 
 
 # ── WhatsApp özel şablon içerikleri ─────────────────────────────────────────────
@@ -781,9 +752,19 @@ def build_full_system_prompt(clinic_type: str, org_name: str, persona_name: str,
 
     kb_section = kb_context if kb_context else "(Kullanıcı soru sorunca KB'den çekilecek)"
 
-    return f"""{template}
+    return f"""{PLATFORM_GUARDRAILS}
 
-{BASE_VOICE_RULES}
+{template}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KONUŞMA KURALLARI (KATI — İSTİSNASIZ UYGULANIR):
+{VOICE_CONVERSATION_RULES}
+
+{NATURALNESS_RULES}
+
+{REGISTER_RULES}
+
+{OBJECTION_RULES}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BİLGİ TABANI:

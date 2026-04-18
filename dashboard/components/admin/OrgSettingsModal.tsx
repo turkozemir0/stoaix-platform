@@ -140,7 +140,7 @@ const VOICE_LANGUAGES_ADVANCED = [
   { value: 'zh', label: 'Çince (ZH)' },
 ]
 
-const MULTILANG_PLANS = new Set(['advanced', 'agency', 'legacy'])
+const MULTILANG_PLANS = new Set(['business', 'custom', 'legacy'])
 
 const TABS = [
   { key: 'channels',  label: 'Kanallar & Mesajlaşma' },
@@ -659,7 +659,7 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
                       </div>
                       {!MULTILANG_PLANS.has(orgPlan) && (
                         <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                          TR/EN dışı diller Advanced veya Agency plan gerektirir. Mevcut plan: <strong>{orgPlan || 'lite/plus'}</strong>
+                          TR/EN dışı diller Business veya Custom plan gerektirir. Mevcut plan: <strong>{orgPlan || 'essential/professional'}</strong>
                         </p>
                       )}
                       <p className="text-xs text-slate-400">

@@ -195,75 +195,71 @@ interface Plan {
 
 const PLANS: Plan[] = [
   {
-    id: 'lite',
-    name: 'Lite',
+    id: 'essential',
+    name: 'Essential',
     monthlyPrice: 79,
     annualPrice: 63,
     icon: <Zap size={18} />,
     color: 'text-slate-600',
     features: [
-      { label: 'WhatsApp mesajı', value: '500/ay' },
+      { label: 'Full CRM', value: true },
+      { label: 'WhatsApp & Instagram', value: 'Sınırsız' },
+      { label: 'Bilgi bankası', value: 'Sınırsız' },
+      { label: 'Chat AI & Workflow', value: true },
       { label: 'Voice agent', value: false },
-      { label: 'Kanban board', value: true },
-      { label: 'CSV import', value: false },
-      { label: 'Instagram DM', value: false },
-      { label: 'Gelismis analitik', value: false },
-      { label: 'Outbound webhook', value: false },
-      { label: 'Ekip üyesi', value: '1' },
+      { label: 'Gelişmiş analitik', value: false },
+      { label: 'Ekip üyesi', value: '5' },
     ],
   },
   {
-    id: 'plus',
-    name: 'Plus',
+    id: 'professional',
+    name: 'Professional',
     monthlyPrice: 149,
     annualPrice: 119,
     icon: <Star size={18} />,
     color: 'text-brand-500',
     features: [
-      { label: 'WhatsApp mesajı', value: '2.000/ay' },
-      { label: 'Voice agent', value: '60 dk/ay' },
-      { label: 'Kanban board', value: true },
-      { label: 'CSV import', value: true },
-      { label: 'Instagram DM', value: true },
-      { label: 'Gelismis analitik', value: false },
-      { label: 'Outbound webhook', value: false },
-      { label: 'Ekip üyesi', value: '3' },
+      { label: 'Essential dahil her şey', value: true },
+      { label: 'Voice inbound', value: '150 dk/ay' },
+      { label: 'Gelişmiş analitik', value: true },
+      { label: 'Multi-pipeline', value: '3 adet' },
+      { label: 'Voice outbound', value: false },
+      { label: 'Çok dilli ses', value: false },
+      { label: 'Ekip üyesi', value: '10' },
     ],
   },
   {
-    id: 'advanced',
-    name: 'Advanced',
+    id: 'business',
+    name: 'Business',
     monthlyPrice: 299,
     annualPrice: 239,
     icon: <Rocket size={18} />,
     color: 'text-purple-500',
     features: [
-      { label: 'WhatsApp mesajı', value: '5.000/ay' },
-      { label: 'Voice agent', value: '200 dk/ay' },
-      { label: 'Kanban board', value: true },
-      { label: 'CSV import', value: true },
-      { label: 'Instagram DM', value: true },
-      { label: 'Gelismis analitik', value: true },
-      { label: 'Outbound webhook', value: true },
-      { label: 'Ekip üyesi', value: '10' },
+      { label: 'Professional dahil her şey', value: true },
+      { label: 'Voice in+outbound', value: '300 dk/ay' },
+      { label: 'Tüm voice workflow', value: true },
+      { label: 'Çok dilli ses (8 dil)', value: true },
+      { label: 'Analitik export', value: true },
+      { label: 'Multi-pipeline', value: 'Sınırsız' },
+      { label: 'Ekip üyesi', value: '20' },
     ],
   },
   {
-    id: 'agency',
-    name: 'Agency',
-    monthlyPrice: 499,
-    annualPrice: 399,
+    id: 'custom',
+    name: 'Custom',
+    monthlyPrice: 0,
+    annualPrice: 0,
     icon: <Building2 size={18} />,
     color: 'text-emerald-500',
     features: [
-      { label: 'WhatsApp mesajı', value: 'Sınırsız' },
-      { label: 'Voice agent', value: 'Sınırsız' },
-      { label: 'Kanban board', value: true },
-      { label: 'CSV import', value: true },
-      { label: 'Instagram DM', value: true },
-      { label: 'Gelismis analitik', value: true },
-      { label: 'Outbound webhook', value: true },
-      { label: 'Ekip üyesi', value: 'Sınırsız' },
+      { label: 'Business dahil her şey', value: true },
+      { label: 'Özel dakika paketleri', value: true },
+      { label: 'Sınırsız kullanıcı', value: true },
+      { label: 'Birebir destek', value: true },
+      { label: 'Özel entegrasyonlar', value: true },
+      { label: 'SLA garantisi', value: true },
+      { label: 'Fiyat', value: 'Görüşmeli' },
     ],
   },
 ]
@@ -386,6 +382,8 @@ function BillingSection() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {PLANS.map(plan => {
             const isCurrent = plan.id === currentPlanId
+            const isCustom = plan.id === 'custom'
+            const isMostPopular = plan.id === 'business'
             const price = interval === 'annual' ? plan.annualPrice : plan.monthlyPrice
             const isBusy = selectingPlan === plan.id
 
@@ -393,7 +391,9 @@ function BillingSection() {
               <div
                 key={plan.id}
                 className={`relative flex flex-col rounded-xl border bg-white p-5 transition-shadow hover:shadow-md ${
-                  isCurrent ? 'border-emerald-400 ring-2 ring-emerald-400/30' : 'border-slate-200'
+                  isCurrent ? 'border-emerald-400 ring-2 ring-emerald-400/30'
+                  : isMostPopular ? 'border-purple-400 ring-2 ring-purple-400/30'
+                  : 'border-slate-200'
                 }`}
               >
                 {isCurrent && (
@@ -403,17 +403,32 @@ function BillingSection() {
                     </span>
                   </div>
                 )}
+                {isMostPopular && !isCurrent && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <span className="rounded-full bg-purple-500 px-3 py-0.5 text-[11px] font-semibold text-white shadow">
+                      En Popüler
+                    </span>
+                  </div>
+                )}
                 <div className="flex items-center gap-2 mb-4">
                   <span className={plan.color}>{plan.icon}</span>
                   <h3 className="text-base font-semibold text-slate-800">{plan.name}</h3>
                 </div>
                 <div className="mb-5">
-                  <div className="flex items-end gap-1">
-                    <span className="text-3xl font-bold text-slate-900">${price}</span>
-                    <span className="mb-1 text-sm text-slate-400">/ay</span>
-                  </div>
-                  {interval === 'annual' && (
-                    <p className="mt-0.5 text-xs text-slate-400">Yıllık ödeme (${price * 12}/yıl)</p>
+                  {isCustom ? (
+                    <div className="flex items-end gap-1">
+                      <span className="text-2xl font-bold text-slate-900">Görüşmeli</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-end gap-1">
+                        <span className="text-3xl font-bold text-slate-900">${price}</span>
+                        <span className="mb-1 text-sm text-slate-400">/ay</span>
+                      </div>
+                      {interval === 'annual' && (
+                        <p className="mt-0.5 text-xs text-slate-400">Yıllık ödeme (${price * 12}/yıl)</p>
+                      )}
+                    </>
                   )}
                 </div>
                 <ul className="mb-6 flex-1 space-y-2">
@@ -437,6 +452,13 @@ function BillingSection() {
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50 py-2 text-center text-sm font-medium text-emerald-700">
                     Mevcut Plan
                   </div>
+                ) : isCustom ? (
+                  <a
+                    href="mailto:destek@stoaix.com?subject=Custom%20Plan%20Talebi"
+                    className="w-full rounded-lg border border-emerald-500 bg-white py-2 text-center text-sm font-medium text-emerald-600 transition-colors hover:bg-emerald-50 block"
+                  >
+                    İletişime Geç
+                  </a>
                 ) : (
                   <button
                     onClick={() => handleSelect(plan.id)}

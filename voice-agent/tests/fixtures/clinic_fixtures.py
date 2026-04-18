@@ -17,7 +17,7 @@ CLINIC_FIXTURES = {
             },
             "channel_config": {"voice": {"language": "tr"}},
             "crm_config": {},
-            "_plan": "advanced",
+            "_plan": "business",
         },
         "playbook": {
             "system_prompt_template": "Sen Test Saç Ekimi Kliniği adına arayan Ayşe'sin. Saç ekimi alanında bilgi veriyorsun.",
@@ -75,7 +75,7 @@ CLINIC_FIXTURES = {
             },
             "channel_config": {"voice": {"language": "tr"}},
             "crm_config": {},
-            "_plan": "plus",
+            "_plan": "professional",
         },
         "playbook": {
             "system_prompt_template": "Sen Test Diş Kliniği adına arayan Merve'sin. Diş sağlığı alanında bilgi veriyorsun.",
@@ -127,7 +127,7 @@ CLINIC_FIXTURES = {
             },
             "channel_config": {"voice": {"language": "tr"}},
             "crm_config": {},
-            "_plan": "advanced",
+            "_plan": "business",
         },
         "playbook": {
             "system_prompt_template": "Sen Test Medikal Estetik Merkezi adına arayan Selin'sin.",
@@ -179,7 +179,7 @@ CLINIC_FIXTURES = {
             },
             "channel_config": {"voice": {"language": "tr"}},
             "crm_config": {},
-            "_plan": "agency",
+            "_plan": "custom",
         },
         "playbook": {
             "system_prompt_template": "Sen Test Cerrahi Estetik Kliniği adına arayan Deniz'sin.",
@@ -237,7 +237,7 @@ CLINIC_FIXTURES = {
             },
             "channel_config": {"voice": {"language": "tr"}},
             "crm_config": {},
-            "_plan": "plus",
+            "_plan": "professional",
         },
         "playbook": {
             "system_prompt_template": "Sen Test Fizyoterapi Merkezi adına arayan Zeynep'sin.",
@@ -271,7 +271,7 @@ CLINIC_FIXTURES = {
         ],
         "sample_queries": [
             ("bel ağrısı için ne yapıyorsunuz?", ["bel", "terapi"]),
-            ("kaç seans gerekir?",               ["seans", "program"]),
+            ("kaç seans gerekir?",               ["egzersiz", "program"]),
             ("ilaç öneriyor musunuz?",           []),
         ],
     },
@@ -289,7 +289,7 @@ CLINIC_FIXTURES = {
             },
             "channel_config": {"voice": {"language": "tr"}},
             "crm_config": {},
-            "_plan": "advanced",
+            "_plan": "business",
         },
         "playbook": {
             "system_prompt_template": "Sen Test Göz Kliniği adına arayan Elif'sin. Göz sağlığı alanında bilgi veriyorsun.",
@@ -341,7 +341,7 @@ CLINIC_FIXTURES = {
             },
             "channel_config": {"voice": {"language": "tr"}},
             "crm_config": {},
-            "_plan": "lite",
+            "_plan": "essential",
         },
         "playbook": {
             "system_prompt_template": "Sen Test Aile Sağlığı Merkezi adına arayan Aslı'sın.",
@@ -393,7 +393,7 @@ CLINIC_FIXTURES = {
             },
             "channel_config": {"voice": {"language": "tr"}},
             "crm_config": {},
-            "_plan": "lite",
+            "_plan": "essential",
         },
         "playbook": {
             "system_prompt_template": "Sen Test Sağlık Merkezi adına arayan Büşra'sın.",

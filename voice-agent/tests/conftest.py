@@ -30,7 +30,7 @@ def mock_org():
         "ai_persona": {"persona_name": "Elif", "language": "tr"},
         "channel_config": {"voice": {"language": "tr"}, "voice_inbound": {"active": True}},
         "crm_config": {},
-        "_plan": "advanced",
+        "_plan": "business",
     }
 
 
