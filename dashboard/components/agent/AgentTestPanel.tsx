@@ -9,10 +9,12 @@ import {
 import {
   LiveKitRoom,
   RoomAudioRenderer,
+  StartAudio,
   useVoiceAssistant,
   useConnectionState,
+  useRemoteParticipants,
 } from '@livekit/components-react'
-import { ConnectionState } from 'livekit-client'
+import { ConnectionState, ParticipantKind } from 'livekit-client'
 import {
   AgentAudioVisualizerGrid,
   type GridVisualState,
@@ -307,13 +309,29 @@ function VoiceTestInner({
   remaining: number
   modelConfig: (typeof MODELS)[0]
 }) {
-  const { state: agentState, audioTrack } = useVoiceAssistant()
+  const { state: agentState, audioTrack, agent: agentParticipant } = useVoiceAssistant()
   const connectionState = useConnectionState()
   const lkConnected     = connectionState === ConnectionState.Connected
+  const remoteParticipants = useRemoteParticipants()
+  const agentInRoom = remoteParticipants.some(p => p.kind === ParticipantKind.AGENT)
+
   const gridState    = toGridState(lkConnected, agentState)
   const isLow        = remaining <= 30
   const formatTime   = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
   const estimatedCost = (elapsed / 60) * modelConfig.costPerMin
+
+  // Debug logging
+  useEffect(() => {
+    console.log('[VoiceTest]', {
+      connectionState,
+      agentState,
+      agentInRoom,
+      agentIdentity: agentParticipant?.identity,
+      hasAudioTrack: !!audioTrack,
+      remoteCount: remoteParticipants.length,
+      remoteKinds: remoteParticipants.map(p => `${p.identity}(kind=${p.kind})`),
+    })
+  }, [connectionState, agentState, agentInRoom, agentParticipant, audioTrack, remoteParticipants])
 
   // Start timer once LK room is connected
   const connectedRef = useRef(false)
@@ -324,7 +342,9 @@ function VoiceTestInner({
     }
   }, [lkConnected, onConnected])
 
-  const stateLabel = AGENT_STATE_LABELS[agentState] ?? 'Bağlandı'
+  const stateLabel = !agentInRoom && lkConnected
+    ? 'Agent bekleniyor...'
+    : (AGENT_STATE_LABELS[agentState] ?? 'Bağlandı')
 
   // Color based on state
   const gridColor =
@@ -465,6 +485,7 @@ function VoiceTest({ orgId, model }: { orgId: string; model: string }) {
           className="flex flex-col items-center justify-center h-[520px] gap-6"
         >
           <RoomAudioRenderer />
+          <StartAudio label="Sesi etkinleştirmek için tıklayın" />
           <VoiceTestInner
             onEnd={endCall}
             onConnected={handleConnected}
