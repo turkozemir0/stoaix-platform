@@ -33,8 +33,8 @@ def _build_real_org(clinic_type: str) -> dict:
     # production_prompts'tan system_prompt_template'i kullan (varsa)
     if prod.get("system_prompt_template"):
         playbook["system_prompt_template"] = prod["system_prompt_template"].format(
-            org_name=org["name"],
-            persona_name=org["ai_persona"]["persona_name"],
+            KLINIK_ADI=org["name"],
+            PERSONA_ADI=org["ai_persona"]["persona_name"],
         )
 
     return {
