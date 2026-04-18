@@ -475,6 +475,7 @@ function BillingSection() {
                     className="w-full rounded-lg bg-brand-500 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-600 disabled:opacity-60"
                   >
                     {isBusy ? 'Yükleniyor...' : 'Yükselt'}
+                  </button>
                 )}
               </div>
             )
