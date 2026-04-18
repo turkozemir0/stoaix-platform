@@ -380,20 +380,25 @@ function BillingSection() {
 
       {(!isLegacy || hasNoPlan) && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {PLANS.map(plan => {
+          {PLANS.map((plan, planIndex) => {
             const isCurrent = plan.id === currentPlanId
             const isCustom = plan.id === 'custom'
             const isMostPopular = plan.id === 'business'
             const price = interval === 'annual' ? plan.annualPrice : plan.monthlyPrice
             const isBusy = selectingPlan === plan.id
 
+            // Plan sırası: essential=0, professional=1, business=2, custom=3
+            const currentIndex = PLANS.findIndex(p => p.id === currentPlanId)
+            const isDowngrade = currentIndex >= 0 && planIndex < currentIndex && !isCustom
+
             return (
               <div
                 key={plan.id}
-                className={`relative flex flex-col rounded-xl border bg-white p-5 transition-shadow hover:shadow-md ${
+                className={`relative flex flex-col rounded-xl border bg-white p-5 transition-shadow ${
                   isCurrent ? 'border-emerald-400 ring-2 ring-emerald-400/30'
+                  : isDowngrade ? 'border-slate-100 opacity-60'
                   : isMostPopular ? 'border-purple-400 ring-2 ring-purple-400/30'
-                  : 'border-slate-200'
+                  : 'border-slate-200 hover:shadow-md'
                 }`}
               >
                 {isCurrent && (
@@ -403,7 +408,7 @@ function BillingSection() {
                     </span>
                   </div>
                 )}
-                {isMostPopular && !isCurrent && (
+                {isMostPopular && !isCurrent && !isDowngrade && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                     <span className="rounded-full bg-purple-500 px-3 py-0.5 text-[11px] font-semibold text-white shadow">
                       En Popüler
@@ -452,6 +457,10 @@ function BillingSection() {
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50 py-2 text-center text-sm font-medium text-emerald-700">
                     Mevcut Plan
                   </div>
+                ) : isDowngrade ? (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 py-2 text-center text-sm font-medium text-slate-400 cursor-not-allowed">
+                    Mevcut planınız daha üst
+                  </div>
                 ) : isCustom ? (
                   <a
                     href="mailto:destek@stoaix.com?subject=Custom%20Plan%20Talebi"
@@ -465,8 +474,7 @@ function BillingSection() {
                     disabled={isBusy || !!selectingPlan}
                     className="w-full rounded-lg bg-brand-500 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-600 disabled:opacity-60"
                   >
-                    {isBusy ? 'Yükleniyor...' : 'Seç'}
-                  </button>
+                    {isBusy ? 'Yükleniyor...' : 'Yükselt'}
                 )}
               </div>
             )
