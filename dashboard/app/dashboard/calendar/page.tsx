@@ -12,7 +12,7 @@ import { createClient } from '@/lib/supabase/client'
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type AppointmentType = 'consultation' | 'operation' | 'follow_up' | 'other'
-type AppointmentSource = 'platform' | 'google' | 'ai' | 'ghl'
+type AppointmentSource = 'platform' | 'google' | 'ai' | 'ghl' | 'dentsoft'
 type SourceFilter = 'all' | AppointmentSource
 
 interface Appointment {
@@ -65,18 +65,21 @@ const SOURCE_LABELS: Record<string, string> = {
   google:   'Google',
   ai:       'AI Asistan',
   ghl:      'GHL',
+  dentsoft: 'DentSoft',
 }
 const SOURCE_BAR_CLASS: Record<string, string> = {
   platform: 'bg-brand-400',
   google:   'bg-blue-400',
   ai:       'bg-emerald-400',
   ghl:      'bg-amber-400',
+  dentsoft: 'bg-purple-400',
 }
 const SOURCE_CHIP_CLASS: Record<string, string> = {
   platform: 'bg-brand-100 text-brand-700',
   google:   'bg-blue-100 text-blue-700',
   ai:       'bg-emerald-100 text-emerald-700',
   ghl:      'bg-amber-100 text-amber-700',
+  dentsoft: 'bg-purple-100 text-purple-700',
 }
 
 const TR_MONTHS = [
@@ -391,7 +394,7 @@ export default function CalendarPage() {
           <h1 className="text-xl font-semibold text-slate-800">Takvim</h1>
           {provider && provider !== 'none' && (
             <span className="text-xs bg-brand-50 text-brand-600 border border-brand-100 px-2 py-0.5 rounded-full font-medium">
-              {provider === 'google' ? 'Google Takvim bağlı' : provider}
+              {provider === 'google' ? 'Google Takvim bağlı' : provider === 'dentsoft' ? 'DentSoft bağlı' : provider}
             </span>
           )}
         </div>
@@ -413,7 +416,7 @@ export default function CalendarPage() {
 
       {/* ── Source Filter + Sync info ── */}
       <div className="flex items-center gap-2 mb-5 flex-wrap">
-        {(['all', 'platform', 'google', 'ai', 'ghl'] as const).map(f => (
+        {(['all', 'platform', 'google', 'ai', 'ghl', 'dentsoft'] as const).map(f => (
           <button key={f} onClick={() => setSourceFilter(f)}
             className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
               sourceFilter === f

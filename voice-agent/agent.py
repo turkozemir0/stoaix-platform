@@ -321,13 +321,102 @@ class GoogleCalendarAdapter(CalendarAdapter):
             return {"success": False, "appointment_id": None, "error": str(e)}
 
 
+class DentsoftCalendarAdapter(CalendarAdapter):
+    """DentSoft calendar adapter — slot çekme + randevu oluşturma."""
+
+    DAYS_TR = ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"]
+
+    def __init__(self, cal_config: dict):
+        self.api_url    = (cal_config.get("api_url") or "").rstrip("/")
+        self.api_key    = cal_config.get("api_key") or ""
+        self.clinic_id  = cal_config.get("clinic_id") or ""
+        self.doctor_id  = cal_config.get("default_doctor_id") or ""
+
+    async def _fetch(self, path: str, method: str = "GET", form_data: dict | None = None) -> dict | None:
+        """DentSoft API helper. Returns Response payload or None on error."""
+        import aiohttp
+        url     = f"{self.api_url}{path}"
+        headers = {"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}
+        try:
+            async with aiohttp.ClientSession() as session:
+                if method == "GET":
+                    async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status != 200:
+                            return None
+                        data = await resp.json()
+                else:
+                    fd = aiohttp.FormData()
+                    for k, v in (form_data or {}).items():
+                        fd.add_field(k, str(v))
+                    async with session.post(url, headers=headers, data=fd, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status != 200:
+                            return None
+                        data = await resp.json()
+                if data.get("Status", {}).get("Code") != 100:
+                    logger.warning(f"[dentsoft] API error: {data.get('Status', {}).get('Message')}")
+                    return None
+                return data.get("Response")
+        except Exception as e:
+            logger.warning(f"[dentsoft] _fetch failed ({path}): {e}")
+            return None
+
+    async def get_free_slots(self, days: int = 3) -> str:
+        if not self.doctor_id:
+            return ""
+        today = datetime.now().strftime("%Y-%m-%d")
+        params = urllib.parse.urlencode({
+            "ClinicID":  self.clinic_id,
+            "UserID":    self.doctor_id,
+            "Date":      today,
+            "Range":     f"1-{days * 5}",
+            "Available": "Available",
+        })
+        data = await self._fetch(f"/Api/v1/Doctor/OnlineWork?{params}")
+        if not data:
+            return ""
+
+        raw_slots = data if isinstance(data, list) else data.get("Slots", [])
+        grouped: dict[str, list[str]] = {}
+        for slot in raw_slots:
+            slot_date = (slot.get("Date") or slot.get("WorkDate") or "")[:10]
+            slot_time = (slot.get("Time") or slot.get("StartTime") or slot.get("Hour") or "")[:5]
+            if slot_date and slot_time:
+                grouped.setdefault(slot_date, []).append(slot_time)
+
+        lines = []
+        for date_key in sorted(grouped.keys())[:days]:
+            d        = datetime.strptime(date_key, "%Y-%m-%d")
+            day_name = self.DAYS_TR[d.weekday() + 1 if d.weekday() < 6 else 0]
+            times    = ", ".join(grouped[date_key][:8])
+            lines.append(f"  {day_name} ({date_key}): {times}")
+        return "\n".join(lines) if lines else ""
+
+    async def create_appointment(self, name, phone, datetime_str, notes="") -> dict:
+        if not self.doctor_id:
+            return {"success": False, "appointment_id": None, "error": "default_doctor_id not configured"}
+        form_data = {
+            "FullName":      name,
+            "ContactMobile": phone,
+            "Date":          datetime_str[:10],
+            "Time":          datetime_str[11:16],
+            "Note":          notes,
+            "PatientNumber": "",
+        }
+        path = f"/Api/v1/Appointment/New/{urllib.parse.quote(self.clinic_id)}/{urllib.parse.quote(self.doctor_id)}"
+        data = await self._fetch(path, method="POST", form_data=form_data)
+        if data is None:
+            return {"success": False, "appointment_id": None, "error": "DentSoft appointment creation failed"}
+        appt_id = data.get("PNR") or data.get("AppointmentID") or data.get("ID")
+        return {"success": True, "appointment_id": str(appt_id) if appt_id else None, "error": None}
+
+
 def get_calendar_adapter(org: dict) -> CalendarAdapter | None:
     """
     Returns the appropriate CalendarAdapter for the org, or None if not configured.
 
     Resolution order:
     1. channel_config.calendar.provider = 'google'    → GoogleCalendarAdapter
-    2. channel_config.calendar.provider = 'dentsoft'  → None (skeleton, API docs pending)
+    2. channel_config.calendar.provider = 'dentsoft'  → DentsoftCalendarAdapter
     3. crm_config.calendar_id + pit_token present     → GHLCalendarAdapter (legacy)
     4. otherwise → None
     """
@@ -341,8 +430,9 @@ def get_calendar_adapter(org: dict) -> CalendarAdapter | None:
         return GoogleCalendarAdapter(cal_config)
 
     if provider == "dentsoft":
-        # Dentsoft adapter not yet implemented — API docs pending
-        return None
+        if not cal_config.get("api_url") or not cal_config.get("api_key") or not cal_config.get("clinic_id"):
+            return None
+        return DentsoftCalendarAdapter(cal_config)
 
     # Legacy GHL: crm_config.calendar_id + crm_config.pit_token
     crm_config   = org.get("crm_config") or {}

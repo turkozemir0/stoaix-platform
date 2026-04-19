@@ -769,11 +769,8 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
                   {crmProvider === 'dentsoft' && (
                     <div className="space-y-3 pt-1 border-t border-slate-100">
                       <SectionLabel>Dentsoft API Bilgileri</SectionLabel>
-                      <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5 text-xs text-amber-700">
-                        Native Dentsoft adapter henüz geliştirme aşamasında. API dökümantasyonu teslim edildiğinde aktif olacak.
-                      </div>
-                      <Field label="API URL" value={dsApiUrl} onChange={setDsApiUrl} placeholder="https://api.dentsoft.com.tr" mono={false} />
-                      <Field label="API Key" value={dsApiKey} onChange={setDsApiKey} placeholder="xxx..." />
+                      <Field label="API URL" value={dsApiUrl} onChange={setDsApiUrl} placeholder="https://clinicadi.dentsoft.com.tr" mono={false} />
+                      <Field label="API Key" value={dsApiKey} onChange={setDsApiKey} placeholder="Bearer token..." />
                       <Field label="Klinik ID" value={dsClinicId} onChange={setDsClinicId} placeholder="klinik_id" />
                     </div>
                   )}
@@ -825,11 +822,11 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
                   {calProvider === 'dentsoft' && (
                     <div className="space-y-3 pt-1 border-t border-slate-100">
                       <SectionLabel>Dentsoft Takvim Bilgileri</SectionLabel>
-                      <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5 text-xs text-amber-700">
-                        Dentsoft takvim entegrasyonu, CRM sekmesindeki Dentsoft API bilgilerini kullanır. Ayrı credentials gerekmez.
-                      </div>
-                      <Field label="API URL" value={calDsApiUrl} onChange={setCalDsApiUrl} placeholder="https://api.dentsoft.com.tr" mono={false} />
-                      <Field label="API Key" value={calDsApiKey} onChange={setCalDsApiKey} placeholder="xxx..." />
+                      <p className="text-xs text-slate-500">
+                        Dentsoft takvim entegrasyonu Bearer Token ile calisiyor. Musteriler Entegrasyonlar sayfasindan da baglayabilir.
+                      </p>
+                      <Field label="API URL" value={calDsApiUrl} onChange={setCalDsApiUrl} placeholder="https://clinicadi.dentsoft.com.tr" mono={false} />
+                      <Field label="API Key" value={calDsApiKey} onChange={setCalDsApiKey} placeholder="Bearer token..." />
                       <Field label="Klinik ID" value={calDsClinicId} onChange={setCalDsClinicId} placeholder="klinik_id" />
                     </div>
                   )}

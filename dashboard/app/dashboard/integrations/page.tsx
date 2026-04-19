@@ -9,6 +9,7 @@ import { ConfigDrawer } from '@/components/integrations/ConfigDrawer'
 import { WhatsAppConfig } from '@/components/integrations/WhatsAppConfig'
 import { InstagramConfig } from '@/components/integrations/InstagramConfig'
 import { CalendarConfig } from '@/components/integrations/CalendarConfig'
+import { DentSoftConfig } from '@/components/integrations/DentSoftConfig'
 import { ExcludedPhonesConfig } from '@/components/integrations/ExcludedPhonesConfig'
 import { VoiceProviderConfig } from '@/components/integrations/VoiceProviderConfig'
 import { VOICE_PROVIDERS, PROVIDER_LIST } from '@/lib/voice-providers'
@@ -17,6 +18,7 @@ type DrawerId =
   | 'whatsapp'
   | 'instagram'
   | 'calendar'
+  | 'dentsoft'
   | 'excluded-phones'
   | 'netgsm'
   | 'verimor'
@@ -36,6 +38,7 @@ export default function IntegrationsPage() {
   const [waStatus, setWaStatus] = useState<{ connected: boolean; label?: string }>({ connected: false })
   const [igStatus, setIgStatus] = useState<{ connected: boolean; label?: string }>({ connected: false })
   const [calStatus, setCalStatus] = useState<{ connected: boolean }>({ connected: false })
+  const [dsStatus, setDsStatus] = useState<{ connected: boolean }>({ connected: false })
   const [voiceStatus, setVoiceStatus] = useState<Record<string, boolean>>({})
 
   return (
@@ -108,6 +111,15 @@ export default function IntegrationsPage() {
               onClick={() => setActiveDrawer('calendar')}
             />
           </Suspense>
+          <Suspense fallback={<CardSkeleton />}>
+            <IntegrationCard
+              icon={<Calendar size={16} className="text-purple-500" />}
+              name="DentSoft"
+              description="Dis klinigi takvim entegrasyonu"
+              status={dsStatus.connected ? 'connected' : 'disconnected'}
+              onClick={() => setActiveDrawer('dentsoft')}
+            />
+          </Suspense>
         </div>
       </section>
 
@@ -164,6 +176,19 @@ export default function IntegrationsPage() {
         <Suspense fallback={<DrawerSkeleton />}>
           <CalendarConfig
             onStatusChange={(c) => setCalStatus({ connected: c })}
+          />
+        </Suspense>
+      </ConfigDrawer>
+
+      <ConfigDrawer
+        open={activeDrawer === 'dentsoft'}
+        onClose={() => setActiveDrawer(null)}
+        title="DentSoft"
+        icon={<Calendar size={18} className="text-purple-500" />}
+      >
+        <Suspense fallback={<DrawerSkeleton />}>
+          <DentSoftConfig
+            onStatusChange={(c) => setDsStatus({ connected: c })}
           />
         </Suspense>
       </ConfigDrawer>
