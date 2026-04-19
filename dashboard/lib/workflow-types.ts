@@ -112,6 +112,8 @@ export interface TemplateWithStatus extends WorkflowTemplate {
   active_workflow_id: string | null  // org_workflows.id varsa
   is_active: boolean
   config: Record<string, any>
+  channel_ready: boolean         // entegrasyon kurulu mu
+  missing_channels: string[]     // eksik kanallar: ['WhatsApp', 'Ses (Giden)']
 }
 
 // n8n webhook payload (Dashboard → n8n)

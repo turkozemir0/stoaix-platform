@@ -5,6 +5,7 @@ import StatCard from '@/components/StatCard'
 import TrendChart from '@/components/TrendChart'
 import LeadBadge from '@/components/LeadBadge'
 import SetupBanner from '@/components/setup/SetupBanner'
+import IntegrationHealthWidget from '@/components/IntegrationHealthWidget'
 import { getT } from '@/lib/i18n'
 import { cookies } from 'next/headers'
 import { formatDuration } from '@/lib/types'
@@ -126,6 +127,7 @@ export default async function DashboardPage() {
       </div>
 
       <SetupBanner />
+      <IntegrationHealthWidget />
 
       <div id="dashboard-main-content" className="space-y-6 transition-all duration-300">
 

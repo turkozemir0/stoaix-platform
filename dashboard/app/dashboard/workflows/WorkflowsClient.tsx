@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Phone, MessageSquare, ArrowLeftRight, Zap,
   ToggleLeft, ToggleRight, Settings2, Clock, Lock,
-  CreditCard, Loader2, RefreshCw, Play,
+  CreditCard, Loader2, RefreshCw, Play, AlertTriangle, Plug,
 } from 'lucide-react'
 import Link from 'next/link'
 import type { TemplateWithStatus } from '@/lib/workflow-types'
@@ -46,14 +46,15 @@ function WorkflowCard({
 }) {
   const Icon = CATEGORY_ICONS[template.category] ?? Zap
   const locked = !template.plan_allowed
+  const channelMissing = !locked && !template.channel_ready
   const workflowId = template.active_workflow_id
 
   return (
-    <div className={`bg-white rounded-xl border ${locked ? 'border-slate-100' : 'border-slate-200'} p-5`}>
+    <div className={`bg-white rounded-xl border ${locked ? 'border-slate-100' : channelMissing ? 'border-amber-200' : 'border-slate-200'} p-5`}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3 min-w-0">
-          <div className={`mt-0.5 shrink-0 p-2 rounded-lg ${locked ? 'bg-slate-50' : 'bg-brand-50'}`}>
-            <Icon size={16} className={locked ? 'text-slate-300' : 'text-brand-600'} />
+          <div className={`mt-0.5 shrink-0 p-2 rounded-lg ${locked ? 'bg-slate-50' : channelMissing ? 'bg-amber-50' : 'bg-brand-50'}`}>
+            <Icon size={16} className={locked ? 'text-slate-300' : channelMissing ? 'text-amber-500' : 'text-brand-600'} />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -64,6 +65,12 @@ function WorkflowCard({
                 <span className="inline-flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                   Aktif
+                </span>
+              )}
+              {channelMissing && (
+                <span className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5">
+                  <AlertTriangle size={10} />
+                  Entegrasyon eksik
                 </span>
               )}
             </div>
@@ -83,7 +90,7 @@ function WorkflowCard({
               <CreditCard size={12} />
               Yükselt
             </Link>
-          ) : workflowId ? (
+          ) : workflowId && !channelMissing ? (
             <button
               onClick={() => onToggle(workflowId, template.is_active)}
               disabled={toggling === workflowId}
@@ -102,15 +109,41 @@ function WorkflowCard({
         </div>
       </div>
 
+      {/* Channel missing warning */}
+      {channelMissing && (
+        <div className="mt-3 flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          <Plug size={12} className="text-amber-500 shrink-0" />
+          <span className="text-xs text-amber-700">
+            {template.missing_channels.join(', ')} entegrasyonu gerekli
+          </span>
+          <Link
+            href="/dashboard/integrations"
+            className="ml-auto text-xs text-amber-700 hover:text-amber-800 font-medium whitespace-nowrap"
+          >
+            Entegrasyonlara Git →
+          </Link>
+        </div>
+      )}
+
       {!locked && (
         <div className="mt-4 flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => onEdit(template)}
-            className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 transition-colors"
-          >
-            <Settings2 size={12} />
-            {workflowId ? 'Düzenle' : 'Kur & Aktif Et'}
-          </button>
+          {channelMissing ? (
+            <span
+              className="flex items-center gap-1.5 text-xs text-slate-400 bg-slate-50 border border-slate-100 rounded-lg px-3 py-1.5 cursor-not-allowed"
+              title="Önce gerekli entegrasyonları tamamlayın"
+            >
+              <Settings2 size={12} />
+              Kur & Aktif Et
+            </span>
+          ) : (
+            <button
+              onClick={() => onEdit(template)}
+              className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 transition-colors"
+            >
+              <Settings2 size={12} />
+              {workflowId ? 'Düzenle' : 'Kur & Aktif Et'}
+            </button>
+          )}
 
           {workflowId && (
             <button
@@ -122,7 +155,7 @@ function WorkflowCard({
             </button>
           )}
 
-          {workflowId && template.is_active && (
+          {workflowId && template.is_active && !channelMissing && (
             <button
               onClick={() => onManualRun(template)}
               className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg px-3 py-1.5 transition-colors"
@@ -228,6 +261,7 @@ export default function WorkflowsClient() {
   const [manualRunTemplate, setManualRunTemplate] = useState<TemplateWithStatus | null>(null)
   const [historyWorkflow, setHistoryWorkflow]     = useState<{ id: string; name: string } | null>(null)
   const [toggling, setToggling]       = useState<string | null>(null)
+  const [toggleError, setToggleError] = useState<string | null>(null)
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true)
@@ -243,12 +277,20 @@ export default function WorkflowsClient() {
 
   async function handleToggle(workflowId: string, current: boolean) {
     setToggling(workflowId)
+    setToggleError(null)
     try {
-      await fetch(`/api/workflows/${workflowId}`, {
+      const res = await fetch(`/api/workflows/${workflowId}`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ is_active: !current }),
       })
+      if (!res.ok) {
+        const data = await res.json()
+        if (data.error === 'channel_not_ready') {
+          setToggleError(data.message)
+          return
+        }
+      }
       await fetchTemplates()
     } finally {
       setToggling(null)
@@ -295,6 +337,23 @@ export default function WorkflowsClient() {
           </button>
         ))}
       </div>
+
+      {/* Toggle error */}
+      {toggleError && (
+        <div className="mb-4 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <AlertTriangle size={14} className="text-amber-500 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm text-amber-700">{toggleError}</p>
+            <Link
+              href="/dashboard/integrations"
+              className="text-xs text-amber-700 hover:text-amber-800 font-medium mt-1 inline-block"
+            >
+              Entegrasyonlara Git →
+            </Link>
+          </div>
+          <button onClick={() => setToggleError(null)} className="text-amber-400 hover:text-amber-600 text-sm">✕</button>
+        </div>
+      )}
 
       {/* Content */}
       {loading ? (

@@ -3,6 +3,7 @@ import { createClient as sbAdmin } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { checkEntitlement } from '@/lib/entitlements'
 import { getTemplate } from '@/lib/workflow-templates'
+import { checkChannelReady } from '@/lib/integration-health'
 
 function getServiceClient() {
   return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -67,6 +68,18 @@ export async function POST(request: NextRequest) {
       error:   'upgrade_required',
       feature: template.required_feature,
     }, { status: 403 })
+  }
+
+  // Channel readiness check — only when activating
+  if (is_active) {
+    const channelCheck = await checkChannelReady(orgUser.organization_id, template.channel)
+    if (!channelCheck.ready) {
+      return NextResponse.json({
+        error:   'channel_not_ready',
+        missing: channelCheck.missing,
+        message: `Bu iş akışını aktifleştirmek için şu entegrasyonları tamamlayın: ${channelCheck.missing.join(', ')}`,
+      }, { status: 400 })
+    }
   }
 
   const service = getServiceClient()
