@@ -96,5 +96,15 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Fire-and-forget: workflow activation event
+  if (is_active) {
+    service.from('org_events').insert({
+      org_id: orgUser.organization_id,
+      event_type: 'workflow_activated',
+      metadata: { template_id },
+    }).then(() => {})
+  }
+
   return NextResponse.json(data)
 }

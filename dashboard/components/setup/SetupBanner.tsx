@@ -102,14 +102,15 @@ export default function SetupBanner() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {/* Progress dots */}
-          <div className="hidden sm:flex items-center gap-1.5">
-            {[0, 1, 2, 3, 4].map(i => (
+          {/* Progress bar */}
+          <div className="hidden sm:flex items-center gap-2">
+            <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
               <div
-                key={i}
-                className={`w-2 h-2 rounded-full transition-colors ${i < completedCount ? 'bg-brand-500' : 'bg-slate-200'}`}
+                className="h-full bg-brand-500 rounded-full transition-all duration-500"
+                style={{ width: `${Math.round((completedCount / 5) * 100)}%` }}
               />
-            ))}
+            </div>
+            <span className="text-xs font-medium text-slate-500">%{Math.round((completedCount / 5) * 100)}</span>
           </div>
           <button
             onClick={handleCollapse}

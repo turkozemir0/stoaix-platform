@@ -97,5 +97,13 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   await incrementUsage(organization_id, 'kb_write')
+
+  // Fire-and-forget: kb item added event
+  service.from('org_events').insert({
+    org_id: organization_id,
+    event_type: 'kb_item_added',
+    metadata: { item_type: item_type || 'faq', title },
+  }).then(() => {})
+
   return NextResponse.json(data)
 }

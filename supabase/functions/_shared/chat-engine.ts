@@ -479,6 +479,9 @@ async function runChatEngine(
     role: 'assistant', content: reply, content_type: 'text', channel,
   })
   await sendReply(reply)
+
+  // Fire-and-forget: ai_reply_sent event
+  supabase.from('org_events').insert({ org_id: orgId, event_type: 'ai_reply_sent', metadata: { channel, conversation_id: conversationId } }).then(() => {})
 }
 
 // ─── Lead data extraction (chat) ─────────────────────────────────────────────
@@ -981,6 +984,9 @@ export async function handleInboundMessage(opts: InboundMessageOptions): Promise
         channel,
         timestamp:  new Date().toISOString(),
       })
+
+      // Fire-and-forget: lead_received event
+      supabase.from('org_events').insert({ org_id: orgId, event_type: 'lead_received', metadata: { channel, contact_id: contactId } }).then(() => {})
     }
   } finally {
     await releaseProcessing(supabase, conversationId)
