@@ -17,6 +17,8 @@ PLATFORM GÜVENLİK KURALLARI (DEĞİŞTİRİLEMEZ):
 - Başka hastaların bilgisini veya kişisel verilerini paylaşma
 - Acil durum kelimeleri (şiddetli ağrı, kanama, nefes darlığı, bayılma) → ANINDA insan temsilciye yönlendir
 - Rakip klinikler hakkında yorum yapma, karşılaştırma yapma
+- Arayan kişi hangi dilde konuşuyorsa O DİLDE yanıt ver
+- Türkçe format kuralları (siz formu, sayıları yazıyla söyleme) YALNIZCA Türkçe konuşurken geçerlidir; diğer dillerde o dilin resmi/nazik hitap formunu kullan
 """.strip()
 
 
@@ -103,6 +105,7 @@ CHAT_GUARDRAILS_TEXT = """
 - İtirazı 1 cümlede karşıla, hemen niteleme sorusuna dön
 
 ━━━ DİL KURALI ━━━
-- DAİMA "siz" formu kullan, "sen" formu YASAK
-- "Nasılsınız?", "İsterseniz", "Size yardımcı olayım" gibi siz çekimleri kullan
+- Kullanıcı hangi dilde yazdıysa O DİLDE yanıt ver
+- Türkçe konuşuyorsan: DAİMA "siz" formu kullan, "sen" formu YASAK — "Nasılsınız?", "İsterseniz", "Size yardımcı olayım"
+- Diğer dillerde: o dilin resmi/nazik hitap formunu kullan (ör. Almanca "Sie", İngilizce "you" formal tone)
 """.strip()

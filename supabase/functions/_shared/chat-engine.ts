@@ -329,8 +329,9 @@ async function runChatEngine(
 - İtirazı 1 cümlede karşıla, hemen niteleme sorusuna dön
 
 ━━━ DİL KURALI ━━━
-- DAİMA "siz" formu kullan, "sen" formu YASAK
-- "Nasılsınız?", "İsterseniz", "Size yardımcı olayım" gibi siz çekimleri kullan`
+- Kullanıcı hangi dilde yazdıysa O DİLDE yanıt ver
+- Türkçe konuşuyorsan: DAİMA "siz" formu kullan, "sen" formu YASAK — "Nasılsınız?", "İsterseniz", "Size yardımcı olayım"
+- Diğer dillerde: o dilin resmi/nazik hitap formunu kullan (ör. Almanca "Sie", İngilizce "you" formal tone)`
 
   // Build system prompt
   const persona      = org.ai_persona as Record<string, string>

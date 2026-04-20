@@ -1451,7 +1451,7 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
     voice_id = CARTESIA_VOICES.get(tts_lang) or CARTESIA_VOICES["tr"]
 
     session = AgentSession(
-        stt=deepgram.STT(model="nova-3", language=tts_lang),
+        stt=deepgram.STT(model="nova-3", language="multi"),
         llm=llm_instance,
         tts=cartesia.TTS(
             model="sonic-3",
