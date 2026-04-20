@@ -7,6 +7,7 @@ import { ArrowLeft } from 'lucide-react'
 import LeadDetailClient from './LeadDetailClient'
 import LeadAppointmentsClient from './LeadAppointmentsClient'
 import LeadPipelinesClient from './LeadPipelinesClient'
+import ContactLanguageSelect from './ContactLanguageSelect'
 
 export default async function LeadDetailPage({ params }: { params: { id: string } }) {
   const supabase = createClient()
@@ -26,7 +27,7 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
     .select(`
       id, qualification_score, status, source_channel, collected_data,
       data_completeness, missing_fields, notes, created_at, updated_at,
-      contact:contacts(id, full_name, phone, email, status, source_channel, created_at)
+      contact:contacts(id, full_name, phone, email, status, source_channel, created_at, preferred_language)
     `)
     .eq('id', params.id)
     .maybeSingle()
@@ -126,6 +127,12 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
               </div>
             ) : null)}
           </dl>
+          {contact?.id && (
+            <ContactLanguageSelect
+              contactId={contact.id}
+              initialLanguage={contact.preferred_language ?? null}
+            />
+          )}
         </div>
 
         {/* Collected Data */}

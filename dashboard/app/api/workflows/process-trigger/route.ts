@@ -62,13 +62,16 @@ export async function POST(request: NextRequest) {
   if (contactId) {
     const { data: contact } = await service
       .from('contacts')
-      .select('phone, full_name, source_channel')
+      .select('phone, full_name, source_channel, preferred_language')
       .eq('id', contactId)
       .maybeSingle()
     if (contact) {
       contactPhone  = contact.phone ?? contactPhone
       contactData.name         = contact.full_name ?? ''
       contactData.lead_source  = contact.source_channel ?? ''
+      if (contact.preferred_language) {
+        contactData.preferred_language = contact.preferred_language
+      }
     }
   }
 

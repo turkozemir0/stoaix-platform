@@ -132,6 +132,8 @@ const VOICE_LANGUAGES_BASE = [
 
 const VOICE_LANGUAGES_ADVANCED = [
   ...VOICE_LANGUAGES_BASE,
+  { value: 'ar', label: 'Arapça (AR)' },
+  { value: 'de', label: 'Almanca (DE)' },
   { value: 'ru', label: 'Rusça (RU)' },
   { value: 'fr', label: 'Fransızca (FR)' },
   { value: 'es', label: 'İspanyolca (ES)' },
