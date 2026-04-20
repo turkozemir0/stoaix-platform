@@ -452,6 +452,19 @@ export default function SetupCommandCenter() {
             ))}
           </div>
 
+          {/* Go to integrations page */}
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-xs text-slate-500">
+              {activeChannelCount}/5 kanal bağlı
+            </span>
+            <Link
+              href="/dashboard/integrations"
+              className="text-xs font-medium px-3 py-1.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors"
+            >
+              Entegrasyonları Yönet →
+            </Link>
+          </div>
+
           {/* Blocked workflows warning */}
           {healthData.blocked_workflow_count > 0 && (
             <div className="mt-3 pt-3 border-t border-amber-100">
