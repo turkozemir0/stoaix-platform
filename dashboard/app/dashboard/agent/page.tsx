@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  Save, Loader2, Plus, Trash2, Bot, Sparkles, Mic, MessageSquare, ListChecks,
+  Save, Loader2, Plus, Trash2, Bot, Mic, MessageSquare, ListChecks,
   FlaskConical, PhoneForwarded, Clock, ToggleLeft, ToggleRight, Lightbulb,
   ArrowUpRight, CheckCircle2, BookOpen, AlertTriangle, X, Lock, Star,
   ArrowLeft, ArrowRight, Info, Zap,
@@ -196,15 +196,11 @@ function AgentPageInner() {
   const [voiceIntakeId, setVoiceIntakeId]   = useState<string | null>(null)
   const [waIntakeId, setWaIntakeId]         = useState<string | null>(null)
 
-  const [suggestions, setSuggestions]                   = useState<IntakeField[]>([])
-  const [selectedSuggestions, setSelectedSuggestions]   = useState<Set<string>>(new Set())
-  const [suggesting, setSuggesting]                     = useState(false)
   const [savingIntake, setSavingIntake]                 = useState<boolean>(false)
   const [intakeSaved, setIntakeSaved]                   = useState(false)
 
   const [kbCount, setKbCount]               = useState(0)
   const [activeTipIndex, setActiveTipIndex] = useState(0)
-  const [generating, setGenerating]         = useState(false)
   const [saving, setSaving]                 = useState(false)
   const [savedChannel, setSavedChannel]     = useState<Channel | null>(null)
   const [orgName, setOrgName]               = useState('')
@@ -393,24 +389,6 @@ function AgentPageInner() {
     })
   }, [])
 
-  async function handleGenerate() {
-    setGenerating(true)
-    setError('')
-    try {
-      const res = await fetch('/api/agent/generate-prompt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channel: activeChannel }),
-      })
-      if (!res.ok) throw new Error('Üretim başarısız')
-      const { system_prompt } = await res.json()
-      setCurrent(prev => ({ ...prev, systemPrompt: system_prompt }))
-    } catch {
-      setError('Prompt üretilemedi. Lütfen tekrar deneyin.')
-    } finally {
-      setGenerating(false)
-    }
-  }
 
   async function handleSave() {
     if (!orgId) return
@@ -487,34 +465,6 @@ function AgentPageInner() {
     setTimeout(() => setSavedChannel(null), 3000)
   }
 
-  async function handleSuggestIntake() {
-    setSuggesting(true)
-    setSuggestions([])
-    setSelectedSuggestions(new Set())
-    try {
-      const res = await fetch('/api/agent/suggest-intake', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channel: activeChannel }),
-      })
-      if (!res.ok) throw new Error()
-      const { fields } = await res.json()
-      setSuggestions(fields ?? [])
-      setSelectedSuggestions(new Set((fields ?? []).map((f: IntakeField) => f.key)))
-    } catch {
-      setError('Öneri üretilemedi. Lütfen tekrar deneyin.')
-    } finally {
-      setSuggesting(false)
-    }
-  }
-
-  function addSelectedSuggestions() {
-    const existingKeys = new Set(currentIntake.map(f => f.key))
-    const toAdd = suggestions.filter(f => selectedSuggestions.has(f.key) && !existingKeys.has(f.key))
-    setCurrentIntake(prev => [...prev, ...toAdd])
-    setSuggestions([])
-    setSelectedSuggestions(new Set())
-  }
 
   function removeIntakeField(i: number) {
     setCurrentIntake(prev => prev.filter((_, idx) => idx !== i))
@@ -1016,14 +966,10 @@ function AgentPageInner() {
                       : 'Asistanın kimliğini, görevini ve mesajlaşma davranışını tanımlar.'}
                   </p>
                 </div>
-                <button
-                  onClick={handleGenerate}
-                  disabled={generating}
-                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-600 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-                >
-                  {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                  {generating ? 'Üretiliyor...' : 'AI ile Oluştur'}
-                </button>
+                <div className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <CheckCircle2 size={13} className="text-emerald-600" />
+                  <span className="text-xs font-medium text-emerald-700">23.000+ senaryoda test edildi</span>
+                </div>
               </div>
               <textarea
                 value={current.systemPrompt}
@@ -1057,14 +1003,10 @@ function AgentPageInner() {
                   </p>
                 </div>
                 <div className="flex gap-2 flex-shrink-0">
-                  <button
-                    onClick={handleSuggestIntake}
-                    disabled={suggesting}
-                    className="flex items-center gap-1.5 px-3 py-1.5 border border-brand-200 bg-brand-50 hover:bg-brand-100 text-brand-600 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-                  >
-                    {suggesting ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                    {suggesting ? 'Üretiliyor...' : 'AI Öner'}
-                  </button>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                    <CheckCircle2 size={13} className="text-emerald-600" />
+                    <span className="text-xs font-medium text-emerald-700">Optimize edilmiş</span>
+                  </div>
                   <button
                     onClick={handleSaveIntake}
                     disabled={savingIntake}
@@ -1099,51 +1041,6 @@ function AgentPageInner() {
                 </div>
               )}
 
-              {suggestions.length > 0 && (
-                <div className="border border-brand-100 rounded-xl p-4 bg-brand-50 space-y-3">
-                  <p className="text-xs font-semibold text-brand-700">
-                    AI Önerileri — eklemek istediklerini seç:
-                  </p>
-                  <div className="space-y-2">
-                    {suggestions.map(f => (
-                      <label key={f.key} className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={selectedSuggestions.has(f.key)}
-                          onChange={e => {
-                            const next = new Set(selectedSuggestions)
-                            e.target.checked ? next.add(f.key) : next.delete(f.key)
-                            setSelectedSuggestions(next)
-                          }}
-                          className="rounded border-brand-300 text-brand-600"
-                        />
-                        <span className="text-sm text-slate-700 flex-1">{f.label}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          f.priority === 'must' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'
-                        }`}>
-                          {f.priority === 'must' ? 'Zorunlu' : 'Opsiyonel'}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={addSelectedSuggestions}
-                      disabled={selectedSuggestions.size === 0}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors"
-                    >
-                      <Plus size={13} />
-                      Seçilenleri Ekle ({selectedSuggestions.size})
-                    </button>
-                    <button
-                      onClick={() => { setSuggestions([]); setSelectedSuggestions(new Set()) }}
-                      className="px-3 py-1.5 text-slate-500 hover:text-slate-700 text-xs font-medium"
-                    >
-                      İptal
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Koruma Blokları */}
