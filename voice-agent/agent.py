@@ -28,6 +28,7 @@ from prompt_rules import (
     OBJECTION_RULES,
     get_voice_rules,
     language_instruction,
+    inbound_language_instruction,
     LANGUAGE_NAMES,
 )
 from livekit.agents import (
@@ -533,6 +534,75 @@ async def create_appointment_reminders(
         logger.info(f"Appointment reminder tasks created for {datetime_str}")
     except Exception as e:
         logger.warning(f"create_appointment_reminders failed: {e}")
+
+
+# ── Language detection helpers ─────────────────────────────────────────────────
+
+def detect_language_heuristic(text: str) -> str | None:
+    """
+    İlk user utterance'dan dil algıla. None = TR (switch gerekmez).
+
+    Algılama sırası:
+      1. Türkçe özel karakterler (şçğıöü) → None (TR, switch yok)
+      2. Script-based: Arapça / Kiril / Çince yazı sistemi → kesin algılama
+      3. Latin-script özel karakterler: ß/äöü → DE, éèç → FR, ñ → ES, ãõ → PT
+      4. Kelime tabanlı: ≥2 indicator kelime eşleşmesi → en yüksek skor kazanır
+      5. Hiçbiri → None (TR default)
+    """
+    if not text or not text.strip():
+        return None
+
+    # 1. Turkish special chars → stay TR
+    if any(c in _TR_CHARS for c in text):
+        return None
+
+    # 2. Script-based detection (non-Latin scripts — very high confidence)
+    for c in text:
+        cp = ord(c)
+        if cp in _ARABIC_RANGE:
+            return "ar"
+        if cp in _CYRILLIC_RANGE:
+            return "ru"
+        if cp in _CJK_RANGE:
+            return "zh"
+
+    # 3. Latin-script special chars (high confidence)
+    chars = set(text)
+    if chars & _DE_CHARS:
+        return "de"
+    if chars & _FR_CHARS:
+        return "fr"
+    if chars & _ES_CHARS:
+        return "es"
+    if chars & _PT_CHARS:
+        return "pt"
+
+    # 4. Word-based detection (Latin-script languages without special chars)
+    words = set(re.sub(r"[^\w\s]", "", text.lower()).split())
+    if not words:
+        return None
+
+    best_lang = None
+    best_score = 0
+    for lang_code, indicators in _LANG_INDICATORS.items():
+        score = len(words & indicators)
+        if score > best_score:
+            best_score = score
+            best_lang = lang_code
+
+    if best_score >= 2:
+        return best_lang
+
+    return None
+
+
+async def _save_contact_language(contact_id: str, lang: str):
+    try:
+        get_supabase().table("contacts").update(
+            {"preferred_language": lang}
+        ).eq("id", contact_id).execute()
+    except Exception as e:
+        logger.warning(f"Failed to save contact language: {e}")
 
 
 # ── Prompt builder ─────────────────────────────────────────────────────────────
@@ -1238,6 +1308,63 @@ DAYS_I18N = {
     "ru": ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"],
 }
 
+# ── Inbound language detection ────────────────────────────────────────────────
+_LANG_DETECT_PLANS = {"professional", "business", "custom", "legacy"}
+_PROFESSIONAL_LANGS = {"tr", "en"}
+_BUSINESS_LANGS = {"tr", "en", "ar", "de", "es", "fr", "it", "pt", "ru", "zh"}
+
+_TR_CHARS = frozenset("şçğıöüŞÇĞİÖÜ")  # ö/ü shared with DE but common in TR — TR priority
+
+# Script-based detection — unique character ranges (very high accuracy)
+_ARABIC_RANGE = range(0x0600, 0x06FF + 1)   # Arabic script
+_CYRILLIC_RANGE = range(0x0400, 0x04FF + 1)  # Cyrillic (Russian etc.)
+_CJK_RANGE = range(0x4E00, 0x9FFF + 1)       # CJK Unified Ideographs (Chinese)
+
+# Word-based indicators per language (Latin-script languages need ≥2 matches)
+_LANG_INDICATORS = {
+    "en": frozenset({
+        "hi", "hello", "hey", "i", "my", "want", "need", "can", "would",
+        "please", "appointment", "call", "yes", "no", "the", "is", "are",
+        "do", "have", "about", "information", "like", "book",
+    }),
+    "de": frozenset({
+        "ich", "hallo", "guten", "tag", "morgen", "bitte", "termin",
+        "möchte", "brauche", "kann", "mein", "eine", "einen", "ja",
+        "nein", "und", "oder", "danke", "sprechen", "arzt", "zahnarzt",
+        "behandlung", "beratung", "vereinbaren",
+    }),
+    "fr": frozenset({
+        "je", "bonjour", "salut", "voudrais", "besoin", "rendez",
+        "vous", "merci", "oui", "non", "une", "pour", "avec",
+        "suis", "avoir", "consultation", "docteur", "clinique",
+        "prendre", "veuillez", "pouvez",
+    }),
+    "es": frozenset({
+        "hola", "quiero", "necesito", "cita", "por", "favor",
+        "una", "tengo", "puedo", "puede", "con", "para",
+        "consulta", "doctor", "gracias", "buenos", "buenas",
+        "dias", "tardes", "llamar", "reservar",
+    }),
+    "it": frozenset({
+        "ciao", "buongiorno", "buonasera", "vorrei", "ho",
+        "bisogno", "appuntamento", "per", "favore", "posso",
+        "una", "con", "grazie", "dottore", "clinica",
+        "prenotare", "consulto", "sono", "vorrebbe",
+    }),
+    "pt": frozenset({
+        "oi", "bom", "dia", "boa", "tarde", "noite", "quero",
+        "preciso", "consulta", "uma", "com", "por", "favor",
+        "obrigado", "obrigada", "doutor", "posso", "tenho",
+        "marcar", "agendar", "gostaria",
+    }),
+}
+
+# Special chars that strongly hint at a specific language
+_DE_CHARS = frozenset("äÄß")  # ö/ü shared with TR — only DE-exclusive chars here
+_FR_CHARS = frozenset("éèêëàùûîôÉÈÊËÀÙÛÎÔ")  # ç/Ç shared with TR — excluded
+_ES_CHARS = frozenset("ñÑ¿¡")
+_PT_CHARS = frozenset("ãõÃÕ")
+
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 
@@ -1317,6 +1444,9 @@ async def entrypoint(ctx: JobContext):
     if not scenario:
         initial_kb = ""  # Başlangıçta KB yükleme — şehir/ofis varsayımını önler, sorular gelince dinamik yüklenir
         system_prompt = build_system_prompt(org, playbook, intake, initial_kb, calendar_enabled, lang)
+        # Bilingual instruction: plan destekliyorsa LLM'e "arayan hangi dilde konuşursa o dilde yanıt ver" talimatı
+        if _org_plan in _LANG_DETECT_PLANS:
+            system_prompt += inbound_language_instruction(_org_plan)
         if lang == "tr":
             opening = (playbook or {}).get("opening_message") or f"Merhaba, {org['name']}."
         else:
@@ -1838,16 +1968,39 @@ RULE: Never make up information not in the knowledge base.
     call_start     = datetime.now(timezone.utc)
     transcript     = []
     handoff_reason = None   # handoff tetiklendiyse sebebi
+    _lang_switched = False  # ilk utterance'da dil algılama yapıldı mı
 
     @session.on("conversation_item_added")
     def on_item(ev):
-        nonlocal handoff_reason
+        nonlocal handoff_reason, _lang_switched
         item    = ev.item
         role    = getattr(item, "role", None)
         content = getattr(item, "content", None)
         if role and content:
             text = content if isinstance(content, str) else str(content)
             transcript.append({"role": role, "content": text})
+
+            # Inbound dil algılama — ilk user utterance'da bir kez çalışır
+            if (
+                role == "user"
+                and not _lang_switched
+                and not scenario                        # sadece inbound
+                and _org_plan in _LANG_DETECT_PLANS
+            ):
+                _lang_switched = True
+                allowed = _BUSINESS_LANGS if _org_plan in ("business", "custom", "legacy") else _PROFESSIONAL_LANGS
+                detected = detect_language_heuristic(text)
+                if detected and detected != "tr" and detected in allowed:
+                    new_voice = CARTESIA_VOICES.get(detected)
+                    if new_voice:
+                        try:
+                            session.stt.update_options(language=detected)
+                            session.tts.update_options(voice=new_voice, language=detected)
+                            logger.info(f"Lang switch: TR → {detected.upper()}")
+                        except Exception as e:
+                            logger.warning(f"Lang switch failed: {e}")
+                    if contact_id:
+                        asyncio.create_task(_save_contact_language(contact_id, detected))
 
             # Handoff keyword kontrolü (user mesajlarında)
             if role == "user" and handoff_keywords and handoff_reason is None:

@@ -165,6 +165,22 @@ def language_instruction(lang: str = "tr") -> str:
     return f"LANGUAGE: You MUST speak ONLY in {name}. All responses, greetings, and questions must be in {name}."
 
 
+def inbound_language_instruction(plan: str) -> str:
+    """Return bilingual language instruction for inbound calls based on plan tier."""
+    if plan in ("business", "custom", "legacy"):
+        return (
+            "\n\nLANGUAGE: Always respond in the same language the caller uses. "
+            "If they speak English, respond entirely in English. "
+            "If they speak another language, match it. Default is Turkish."
+        )
+    elif plan == "professional":
+        return (
+            "\n\nLANGUAGE: If the caller speaks English, respond entirely in English. "
+            "Otherwise, always respond in Turkish."
+        )
+    return ""
+
+
 # ── Chat Engine Kuralları (TS tarafı referansı) ─────────────────────────────
 
 CHAT_GUARDRAILS_TEXT = """
