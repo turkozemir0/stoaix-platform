@@ -463,10 +463,12 @@ function BillingSection() {
                   </div>
                 ) : isCustom ? (
                   <a
-                    href="mailto:destek@stoaix.com?subject=Custom%20Plan%20Talebi"
+                    href="https://calendly.com/ataulufer1/30min"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="w-full rounded-lg border border-emerald-500 bg-white py-2 text-center text-sm font-medium text-emerald-600 transition-colors hover:bg-emerald-50 block"
                   >
-                    İletişime Geç
+                    Görüşme Planla
                   </a>
                 ) : (
                   <button

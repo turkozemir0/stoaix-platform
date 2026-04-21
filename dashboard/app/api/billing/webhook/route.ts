@@ -200,8 +200,6 @@ function getPlanIdFromSub(sub: Stripe.Subscription): string {
     [process.env.STRIPE_PRICE_PROFESSIONAL_ANNUAL ?? '']:  'professional',
     [process.env.STRIPE_PRICE_BUSINESS_MONTHLY ?? '']:     'business',
     [process.env.STRIPE_PRICE_BUSINESS_ANNUAL ?? '']:      'business',
-    [process.env.STRIPE_PRICE_CUSTOM_MONTHLY ?? '']:       'custom',
-    [process.env.STRIPE_PRICE_CUSTOM_ANNUAL ?? '']:        'custom',
   }
   return priceMap[priceId ?? ''] ?? 'essential'
 }

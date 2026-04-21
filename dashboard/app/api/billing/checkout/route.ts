@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const { planId, interval = 'monthly' } = body as { planId: string; interval: 'monthly' | 'annual' }
 
-  const validPlans = ['essential', 'professional', 'business', 'custom']
+  const validPlans = ['essential', 'professional', 'business']
   if (!validPlans.includes(planId)) {
     return NextResponse.json({ error: 'Geçersiz plan' }, { status: 400 })
   }

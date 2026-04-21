@@ -16,7 +16,6 @@ export function getPriceId(planId: string, interval: 'monthly' | 'annual'): stri
     essential:    { monthly: process.env.STRIPE_PRICE_ESSENTIAL_MONTHLY,    annual: process.env.STRIPE_PRICE_ESSENTIAL_ANNUAL },
     professional: { monthly: process.env.STRIPE_PRICE_PROFESSIONAL_MONTHLY, annual: process.env.STRIPE_PRICE_PROFESSIONAL_ANNUAL },
     business:     { monthly: process.env.STRIPE_PRICE_BUSINESS_MONTHLY,     annual: process.env.STRIPE_PRICE_BUSINESS_ANNUAL },
-    custom:       { monthly: process.env.STRIPE_PRICE_CUSTOM_MONTHLY,       annual: process.env.STRIPE_PRICE_CUSTOM_ANNUAL },
   }
   return map[planId]?.[interval] ?? null
 }
