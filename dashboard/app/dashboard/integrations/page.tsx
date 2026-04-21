@@ -2,7 +2,7 @@
 
 import { useState, Suspense } from 'react'
 import {
-  MessageCircle, Instagram, Calendar, Phone, Plug, Ban,
+  Instagram, Plug, Ban,
 } from 'lucide-react'
 import { IntegrationCard } from '@/components/integrations/IntegrationCard'
 import { ConfigDrawer } from '@/components/integrations/ConfigDrawer'
@@ -13,6 +13,15 @@ import { DentSoftConfig } from '@/components/integrations/DentSoftConfig'
 import { ExcludedPhonesConfig } from '@/components/integrations/ExcludedPhonesConfig'
 import { VoiceProviderConfig } from '@/components/integrations/VoiceProviderConfig'
 import { VOICE_PROVIDERS, PROVIDER_LIST } from '@/lib/voice-providers'
+import {
+  WhatsAppIcon,
+  NetgsmIcon,
+  VerimorIcon,
+  TwilioIcon,
+  TelnyxIcon,
+  GoogleCalendarIcon,
+  DentSoftIcon,
+} from '@/components/integrations/ProviderIcons'
 
 type DrawerId =
   | 'whatsapp'
@@ -26,9 +35,11 @@ type DrawerId =
   | 'telnyx'
   | null
 
-// Provider icon component
-function ProviderIcon({ id }: { id: string }) {
-  return <Phone size={16} className={VOICE_PROVIDERS[id as keyof typeof VOICE_PROVIDERS]?.color ?? 'text-slate-500'} />
+const VOICE_ICON_MAP: Record<string, React.ReactNode> = {
+  netgsm: <NetgsmIcon size={16} />,
+  verimor: <VerimorIcon size={16} />,
+  twilio: <TwilioIcon size={16} />,
+  telnyx: <TelnyxIcon size={16} />,
 }
 
 export default function IntegrationsPage() {
@@ -56,12 +67,23 @@ export default function IntegrationsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <Suspense fallback={<CardSkeleton />}>
             <IntegrationCard
-              icon={<MessageCircle size={16} className="text-green-500" />}
-              name="WhatsApp"
-              description="WhatsApp Business mesajlari"
+              icon={<WhatsAppIcon size={16} />}
+              name="WhatsApp API"
+              description="Sadece API uzerinden baglanti (Manuel)"
+              helperText="Meta Business Suite'ten Phone Number ID ve Access Token ile baglanin."
               status={waStatus.connected ? 'connected' : 'disconnected'}
               statusLabel={waStatus.label}
               onClick={() => setActiveDrawer('whatsapp')}
+            />
+          </Suspense>
+          <Suspense fallback={<CardSkeleton />}>
+            <IntegrationCard
+              icon={<WhatsAppIcon size={16} />}
+              name="WhatsApp Business"
+              description="Telefonunuzda ve platform uzerinde tam kontrol"
+              helperText="Meta Embedded Signup ile tek tikla baglanti. Numara yonetimi tamamen platform uzerinden yapilir."
+              badge="1 hafta sonra"
+              status="coming_soon"
             />
           </Suspense>
           <Suspense fallback={<CardSkeleton />}>
@@ -86,7 +108,7 @@ export default function IntegrationsPage() {
           {PROVIDER_LIST.map((p) => (
             <IntegrationCard
               key={p.id}
-              icon={<ProviderIcon id={p.id} />}
+              icon={VOICE_ICON_MAP[p.id]}
               name={p.name}
               description={p.description}
               status={voiceStatus[p.id] ? 'connected' : 'disconnected'}
@@ -104,7 +126,7 @@ export default function IntegrationsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <Suspense fallback={<CardSkeleton />}>
             <IntegrationCard
-              icon={<Calendar size={16} className="text-brand-600" />}
+              icon={<GoogleCalendarIcon size={16} />}
               name="Google Takvim"
               description="Randevu yonetimi"
               status={calStatus.connected ? 'connected' : 'disconnected'}
@@ -113,7 +135,7 @@ export default function IntegrationsPage() {
           </Suspense>
           <Suspense fallback={<CardSkeleton />}>
             <IntegrationCard
-              icon={<Calendar size={16} className="text-purple-500" />}
+              icon={<DentSoftIcon size={16} />}
               name="DentSoft"
               description="Dis klinigi takvim entegrasyonu"
               status={dsStatus.connected ? 'connected' : 'disconnected'}
@@ -144,8 +166,8 @@ export default function IntegrationsPage() {
       <ConfigDrawer
         open={activeDrawer === 'whatsapp'}
         onClose={() => setActiveDrawer(null)}
-        title="WhatsApp"
-        icon={<MessageCircle size={18} className="text-green-500" />}
+        title="WhatsApp API"
+        icon={<WhatsAppIcon size={18} />}
       >
         <Suspense fallback={<DrawerSkeleton />}>
           <WhatsAppConfig
@@ -171,7 +193,7 @@ export default function IntegrationsPage() {
         open={activeDrawer === 'calendar'}
         onClose={() => setActiveDrawer(null)}
         title="Google Takvim"
-        icon={<Calendar size={18} className="text-brand-600" />}
+        icon={<GoogleCalendarIcon size={18} />}
       >
         <Suspense fallback={<DrawerSkeleton />}>
           <CalendarConfig
@@ -184,7 +206,7 @@ export default function IntegrationsPage() {
         open={activeDrawer === 'dentsoft'}
         onClose={() => setActiveDrawer(null)}
         title="DentSoft"
-        icon={<Calendar size={18} className="text-purple-500" />}
+        icon={<DentSoftIcon size={18} />}
       >
         <Suspense fallback={<DrawerSkeleton />}>
           <DentSoftConfig
@@ -208,7 +230,7 @@ export default function IntegrationsPage() {
           open={activeDrawer === p.id}
           onClose={() => setActiveDrawer(null)}
           title={p.name}
-          icon={<ProviderIcon id={p.id} />}
+          icon={VOICE_ICON_MAP[p.id]}
         >
           <VoiceProviderConfig
             provider={p}
