@@ -49,7 +49,8 @@ export default function LoginPage() {
 
     setLoading(false)
     if (error) {
-      setError(t.magicLinkError)
+      console.error('Magic link error:', error.message, error)
+      setError(`${t.magicLinkError} (${error.message})`)
       return
     }
 
@@ -69,7 +70,8 @@ export default function LoginPage() {
 
     setLoading(false)
     if (error) {
-      setError(t.resetEmailError)
+      console.error('Reset password error:', error.message, error)
+      setError(`${t.resetEmailError} (${error.message})`)
       return
     }
 
