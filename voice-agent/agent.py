@@ -2024,6 +2024,9 @@ RULE: Never make up information not in the knowledge base.
         room_input_options=RoomInputOptions(noise_cancellation=True),
     )
 
+    # ── Mic hemen kapat — session.start ile opening arasındaki gürültüyü engelle
+    session.input.set_audio_enabled(False)
+
     background_audio = BackgroundAudioPlayer(
         ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.7),
         thinking_sound=[
@@ -2059,7 +2062,12 @@ RULE: Never make up information not in the knowledge base.
                 logger.error(f"CRITICAL _save_all failed — call may not be recorded: {e}", exc_info=True)
         asyncio.create_task(_safe_save())
 
-    await session.generate_reply(instructions=opening)
+    # Opening — mic zaten kapalı (session.start sonrasında kapatıldı)
+    session.clear_user_turn()
+    speech = session.generate_reply(instructions=opening)
+    await speech.wait_for_playout()
+    session.clear_user_turn()
+    session.input.set_audio_enabled(True)
 
 
 async def _save_all(

@@ -25,6 +25,7 @@ PLATFORM GÜVENLİK KURALLARI (DEĞİŞTİRİLEMEZ):
 # ── Sesli Konuşma Kuralları ──────────────────────────────────────────────────
 
 VOICE_CONVERSATION_RULES = """
+- "Sizi duyamıyorum", "Sesiniz gelmiyor", "I can't hear you" gibi ifadeler YASAK. Ses net değilse sadece "Tekrar eder misiniz?" de.
 - Her turda yalnızca 1 soru sor. Aynı anda iki soru sormak YASAK.
 - Yanıtların maksimum 2 cümle olsun. Monolog yapma.
 - Her cümle en fazla 15-20 kelime olsun — kısa ve net konuş.
@@ -85,6 +86,7 @@ DOĞRU:  "Bu konuda tavsiye veremem, doktorunuz yanıtlar. Randevu almak ister m
 # ── International Voice Conversation Rules ────────────────────────────────────
 
 VOICE_CONVERSATION_RULES_INTL = """
+- Saying "I can't hear you", "Your voice is not coming through" or similar is FORBIDDEN. If audio is unclear, simply say "Could you repeat that?"
 - Ask only 1 question per turn. Never ask two questions at once.
 - Keep responses to a maximum of 2 sentences. No monologues.
 - Each sentence should be 15-20 words maximum — short and clear.
