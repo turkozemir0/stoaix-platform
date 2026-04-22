@@ -1952,14 +1952,17 @@ RULE: Never make up information not in the knowledge base.
     stt_language = STT_LANG_MAP.get(tts_lang, "tr")
 
     session = AgentSession(
-        stt=deepgram.STT(model="nova-3", language=stt_language),
+        stt=deepgram.STT(model="nova-3", language=stt_language, endpointing_ms=300),
         llm=llm_instance,
         tts=cartesia.TTS(
             model="sonic-3",
             voice=voice_id,
             language=tts_lang,
         ),
-        vad=silero.VAD.load(),
+        vad=silero.VAD.load(
+            min_speech_duration=0.3,      # 300ms — kısa gürültü/echo'yu filtrele (varsayılan 50ms çok düşük)
+            activation_threshold=0.55,    # biraz daha seçici (varsayılan 0.5)
+        ),
         **({"turn_detection": _TURN_DETECTOR_CLS()} if _TURN_DETECTOR_CLS else {}),
         allow_interruptions=True,
         min_interruption_duration=0.3,        # 300ms barge-in eşiği
