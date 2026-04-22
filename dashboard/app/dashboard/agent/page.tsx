@@ -567,6 +567,96 @@ function AgentPageInner() {
     if (ch === 'whatsapp') setWhatsapp(prev => ({ ...prev, ...data }))
   }
 
+  async function quickActivate(channel: Channel, t: AgentTemplate) {
+    if (!orgId) return
+    setSaving(true)
+    setError('')
+
+    const data = { ...t.playbook }
+    if (t.requiresCalendar && !hasCalendar) {
+      data.features = { ...data.features, calendar_booking: false }
+    }
+    const sub = (s: string) =>
+      s.replace(/\{PERSONA_ADI\}/g, persona.name || '{PERSONA_ADI}')
+       .replace(/\{KLINIK_ADI\}/g,  orgName      || '{KLINIK_ADI}')
+    data.systemPrompt   = sub(data.systemPrompt)
+    data.openingMessage = sub(data.openingMessage)
+
+    const hard_blocks = data.blocks
+      .filter(b => b.keywords.trim())
+      .map((b, i) => ({
+        trigger_id: `block_${i}`,
+        action: 'soft_block',
+        keywords: b.keywords.split(',').map(k => k.trim()).filter(Boolean),
+        response: b.response.trim(),
+      }))
+
+    const few_shot_examples = data.fewShots
+      .filter(ex => ex.user.trim() && ex.assistant.trim())
+      .map(ex => ({ user: ex.user.trim(), assistant: ex.assistant.trim() }))
+
+    const supabase = createClient()
+    const scenarioVal = t.scenario || null
+
+    // Mevcut playbook var mı kontrol et
+    const existingId = scenarioVal
+      ? scenarioPlaybooks[scenarioVal]?.id
+      : (channel === 'voice' ? voice.id : whatsapp.id)
+
+    let resultId = existingId
+    if (existingId) {
+      // UPDATE — mevcut playbook'u template ile güncelle
+      const { error: err } = await supabase
+        .from('agent_playbooks')
+        .update({
+          name: t.name,
+          system_prompt_template: data.systemPrompt,
+          opening_message: data.openingMessage || null,
+          hard_blocks,
+          features: data.features,
+          few_shot_examples,
+          fallback_responses: { no_kb_match: data.noKbMatch.trim() || null },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingId)
+      if (err) { setError('Aktifleştirilemedi.'); setSaving(false); return }
+    } else {
+      // INSERT — yeni playbook
+      const { data: inserted, error: err } = await supabase
+        .from('agent_playbooks')
+        .insert({
+          organization_id: orgId,
+          channel,
+          name: t.name,
+          scenario: scenarioVal,
+          system_prompt_template: data.systemPrompt,
+          opening_message: data.openingMessage || null,
+          hard_blocks,
+          features: data.features,
+          few_shot_examples,
+          fallback_responses: { no_kb_match: data.noKbMatch.trim() || null },
+          version: 1,
+          is_active: true,
+        })
+        .select('id')
+        .single()
+      if (err) { setError('Aktifleştirilemedi.'); setSaving(false); return }
+      resultId = inserted?.id
+    }
+
+    const newState: PlaybookState = { ...EMPTY, ...data, id: resultId }
+    if (scenarioVal) {
+      setScenarioPlaybooks(prev => ({ ...prev, [scenarioVal]: newState }))
+    } else {
+      if (channel === 'voice') setVoice(newState)
+      if (channel === 'whatsapp') setWhatsapp(newState)
+    }
+
+    setSaving(false)
+    setSavedChannel(channel)
+    setTimeout(() => setSavedChannel(null), 3000)
+  }
+
   function openEditor(channel: Channel, t: AgentTemplate | 'custom') {
     if (t !== 'custom') {
       const tpl = t as AgentTemplate
@@ -872,10 +962,10 @@ function AgentPageInner() {
           <div className="flex flex-wrap gap-4">
             {getVoiceTemplates(clinicType, hasCalendar)
               .filter(t => {
-                // Senaryo zaten kaydedilmişse gizle
-                if (t.scenario && scenarioPlaybooks[t.scenario]?.id) return false
-                // Ana template (scenario yok) ve ana playbook zaten varsa gizle
+                // Ana template: playbook varsa gizle (Düzenle butonu var)
                 if (!t.scenario && voice.id) return false
+                // Senaryo template: zaten kaydedilmişse gizle
+                if (t.scenario && scenarioPlaybooks[t.scenario]?.id) return false
                 return true
               })
               .map(t => (
@@ -884,7 +974,9 @@ function AgentPageInner() {
                 template={t}
                 locked={!hasVoiceEntitlement}
                 hasCalendar={hasCalendar}
-                onClick={() => openEditor('voice', t)}
+                onActivate={() => quickActivate('voice', t)}
+                onCustomize={() => openEditor('voice', t)}
+                activating={saving}
               />
             ))}
           </div>
@@ -896,8 +988,8 @@ function AgentPageInner() {
           <div className="flex flex-wrap gap-4">
             {getWhatsappTemplates(clinicType, hasCalendar)
               .filter(t => {
+                // Senaryo template: zaten kaydedilmişse gizle
                 if (t.scenario && scenarioPlaybooks[t.scenario]?.id) return false
-                if (!t.scenario && whatsapp.id) return false
                 return true
               })
               .map(t => (
@@ -906,7 +998,9 @@ function AgentPageInner() {
                 template={t}
                 locked={false}
                 hasCalendar={hasCalendar}
-                onClick={() => openEditor('whatsapp', t)}
+                onActivate={() => quickActivate('whatsapp', t)}
+                onCustomize={() => openEditor('whatsapp', t)}
+                activating={saving}
               />
             ))}
           </div>
@@ -1679,23 +1773,24 @@ function Phase1Card({
   template,
   locked,
   hasCalendar,
-  onClick,
+  onActivate,
+  onCustomize,
+  activating,
 }: {
   template: AgentTemplate
   locked: boolean
   hasCalendar: boolean
-  onClick: () => void
+  onActivate: () => void
+  onCustomize: () => void
+  activating?: boolean
 }) {
   return (
-    <button
-      onClick={locked ? undefined : onClick}
-      disabled={locked}
-      className="relative flex-shrink-0 w-40 min-h-[190px] rounded-xl border-2 border-slate-100 bg-white p-4
-        text-left flex flex-col gap-2 transition-all
-        hover:border-brand-200 hover:shadow-sm disabled:cursor-not-allowed"
+    <div
+      className="relative flex-shrink-0 w-44 min-h-[210px] rounded-xl border-2 border-slate-100 bg-white p-4
+        text-left flex flex-col gap-2 transition-all hover:border-brand-200 hover:shadow-sm"
     >
       {locked && (
-        <div className="absolute inset-0 rounded-xl flex flex-col items-center justify-center gap-1.5 bg-white/80 backdrop-blur-[1px]">
+        <div className="absolute inset-0 rounded-xl flex flex-col items-center justify-center gap-1.5 bg-white/80 backdrop-blur-[1px] z-10">
           <Lock size={14} className="text-slate-400" />
           <span className="text-xs text-slate-400">Paket gerekli</span>
         </div>
@@ -1706,13 +1801,30 @@ function Phase1Card({
         </span>
       )}
       <p className="text-sm font-semibold text-slate-800 leading-tight">{template.name}</p>
-      <p className="text-xs text-slate-400 leading-relaxed line-clamp-4 flex-1">{template.description}</p>
+      <p className="text-xs text-slate-400 leading-relaxed line-clamp-3 flex-1">{template.description}</p>
       {template.requiresCalendar && !hasCalendar && (
-        <p className="text-[10px] text-amber-500 flex items-center gap-0.5 mt-auto">
+        <p className="text-[10px] text-amber-500 flex items-center gap-0.5">
           <Info size={9} /> Takvim gerekir
         </p>
       )}
-    </button>
+      <div className="flex gap-1.5 mt-auto pt-1">
+        <button
+          onClick={locked ? undefined : onActivate}
+          disabled={locked || activating}
+          className="flex-1 text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+        >
+          {activating ? <Loader2 size={11} className="animate-spin" /> : <Zap size={11} />}
+          Aktifleştir
+        </button>
+        <button
+          onClick={locked ? undefined : onCustomize}
+          disabled={locked}
+          className="text-[11px] font-medium px-2 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors disabled:opacity-50"
+        >
+          Düzenle
+        </button>
+      </div>
+    </div>
   )
 }
 
