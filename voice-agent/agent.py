@@ -1447,8 +1447,12 @@ async def entrypoint(ctx: JobContext):
         # Bilingual instruction: plan destekliyorsa LLM'e "arayan hangi dilde konuşursa o dilde yanıt ver" talimatı
         if _org_plan in _LANG_DETECT_PLANS:
             system_prompt += inbound_language_instruction(_org_plan)
-        if lang == "tr":
-            opening = (playbook or {}).get("opening_message") or f"Merhaba, {org['name']}."
+        # DB'deki opening_message her zaman öncelikli — dil fark etmez
+        _db_opening = (playbook or {}).get("opening_message")
+        if _db_opening:
+            opening = _db_opening
+        elif lang == "tr":
+            opening = f"Merhaba, {org['name']}."
         else:
             opening = INBOUND_GREETINGS.get(lang, INBOUND_GREETINGS["en"]).format(org=org['name'])
         direction  = "inbound"
