@@ -5,8 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import {
   Save, Loader2, Plus, Trash2, Bot, Mic, MessageSquare, ListChecks,
   FlaskConical, PhoneForwarded, Clock, ToggleLeft, ToggleRight, Lightbulb,
-  ArrowUpRight, CheckCircle2, BookOpen, AlertTriangle, X, Lock, Star,
-  ArrowLeft, ArrowRight, Info, Zap,
+  ArrowUpRight, CheckCircle2, BookOpen, AlertTriangle, X, Lock,
+  ArrowLeft, ArrowRight, Zap,
 } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import AgentTestPanel from '@/components/agent/AgentTestPanel'
@@ -882,129 +882,103 @@ function AgentPageInner() {
           </div>
         </div>
 
-        {/* Asistanlar hazır banner */}
-        {(voice.id || whatsapp.id || !hasVoiceEntitlement || Object.values(scenarioPlaybooks).some(sp => sp.id)) && (
-          <section className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-5 space-y-4">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 size={18} className="text-emerald-500" />
-              <div>
-                <p className="text-sm font-bold text-slate-800">Asistanlarınız hazır</p>
-                <p className="text-xs text-slate-500">Kliniğinize özel optimize edildi — hemen test edebilir veya özelleştirebilirsiniz.</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              {!hasVoiceEntitlement
-                ? <VoiceUpgradeCard />
-                : voice.id && (
-                  <ConfiguredCard
-                    channel="voice"
-                    onEdit={() => openEditor('voice', 'custom')}
-                    onTest={() => { openEditor('voice', 'custom'); setEditorTab('test') }}
-                  />
-                )
-              }
-              {whatsapp.id && (
-                <ConfiguredCard
-                  channel="whatsapp"
-                  onEdit={() => openEditor('whatsapp', 'custom')}
-                  onTest={() => { openEditor('whatsapp', 'custom'); setEditorTab('test') }}
-                />
-              )}
-              {/* Kayıtlı senaryo playbook'ları */}
-              {Object.entries(scenarioPlaybooks).filter(([, sp]) => sp.id).map(([scKey]) => {
-                const allTemplates = [...getVoiceTemplates(clinicType, hasCalendar), ...getWhatsappTemplates(clinicType, hasCalendar)]
-                const tpl = allTemplates.find(t => t.scenario === scKey)
-                const ch: Channel = tpl?.channel ?? 'voice'
-                return (
-                  <ConfiguredCard
-                    key={scKey}
-                    channel={ch}
-                    label={tpl?.name ?? scKey}
-                    subtitle={tpl?.description?.slice(0, 60) ?? 'Senaryo playbook'}
-                    onEdit={() => {
-                      if (tpl) openEditor(ch, tpl)
-                      else {
-                        setEditorView({ channel: ch, templateId: scKey, templateName: scKey, scenario: scKey })
-                        setEditorTab('settings')
-                      }
-                    }}
-                    onTest={() => {
-                      if (tpl) { openEditor(ch, tpl); setEditorTab('test') }
-                    }}
-                  />
-                )
-              })}
-            </div>
-          </section>
-        )}
-
-        {/* Şablon değiştir */}
-        <section className="space-y-5">
+        {/* ── Ana Asistanlar ─────────────────────────────────────────── */}
+        <section className="space-y-4">
           <div className="flex items-center gap-2">
-            <div className="h-px flex-1 bg-slate-100" />
-            <p className="text-xs text-slate-400 font-medium shrink-0">Farklı şablon denemek ister misiniz?</p>
-            <div className="h-px flex-1 bg-slate-100" />
+            <Bot size={16} className="text-brand-500" />
+            <h2 className="text-sm font-bold text-slate-800">Ana Asistanlar</h2>
           </div>
-
-        {/* Sesli şablonlar */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-700">Sesli Görüşme</h2>
-            {!hasVoiceEntitlement && (
-              <a
-                href="/dashboard/billing"
-                className="text-xs text-brand-600 font-medium flex items-center gap-1 hover:text-brand-700"
-              >
-                <Lock size={11} /> Paketi Yükselt
-              </a>
+          <div className="flex flex-wrap gap-3">
+            {/* Sesli Resepsiyonist */}
+            {!hasVoiceEntitlement
+              ? <VoiceUpgradeCard />
+              : voice.id ? (
+                <ConfiguredCard
+                  channel="voice"
+                  label="Sesli Resepsiyonist"
+                  subtitle="Gelen aramaları karşılar, lead niteler"
+                  onEdit={() => openEditor('voice', 'custom')}
+                  onTest={() => { openEditor('voice', 'custom'); setEditorTab('test') }}
+                />
+              ) : (
+                <ConfiguredCard
+                  channel="voice"
+                  label="Sesli Resepsiyonist"
+                  subtitle="Gelen aramaları karşılar, lead niteler"
+                  unconfigured
+                  onEdit={() => {
+                    const tpl = getVoiceTemplates(clinicType, hasCalendar).find(t => !t.scenario)
+                    if (tpl) openEditor('voice', tpl)
+                    else openEditor('voice', 'custom')
+                  }}
+                  onTest={() => {}}
+                />
+              )
+            }
+            {/* Mesajlaşma Asistanı */}
+            {whatsapp.id ? (
+              <ConfiguredCard
+                channel="whatsapp"
+                label="Mesajlaşma Asistanı"
+                subtitle="WhatsApp & Instagram mesajlarını yanıtlar"
+                onEdit={() => openEditor('whatsapp', 'custom')}
+                onTest={() => { openEditor('whatsapp', 'custom'); setEditorTab('test') }}
+              />
+            ) : (
+              <ConfiguredCard
+                channel="whatsapp"
+                label="Mesajlaşma Asistanı"
+                subtitle="WhatsApp & Instagram mesajlarını yanıtlar"
+                unconfigured
+                onEdit={() => {
+                  const tpl = getWhatsappTemplates(clinicType, hasCalendar).find(t => !t.scenario)
+                  if (tpl) openEditor('whatsapp', tpl)
+                  else openEditor('whatsapp', 'custom')
+                }}
+                onTest={() => {}}
+              />
             )}
           </div>
+        </section>
+
+        {/* ── Outbound Sesli Senaryolar ────────────────────────────────── */}
+        <section className="space-y-4 relative">
+          <div className="flex items-center gap-2">
+            <div className="h-px flex-1 bg-slate-100" />
+            <p className="text-xs text-slate-400 font-medium shrink-0 flex items-center gap-1.5">
+              <PhoneForwarded size={12} /> Outbound Sesli Senaryolar
+            </p>
+            <div className="h-px flex-1 bg-slate-100" />
+          </div>
+          <p className="text-xs text-slate-500">Giden aramalar için ek asistan senaryoları</p>
+
+          {!hasVoiceEntitlement && (
+            <div className="absolute inset-0 rounded-xl flex flex-col items-center justify-center gap-2 bg-white/80 backdrop-blur-[2px] z-10">
+              <Lock size={16} className="text-slate-400" />
+              <span className="text-xs text-slate-500 font-medium">Sesli asistan paketinize dahil değil</span>
+              <a href="/dashboard/billing" className="text-xs font-medium text-brand-600 hover:text-brand-700 flex items-center gap-1">
+                Paketi Yükselt <ArrowUpRight size={11} />
+              </a>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-4">
             {getVoiceTemplates(clinicType, hasCalendar)
-              .filter(t => {
-                // Ana template: playbook varsa gizle (Düzenle butonu var)
-                if (!t.scenario && voice.id) return false
-                // Senaryo template: zaten kaydedilmişse gizle
-                if (t.scenario && scenarioPlaybooks[t.scenario]?.id) return false
-                return true
-              })
+              .filter(t => !!t.scenario)
               .map(t => (
-              <Phase1Card
-                key={t.id}
-                template={t}
-                locked={!hasVoiceEntitlement}
-                hasCalendar={hasCalendar}
-                onActivate={() => quickActivate('voice', t)}
-                onCustomize={() => openEditor('voice', t)}
-                activating={saving}
-              />
-            ))}
+                <ScenarioCard
+                  key={t.id}
+                  template={t}
+                  isActive={!!scenarioPlaybooks[t.scenario!]?.id}
+                  locked={!hasVoiceEntitlement}
+                  onActivate={() => quickActivate('voice', t)}
+                  onEdit={() => openEditor('voice', t)}
+                  onTest={() => { openEditor('voice', t); setEditorTab('test') }}
+                  activating={saving}
+                />
+              ))
+            }
           </div>
-        </div>
-
-        {/* WA şablonlar */}
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-slate-700">Mesajlaşma (WhatsApp)</h2>
-          <div className="flex flex-wrap gap-4">
-            {getWhatsappTemplates(clinicType, hasCalendar)
-              .filter(t => {
-                // Senaryo template: zaten kaydedilmişse gizle
-                if (t.scenario && scenarioPlaybooks[t.scenario]?.id) return false
-                return true
-              })
-              .map(t => (
-              <Phase1Card
-                key={t.id}
-                template={t}
-                locked={false}
-                hasCalendar={hasCalendar}
-                onActivate={() => quickActivate('whatsapp', t)}
-                onCustomize={() => openEditor('whatsapp', t)}
-                activating={saving}
-              />
-            ))}
-          </div>
-        </div>
         </section>
       </div>
     )
@@ -1769,25 +1743,29 @@ function AgentPageInner() {
 
 // ─── HELPER COMPONENTS ────────────────────────────────────────────────────────
 
-function Phase1Card({
+function ScenarioCard({
   template,
+  isActive,
   locked,
-  hasCalendar,
   onActivate,
-  onCustomize,
+  onEdit,
+  onTest,
   activating,
 }: {
   template: AgentTemplate
+  isActive: boolean
   locked: boolean
-  hasCalendar: boolean
   onActivate: () => void
-  onCustomize: () => void
+  onEdit: () => void
+  onTest: () => void
   activating?: boolean
 }) {
+  const borderColor = isActive ? 'border-emerald-200' : 'border-slate-100'
+  const bgColor = isActive ? 'bg-emerald-50/40' : 'bg-white'
   return (
     <div
-      className="relative flex-shrink-0 w-44 min-h-[210px] rounded-xl border-2 border-slate-100 bg-white p-4
-        text-left flex flex-col gap-2 transition-all hover:border-brand-200 hover:shadow-sm"
+      className={`relative flex-shrink-0 w-52 min-h-[200px] rounded-xl border-2 ${borderColor} ${bgColor} p-4
+        text-left flex flex-col gap-2 transition-all hover:shadow-sm`}
     >
       {locked && (
         <div className="absolute inset-0 rounded-xl flex flex-col items-center justify-center gap-1.5 bg-white/80 backdrop-blur-[1px] z-10">
@@ -1795,34 +1773,52 @@ function Phase1Card({
           <span className="text-xs text-slate-400">Paket gerekli</span>
         </div>
       )}
-      {template.recommended && (
-        <span className="text-[10px] font-semibold text-amber-600 flex items-center gap-0.5">
-          <Star size={10} className="fill-amber-400 text-amber-400" /> Önerilen
-        </span>
-      )}
-      <p className="text-sm font-semibold text-slate-800 leading-tight">{template.name}</p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold text-slate-800 leading-tight">{template.name}</p>
+        {isActive && (
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" /> Aktif
+          </span>
+        )}
+      </div>
       <p className="text-xs text-slate-400 leading-relaxed line-clamp-3 flex-1">{template.description}</p>
-      {template.requiresCalendar && !hasCalendar && (
-        <p className="text-[10px] text-amber-500 flex items-center gap-0.5">
-          <Info size={9} /> Takvim gerekir
-        </p>
-      )}
       <div className="flex gap-1.5 mt-auto pt-1">
-        <button
-          onClick={locked ? undefined : onActivate}
-          disabled={locked || activating}
-          className="flex-1 text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
-        >
-          {activating ? <Loader2 size={11} className="animate-spin" /> : <Zap size={11} />}
-          Aktifleştir
-        </button>
-        <button
-          onClick={locked ? undefined : onCustomize}
-          disabled={locked}
-          className="text-[11px] font-medium px-2 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors disabled:opacity-50"
-        >
-          Düzenle
-        </button>
+        {isActive ? (
+          <>
+            <button
+              onClick={locked ? undefined : onTest}
+              disabled={locked}
+              className="flex-1 text-[11px] font-medium px-2 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+            >
+              <FlaskConical size={11} /> Test Et
+            </button>
+            <button
+              onClick={locked ? undefined : onEdit}
+              disabled={locked}
+              className="flex-1 text-[11px] font-medium px-2 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+            >
+              Düzenle <ArrowRight size={11} />
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={locked ? undefined : onActivate}
+              disabled={locked || activating}
+              className="flex-1 text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+            >
+              {activating ? <Loader2 size={11} className="animate-spin" /> : <Zap size={11} />}
+              Aktifleştir
+            </button>
+            <button
+              onClick={locked ? undefined : onEdit}
+              disabled={locked}
+              className="text-[11px] font-medium px-2 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors disabled:opacity-50"
+            >
+              Özelleştir
+            </button>
+          </>
+        )}
       </div>
     </div>
   )
@@ -1834,49 +1830,72 @@ function ConfiguredCard({
   onTest,
   label,
   subtitle,
+  unconfigured,
 }: {
   channel: 'voice' | 'whatsapp'
   onEdit: () => void
   onTest: () => void
   label?: string
   subtitle?: string
+  unconfigured?: boolean
 }) {
   const isVoice = channel === 'voice'
+  const borderColor = unconfigured ? 'border-amber-200' : 'border-emerald-100'
+  const bgColor = unconfigured ? 'bg-amber-50/40' : 'bg-emerald-50/40'
+  const iconBg = unconfigured ? 'bg-amber-100' : 'bg-emerald-100'
+  const iconColor = unconfigured ? 'text-amber-600' : 'text-emerald-600'
   return (
-    <div className="flex-1 min-w-[220px] rounded-2xl border-2 border-emerald-100 bg-emerald-50/40 p-4 flex flex-col gap-3">
+    <div className={`flex-1 min-w-[220px] rounded-2xl border-2 ${borderColor} ${bgColor} p-4 flex flex-col gap-3`}>
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-2">
-          <div className="p-2 rounded-lg bg-emerald-100">
+          <div className={`p-2 rounded-lg ${iconBg}`}>
             {isVoice
-              ? <Mic size={16} className="text-emerald-600" />
-              : <MessageSquare size={16} className="text-emerald-600" />}
+              ? <Mic size={16} className={iconColor} />
+              : <MessageSquare size={16} className={iconColor} />}
           </div>
           <div>
             <p className="text-sm font-semibold text-slate-800">
-              {label ?? (isVoice ? 'Sesli Asistan' : 'WhatsApp / Chat Botu')}
+              {label ?? (isVoice ? 'Sesli Resepsiyonist' : 'Mesajlaşma Asistanı')}
             </p>
             <p className="text-xs text-slate-500">
-              {subtitle ?? (isVoice ? 'Gelen aramaları karşılar' : 'Mesajları yanıtlar, lead niteler')}
+              {subtitle ?? (isVoice ? 'Gelen aramaları karşılar, lead niteler' : 'WhatsApp & Instagram mesajlarını yanıtlar')}
             </p>
           </div>
         </div>
-        <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" /> Aktif
-        </span>
+        {unconfigured ? (
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full shrink-0">
+            Yapılandırılmadı
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" /> Aktif
+          </span>
+        )}
       </div>
       <div className="flex gap-2 mt-1">
-        <button
-          onClick={onTest}
-          className="flex-1 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors flex items-center justify-center gap-1"
-        >
-          <FlaskConical size={12} /> Test Et
-        </button>
-        <button
-          onClick={onEdit}
-          className="flex-1 text-xs font-medium px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white transition-colors flex items-center justify-center gap-1"
-        >
-          Düzenle <ArrowRight size={12} />
-        </button>
+        {unconfigured ? (
+          <button
+            onClick={onEdit}
+            className="flex-1 text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors flex items-center justify-center gap-1"
+          >
+            Yapılandır <ArrowRight size={12} />
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={onTest}
+              className="flex-1 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors flex items-center justify-center gap-1"
+            >
+              <FlaskConical size={12} /> Test Et
+            </button>
+            <button
+              onClick={onEdit}
+              className="flex-1 text-xs font-medium px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white transition-colors flex items-center justify-center gap-1"
+            >
+              Düzenle <ArrowRight size={12} />
+            </button>
+          </>
+        )}
       </div>
     </div>
   )
