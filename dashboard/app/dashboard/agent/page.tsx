@@ -191,6 +191,7 @@ function AgentPageInner() {
 
   const [voice, setVoice] = useState<PlaybookState>(EMPTY)
   const [whatsapp, setWhatsapp] = useState<PlaybookState>(EMPTY)
+  const [scenarioPlaybooks, setScenarioPlaybooks] = useState<Record<string, PlaybookState>>({})
 
   const [voiceIntake, setVoiceIntake]       = useState<IntakeField[]>([])
   const [whatsappIntake, setWhatsappIntake] = useState<IntakeField[]>([])
@@ -229,9 +230,17 @@ function AgentPageInner() {
 
   // Computed
   const activeChannel: Channel = editorView?.channel ?? 'voice'
-  const current    = activeChannel === 'voice' ? voice : whatsapp
-  const setCurrent = (fn: (prev: PlaybookState) => PlaybookState) =>
-    activeChannel === 'voice' ? setVoice(fn) : setWhatsapp(fn)
+  const activeScenario = editorView?.scenario ?? null
+  const current = activeScenario
+    ? (scenarioPlaybooks[activeScenario] ?? EMPTY)
+    : (activeChannel === 'voice' ? voice : whatsapp)
+  const setCurrent = (fn: (prev: PlaybookState) => PlaybookState) => {
+    if (activeScenario) {
+      setScenarioPlaybooks(prev => ({ ...prev, [activeScenario]: fn(prev[activeScenario] ?? EMPTY) }))
+    } else {
+      activeChannel === 'voice' ? setVoice(fn) : setWhatsapp(fn)
+    }
+  }
 
   const currentIntake    = activeChannel === 'voice' ? voiceIntake : whatsappIntake
   const setCurrentIntake = activeChannel === 'voice' ? setVoiceIntake : setWhatsappIntake
@@ -265,10 +274,10 @@ function AgentPageInner() {
       if (!resolvedOrgId) { setLoading(false); return }
       setOrgId(resolvedOrgId)
 
-      // Her iki kanalı da yükle
+      // Her iki kanalı da yükle (ana + senaryo playbook'lar)
       const { data: playbooks } = await supabase
         .from('agent_playbooks')
-        .select('id, channel, system_prompt_template, opening_message, hard_blocks, features, few_shot_examples, fallback_responses, handoff_triggers')
+        .select('id, channel, scenario, system_prompt_template, opening_message, hard_blocks, features, few_shot_examples, fallback_responses, handoff_triggers')
         .eq('organization_id', resolvedOrgId)
         .eq('is_active', true)
         .in('channel', ['voice', 'whatsapp', 'chat', 'all'])
@@ -291,10 +300,20 @@ function AgentPageInner() {
       })
 
       if (playbooks) {
-        const voicePb    = playbooks.find(p => p.channel === 'voice')    || playbooks.find(p => p.channel === 'all')
-        const whatsappPb = playbooks.find(p => p.channel === 'whatsapp') || playbooks.find(p => p.channel === 'chat') || playbooks.find(p => p.channel === 'all')
+        const mainPlaybooks = playbooks.filter(p => !p.scenario)
+        const scenarioPbs   = playbooks.filter(p => !!p.scenario)
+
+        const voicePb    = mainPlaybooks.find(p => p.channel === 'voice')    || mainPlaybooks.find(p => p.channel === 'all')
+        const whatsappPb = mainPlaybooks.find(p => p.channel === 'whatsapp') || mainPlaybooks.find(p => p.channel === 'chat') || mainPlaybooks.find(p => p.channel === 'all')
         if (voicePb)    setVoice(parsePlaybook(voicePb))
         if (whatsappPb) setWhatsapp(parsePlaybook(whatsappPb))
+
+        // Senaryo playbook'larını yükle
+        const spMap: Record<string, PlaybookState> = {}
+        for (const sp of scenarioPbs) {
+          spMap[sp.scenario] = parsePlaybook(sp)
+        }
+        setScenarioPlaybooks(spMap)
 
         // Handoff triggers yükle (voice playbook'tan)
         const activePb = voicePb || whatsappPb
@@ -413,17 +432,19 @@ function AgentPageInner() {
 
     const supabase = createClient()
 
-    // Persona (org-level) kaydet
-    const { data: orgRow } = await supabase
-      .from('organizations')
-      .select('ai_persona')
-      .eq('id', orgId)
-      .single()
-    const existingPersona = (orgRow?.ai_persona ?? {}) as Record<string, any>
-    await supabase
-      .from('organizations')
-      .update({ ai_persona: { ...existingPersona, persona_name: persona.name, tone: persona.tone } })
-      .eq('id', orgId)
+    // Persona (org-level) kaydet — sadece ana playbook'lar için
+    if (!activeScenario) {
+      const { data: orgRow } = await supabase
+        .from('organizations')
+        .select('ai_persona')
+        .eq('id', orgId)
+        .single()
+      const existingPersona = (orgRow?.ai_persona ?? {}) as Record<string, any>
+      await supabase
+        .from('organizations')
+        .update({ ai_persona: { ...existingPersona, persona_name: persona.name, tone: persona.tone } })
+        .eq('id', orgId)
+    }
 
     if (current.id) {
       const { error: err } = await supabase
@@ -440,12 +461,16 @@ function AgentPageInner() {
         .eq('id', current.id)
       if (err) { setError('Kaydedilemedi.'); setSaving(false); return }
     } else {
+      const playbookName = activeScenario
+        ? (editorView?.templateName ?? activeScenario)
+        : (activeChannel === 'voice' ? 'Sesli Asistan' : 'WhatsApp/Chat Asistanı')
       const { data: inserted, error: err } = await supabase
         .from('agent_playbooks')
         .insert({
           organization_id: orgId,
           channel: activeChannel,
-          name: activeChannel === 'voice' ? 'Sesli Asistan' : 'WhatsApp/Chat Asistanı',
+          name: playbookName,
+          scenario: activeScenario || null,
           system_prompt_template: current.systemPrompt,
           opening_message: current.openingMessage || null,
           hard_blocks,
@@ -543,21 +568,46 @@ function AgentPageInner() {
   }
 
   function openEditor(channel: Channel, t: AgentTemplate | 'custom') {
-    const existingId = channel === 'voice' ? voice.id : whatsapp.id
     if (t !== 'custom') {
+      const tpl = t as AgentTemplate
+      const tplScenario = tpl.scenario
+
+      if (tplScenario) {
+        // Senaryo şablonu — ana playbook'a dokunma
+        if (scenarioPlaybooks[tplScenario]?.id) {
+          // Zaten DB'de kayıtlı — mevcut veriyle aç (template uygulamadan)
+        } else {
+          // Henüz kayıtlı değil — template defaults'ı yaz
+          const data = { ...tpl.playbook }
+          if (tpl.requiresCalendar && !hasCalendar) {
+            data.features = { ...data.features, calendar_booking: false }
+            setCalendarWarning(true)
+          }
+          const sub = (s: string) =>
+            s.replace(/\{PERSONA_ADI\}/g, persona.name || '{PERSONA_ADI}')
+             .replace(/\{KLINIK_ADI\}/g,  orgName      || '{KLINIK_ADI}')
+          data.systemPrompt   = sub(data.systemPrompt)
+          data.openingMessage = sub(data.openingMessage)
+          setScenarioPlaybooks(prev => ({ ...prev, [tplScenario]: { ...EMPTY, ...data } }))
+        }
+        setEditorView({ channel, templateId: tpl.id, templateName: tpl.name, scenario: tplScenario })
+        setEditorTab('settings')
+        return
+      }
+
+      // Ana şablon (receptionist vb.) — eski davranış
+      const existingId = channel === 'voice' ? voice.id : whatsapp.id
       if (existingId) {
-        // Mevcut kayıtlı playbook var — onay iste, sessizce ezme
         const ok = window.confirm(
           'Dikkat: Mevcut asistan ayarlarınız bu şablonla değiştirilecek. Devam etmek istiyor musunuz?'
         )
         if (!ok) return
       }
-      applyTemplate(t as AgentTemplate, channel)
+      applyTemplate(tpl, channel)
     }
     const name = t === 'custom' ? 'Özelleştirilmiş' : (t as AgentTemplate).name
     const id   = t === 'custom' ? 'custom' : (t as AgentTemplate).id
-    const scenario = t !== 'custom' ? (t as AgentTemplate).scenario : undefined
-    setEditorView({ channel, templateId: id, templateName: name, scenario })
+    setEditorView({ channel, templateId: id, templateName: name })
     setEditorTab('settings')
   }
 
@@ -743,7 +793,7 @@ function AgentPageInner() {
         </div>
 
         {/* Asistanlar hazır banner */}
-        {(voice.id || whatsapp.id || !hasVoiceEntitlement) && (
+        {(voice.id || whatsapp.id || !hasVoiceEntitlement || Object.values(scenarioPlaybooks).some(sp => sp.id)) && (
           <section className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-5 space-y-4">
             <div className="flex items-center gap-2">
               <CheckCircle2 size={18} className="text-emerald-500" />
@@ -770,6 +820,30 @@ function AgentPageInner() {
                   onTest={() => { openEditor('whatsapp', 'custom'); setEditorTab('test') }}
                 />
               )}
+              {/* Kayıtlı senaryo playbook'ları */}
+              {Object.entries(scenarioPlaybooks).filter(([, sp]) => sp.id).map(([scKey]) => {
+                const allTemplates = [...getVoiceTemplates(clinicType, hasCalendar), ...getWhatsappTemplates(clinicType, hasCalendar)]
+                const tpl = allTemplates.find(t => t.scenario === scKey)
+                const ch: Channel = tpl?.channel ?? 'voice'
+                return (
+                  <ConfiguredCard
+                    key={scKey}
+                    channel={ch}
+                    label={tpl?.name ?? scKey}
+                    subtitle={tpl?.description?.slice(0, 60) ?? 'Senaryo playbook'}
+                    onEdit={() => {
+                      if (tpl) openEditor(ch, tpl)
+                      else {
+                        setEditorView({ channel: ch, templateId: scKey, templateName: scKey, scenario: scKey })
+                        setEditorTab('settings')
+                      }
+                    }}
+                    onTest={() => {
+                      if (tpl) { openEditor(ch, tpl); setEditorTab('test') }
+                    }}
+                  />
+                )
+              })}
             </div>
           </section>
         )}
@@ -796,7 +870,9 @@ function AgentPageInner() {
             )}
           </div>
           <div className="flex flex-wrap gap-4">
-            {getVoiceTemplates(clinicType, hasCalendar).map(t => (
+            {getVoiceTemplates(clinicType, hasCalendar)
+              .filter(t => !t.scenario || !scenarioPlaybooks[t.scenario]?.id)
+              .map(t => (
               <Phase1Card
                 key={t.id}
                 template={t}
@@ -812,7 +888,9 @@ function AgentPageInner() {
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-slate-700">Mesajlaşma (WhatsApp)</h2>
           <div className="flex flex-wrap gap-4">
-            {getWhatsappTemplates(clinicType, hasCalendar).map(t => (
+            {getWhatsappTemplates(clinicType, hasCalendar)
+              .filter(t => !t.scenario || !scenarioPlaybooks[t.scenario]?.id)
+              .map(t => (
               <Phase1Card
                 key={t.id}
                 template={t}
@@ -911,8 +989,8 @@ function AgentPageInner() {
               </div>
             )}
 
-            {/* Asistan Kimliği */}
-            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+            {/* Asistan Kimliği — senaryo playbook'larında gizle */}
+            {!activeScenario && <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
               <div>
                 <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
                   <Bot size={15} className="text-brand-500" /> Asistan Kimliği
@@ -944,7 +1022,7 @@ function AgentPageInner() {
                   </select>
                 </div>
               </div>
-            </div>
+            </div>}
 
             {/* İlk Karşılama Mesajı — sadece voice */}
             {editorView.channel === 'voice' && (
@@ -999,8 +1077,8 @@ function AgentPageInner() {
               )}
             </div>
 
-            {/* Veri Toplama Alanları */}
-            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
+            {/* Veri Toplama Alanları — senaryo playbook'larında gizle */}
+            {!activeScenario && <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
@@ -1051,7 +1129,7 @@ function AgentPageInner() {
                 </div>
               )}
 
-            </div>
+            </div>}
 
             {/* Koruma Blokları */}
             <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
@@ -1632,10 +1710,14 @@ function ConfiguredCard({
   channel,
   onEdit,
   onTest,
+  label,
+  subtitle,
 }: {
   channel: 'voice' | 'whatsapp'
   onEdit: () => void
   onTest: () => void
+  label?: string
+  subtitle?: string
 }) {
   const isVoice = channel === 'voice'
   return (
@@ -1649,10 +1731,10 @@ function ConfiguredCard({
           </div>
           <div>
             <p className="text-sm font-semibold text-slate-800">
-              {isVoice ? 'Sesli Asistan' : 'WhatsApp / Chat Botu'}
+              {label ?? (isVoice ? 'Sesli Asistan' : 'WhatsApp / Chat Botu')}
             </p>
             <p className="text-xs text-slate-500">
-              {isVoice ? 'Gelen aramaları karşılar' : 'Mesajları yanıtlar, lead niteler'}
+              {subtitle ?? (isVoice ? 'Gelen aramaları karşılar' : 'Mesajları yanıtlar, lead niteler')}
             </p>
           </div>
         </div>

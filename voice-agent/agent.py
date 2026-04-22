@@ -96,13 +96,30 @@ async def load_org(org_id: str) -> dict:
     return org
 
 
-async def load_playbook(org_id: str, channel: str = "voice") -> dict | None:
+async def load_playbook(org_id: str, channel: str = "voice", scenario: str | None = None) -> dict | None:
     sb = get_supabase()
+
+    # Scenario-specific playbook varsa onu tercih et
+    if scenario:
+        res = sb.table("agent_playbooks") \
+            .select("*") \
+            .eq("organization_id", org_id) \
+            .eq("is_active", True) \
+            .eq("channel", channel) \
+            .eq("scenario", scenario) \
+            .order("version", desc=True) \
+            .limit(1) \
+            .execute()
+        if res.data:
+            return res.data[0]
+
+    # Ana (inbound) playbook — scenario IS NULL
     res = sb.table("agent_playbooks") \
         .select("*") \
         .eq("organization_id", org_id) \
         .eq("is_active", True) \
         .eq("channel", channel) \
+        .is_("scenario", "null") \
         .order("version", desc=True) \
         .limit(1) \
         .execute()
@@ -114,6 +131,7 @@ async def load_playbook(org_id: str, channel: str = "voice") -> dict | None:
         .eq("organization_id", org_id) \
         .eq("is_active", True) \
         .eq("channel", "all") \
+        .is_("scenario", "null") \
         .order("version", desc=True) \
         .limit(1) \
         .execute()
@@ -1444,7 +1462,7 @@ async def entrypoint(ctx: JobContext):
         raise ValueError("organization_id missing in room metadata and PLATFORM_ORG_ID env not set")
 
     org      = await load_org(org_id)
-    playbook = await load_playbook(org_id, channel="voice")
+    playbook = await load_playbook(org_id, channel="voice", scenario=scenario)
     intake   = await load_intake_schema(org_id, channel="voice")
 
     # Model öncelik sırası: 1. room metadata (test UI / dispatch), 2. playbook features, 3. default
