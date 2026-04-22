@@ -2062,9 +2062,11 @@ RULE: Never make up information not in the knowledge base.
                 logger.error(f"CRITICAL _save_all failed — call may not be recorded: {e}", exc_info=True)
         asyncio.create_task(_safe_save())
 
-    # Opening — mic zaten kapalı (session.start sonrasında kapatıldı)
+    # Opening — session.say() ile LLM'i bypass et, metni doğrudan TTS'e gönder
+    # generate_reply() kullanılırsa LLM gürültüyü "user konuştu" diye yorumlayıp
+    # opening'e "sizi duyamıyorum" ekliyor. say() bu sorunu kökten çözer.
     session.clear_user_turn()
-    speech = session.generate_reply(instructions=opening)
+    speech = session.say(opening, allow_interruptions=True)
     await speech.wait_for_playout()
     session.clear_user_turn()
     session.input.set_audio_enabled(True)

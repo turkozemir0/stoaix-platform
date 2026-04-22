@@ -22,8 +22,25 @@ export async function POST(req: NextRequest) {
   if (scenario) {
     meta.scenario = scenario
     meta.contact_name = 'Test Müşteri'
-    if (scenario === 'appt_confirm') {
+
+    // Senaryo-bazlı test verisi
+    if (scenario === 'appt_confirm' || scenario === 'appointment_reminder') {
       meta.appointment_time = 'Yarın saat 14:00'
+    }
+    if (scenario === 'appointment_reminder') {
+      meta.reminder_hours = '24'
+    }
+    if (scenario === 'reactivation') {
+      meta.offer = 'Bu ay size özel indirimli konsültasyon fırsatımız var.'
+    }
+    if (scenario === 'treatment_reminder') {
+      meta.interval_days = '180'
+    }
+    if (scenario === 'first_contact') {
+      meta.attempt = '1'
+    }
+    if (scenario === 'noshow_followup') {
+      meta.context_note = 'Bugünkü randevusuna gelmedi.'
     }
   }
 
