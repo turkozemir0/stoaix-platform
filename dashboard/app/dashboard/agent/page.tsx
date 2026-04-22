@@ -543,7 +543,15 @@ function AgentPageInner() {
   }
 
   function openEditor(channel: Channel, t: AgentTemplate | 'custom') {
+    const existingId = channel === 'voice' ? voice.id : whatsapp.id
     if (t !== 'custom') {
+      if (existingId) {
+        // Mevcut kayıtlı playbook var — onay iste, sessizce ezme
+        const ok = window.confirm(
+          'Dikkat: Mevcut asistan ayarlarınız bu şablonla değiştirilecek. Devam etmek istiyor musunuz?'
+        )
+        if (!ok) return
+      }
       applyTemplate(t as AgentTemplate, channel)
     }
     const name = t === 'custom' ? 'Özelleştirilmiş' : (t as AgentTemplate).name

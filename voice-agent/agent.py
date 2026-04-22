@@ -772,6 +772,59 @@ HALLUCINATION RULE:
 {calendar_section_intl}{few_shot_section}"""
 
 
+# ── Outbound guardrails builder ──────────────────────────────────────────────
+
+def build_outbound_guardrails(lang: str, playbook: dict | None) -> str:
+    """Outbound aramalar için hafif guardrail katmanı.
+
+    Inbound'daki build_system_prompt() ile aynı güvenlik kurallarını
+    (PLATFORM_GUARDRAILS + ses konuşma + doğallık + register + hard blocks + handoff)
+    outbound prompt'larına ekler. OBJECTION_RULES dahil değil çünkü outbound
+    senaryolar kısa (3-4 tur) ve niteleme yapmıyor.
+    """
+    conv_rules, nat_rules, reg_rules, _obj_rules = get_voice_rules(lang)
+
+    # Hard blocks
+    blocks = playbook.get("hard_blocks", []) if playbook else []
+    blocks_text = ""
+    if blocks:
+        lines = []
+        for b in blocks:
+            kw = ", ".join(b.get("keywords", []))
+            resp = b.get("response", "")
+            lines.append(f"- Anahtar kelimeler: {kw} → \"{resp}\"")
+        blocks_text = "\nKAPSAM DIŞI KONULAR:\n" + "\n".join(lines)
+
+    # Handoff triggers
+    triggers = playbook.get("handoff_triggers", {}) if playbook else {}
+    handoff_kw = ", ".join(triggers.get("keywords", []))
+    handoff_text = (
+        f"\nHANDOFF: Müşteri şu kelimelerden birini söylerse transferi başlat: {handoff_kw}"
+        if handoff_kw else ""
+    )
+
+    # Few-shot examples (max 3, only if playbook has them)
+    few_shots = playbook.get("few_shot_examples", []) if playbook else []
+    few_shot_text = ""
+    if few_shots:
+        pairs = [
+            f"Hasta: \"{ex.get('user', '')}\"\nAsistan: \"{ex.get('assistant', '')}\""
+            for ex in few_shots[:3]
+        ]
+        few_shot_text = "\n━━━━ ÖRNEK KONUŞMALAR ━━━━\n" + "\n\n".join(pairs)
+
+    return f"""{PLATFORM_GUARDRAILS}
+
+━━━━ SES KONUŞMA KURALLARI ━━━━
+{conv_rules}
+{nat_rules}
+{reg_rules}
+{blocks_text}
+{handoff_text}
+{few_shot_text}
+""".strip()
+
+
 # ── Agent sınıfı ───────────────────────────────────────────────────────────────
 
 class PlatformAgent(Agent):
@@ -1482,6 +1535,7 @@ async def entrypoint(ctx: JobContext):
                 lead_id = fallback_lead_id
 
         outbound_playbook_text = playbook.get("system_prompt_template", "") if playbook else ""
+        outbound_guardrails = build_outbound_guardrails(lang, playbook)
 
         # Helper for multilang opening from OPENINGS dict
         def _opening(scenario_key, **kwargs):
@@ -1502,7 +1556,9 @@ async def entrypoint(ctx: JobContext):
             attempt = int(meta.get("attempt", "1"))
             run_id  = meta.get("run_id", "")
             if lang == "tr":
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
+
+{outbound_playbook_text}
 
 Sen {org['name']} adına yeni müşteri adayı arayan {persona_name}'sın.
 Bu kişi {org['name']}'a ilgi gösterdi, şimdi onunla iletişime geçiyorsun.
@@ -1519,8 +1575,10 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
                 )
             else:
                 lang_inst = language_instruction(lang)
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
 {lang_inst}
+
+{outbound_playbook_text}
 
 You are {persona_name} calling on behalf of {org['name']} to reach a new prospect.
 This person showed interest in {org['name']}, you are now contacting them.
@@ -1535,7 +1593,9 @@ RULE: Never make up information not in the knowledge base.
         # ── Warm follow-up (workflow V4) ───────────────────────────────────
         elif scenario == "warm_followup":
             if lang == "tr":
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
+
+{outbound_playbook_text}
 
 Sen {org['name']} adına sıcak takip araması yapan {persona_name}'sın.
 Bu kişiyle daha önce temas kuruldu, ilgi gösterdi.
@@ -1551,8 +1611,10 @@ KURAL: Max 3-4 tur konuşma.
                 )
             else:
                 lang_inst = language_instruction(lang)
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
 {lang_inst}
+
+{outbound_playbook_text}
 
 You are {persona_name} making a warm follow-up call on behalf of {org['name']}.
 This person was contacted before and showed interest.
@@ -1567,7 +1629,9 @@ RULE: Max 3-4 turns.
         elif scenario == "appt_confirm":
             appt_display = appt_time or ("yaklaşan randevunuz" if lang == "tr" else "your upcoming appointment")
             if lang == "tr":
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
+
+{outbound_playbook_text}
 
 Sen {org['name']} adına randevu teyit araması yapan {persona_name}'sın.
 Arama amacı: Randevuyu teyit ettirmek.
@@ -1585,8 +1649,10 @@ KURAL: "Başka bir konuda yardımcı olabilir miyim?" YASAK.
                 )
             else:
                 lang_inst = language_instruction(lang)
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
 {lang_inst}
+
+{outbound_playbook_text}
 
 You are {persona_name} calling on behalf of {org['name']} to confirm an appointment.
 {f"Appointment time: {appt_display}" if appt_time else ""}
@@ -1600,7 +1666,9 @@ RULE: "Is there anything else I can help with?" is FORBIDDEN.
         # ── No-show follow-up (workflow V7) ───────────────────────────────
         elif scenario == "noshow_followup":
             if lang == "tr":
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
+
+{outbound_playbook_text}
 
 Sen {org['name']} adına no-show takip araması yapan {persona_name}'sın.
 Bu kişi bugünkü randevusuna gelmedi. Anlayışlı ve nazik ol.
@@ -1616,8 +1684,10 @@ KURAL: Max 3-4 tur.
                 )
             else:
                 lang_inst = language_instruction(lang)
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
 {lang_inst}
+
+{outbound_playbook_text}
 
 You are {persona_name} calling on behalf of {org['name']} for a no-show follow-up.
 This person missed their appointment today. Be understanding and kind.
@@ -1632,7 +1702,9 @@ RULE: Max 3-4 turns.
         elif scenario == "satisfaction_survey":
             run_id = meta.get("run_id", "")
             if lang == "tr":
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
+
+{outbound_playbook_text}
 
 Sen {org['name']} adına memnuniyet anketi araması yapan {persona_name}'sın.
 Bu kişi yakın zamanda hizmet aldı, kısa bir geri bildirim istiyorsun.
@@ -1648,8 +1720,10 @@ KURAL: "Başka bir konuda yardımcı olabilir miyim?" YASAK.
                 )
             else:
                 lang_inst = language_instruction(lang)
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
 {lang_inst}
+
+{outbound_playbook_text}
 
 You are {persona_name} calling on behalf of {org['name']} for a satisfaction survey.
 This person recently received service, you want brief feedback.
@@ -1664,7 +1738,9 @@ RULE: "Is there anything else I can help with?" is FORBIDDEN.
         elif scenario == "treatment_reminder":
             interval_days = meta.get("interval_days", "90")
             if lang == "tr":
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
+
+{outbound_playbook_text}
 
 Sen {org['name']} adına periyodik kontrol hatırlatması yapan {persona_name}'sın.
 Bu kişinin yaklaşık {interval_days} gün önce randevusu vardı, kontrol zamanı geldi.
@@ -1679,8 +1755,10 @@ KURAL: Zorlayıcı olma.
                 )
             else:
                 lang_inst = language_instruction(lang)
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
 {lang_inst}
+
+{outbound_playbook_text}
 
 You are {persona_name} calling on behalf of {org['name']} for a periodic check-up reminder.
 This person had an appointment about {interval_days} days ago, it's time for a follow-up.
@@ -1694,7 +1772,9 @@ RULE: Don't be pushy.
         elif scenario == "reactivation":
             offer = meta.get("offer_text", "")
             if lang == "tr":
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
+
+{outbound_playbook_text}
 
 Sen {org['name']} adına eski müşteri aktivasyon araması yapan {persona_name}'sın.
 Bu kişiyle uzun süredir temas kurulmadı.
@@ -1713,8 +1793,10 @@ KURAL: Max 3-4 tur.
             else:
                 lang_inst = language_instruction(lang)
                 offer_text = f"Special offer: {offer}. " if offer else ""
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
 {lang_inst}
+
+{outbound_playbook_text}
 
 You are {persona_name} calling on behalf of {org['name']} for a reactivation call.
 This person hasn't been contacted in a long time.
@@ -1729,7 +1811,9 @@ RULE: Max 3-4 turns.
         # ── Payment follow-up (workflow V11) ───────────────────────────────
         elif scenario == "payment_followup":
             if lang == "tr":
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
+
+{outbound_playbook_text}
 
 Sen {org['name']} adına ödeme takip araması yapan {persona_name}'sın.
 Bu kişinin bekleyen bir ödemesi var.
@@ -1745,8 +1829,10 @@ KURAL: Max 3-4 tur.
                 )
             else:
                 lang_inst = language_instruction(lang)
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
 {lang_inst}
+
+{outbound_playbook_text}
 
 You are {persona_name} calling on behalf of {org['name']} for a payment follow-up.
 This person has a pending payment.
@@ -1762,7 +1848,9 @@ RULE: Max 3-4 turns.
             appt_display = appt_time or ("yaklaşan randevunuz" if lang == "tr" else "your upcoming appointment")
             if lang == "tr":
                 time_word = "Yarınki" if reminder_hrs == "24" else "Bugünkü"
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
+
+{outbound_playbook_text}
 
 Sen {org['name']} adına randevu hatırlatma araması yapan {persona_name}'sın.
 Arama yapılan kişi: {contact_name}
@@ -1784,8 +1872,10 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
             else:
                 time_word = "tomorrow's" if reminder_hrs == "24" else "today's"
                 lang_inst = language_instruction(lang)
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
 {lang_inst}
+
+{outbound_playbook_text}
 
 You are {persona_name} calling on behalf of {org['name']} for an appointment reminder.
 Person being called: {contact_name}
@@ -1802,7 +1892,9 @@ RULE: Never make up information not in the knowledge base.
         # ── Standard outbound (followup, re_contact, etc.) ─────────────────
         else:
             if lang == "tr":
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
+
+{outbound_playbook_text}
 
 Sen {org['name']} adına arayan {persona_name}'sın.
 Arama yapılan kişi: {contact_name}
@@ -1819,8 +1911,10 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
                 )
             else:
                 lang_inst = language_instruction(lang)
-                system_prompt = f"""{outbound_playbook_text}
+                system_prompt = f"""{outbound_guardrails}
 {lang_inst}
+
+{outbound_playbook_text}
 
 You are {persona_name} calling on behalf of {org['name']}.
 Person being called: {contact_name}
