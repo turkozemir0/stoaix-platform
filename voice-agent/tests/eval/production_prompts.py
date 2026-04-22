@@ -359,6 +359,12 @@ def build_full_system_prompt(clinic_type: str, org_name: str, persona_name: str,
         f"- {f['label']}: \"{f.get('voice_prompt', f['label'])}\"" for f in must_fields
     )
 
+    # Should field prompts
+    should_fields = [f for f in ct["intake"] if f.get("priority") == "should"]
+    should_prompts = "\n".join(
+        f"- {f['label']}: \"{f.get('voice_prompt', f['label'])}\"" for f in should_fields
+    )
+
     # Hard block text
     blocks_text = ""
     for b in ct["hard_blocks"]:
@@ -366,6 +372,14 @@ def build_full_system_prompt(clinic_type: str, org_name: str, persona_name: str,
         blocks_text += f"\n- Anahtar kelimeler: {kw} → \"{b.get('response', '')}\""
 
     kb_section = kb_context if kb_context else "(Kullanıcı soru sorunca KB'den çekilecek)"
+
+    # Few-shot examples
+    few_shots = _FIXTURES["voice"].get(clinic_type, _FIXTURES["voice"]["other"]).get("few_shot_examples", [])
+    few_shot_text = ""
+    if few_shots:
+        few_shot_text = "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nÖRNEK KONUŞMALAR:\n"
+        for ex in few_shots:
+            few_shot_text += f"\nHasta: \"{ex['user']}\"\nAsistan: \"{ex['assistant']}\"\n"
 
     return f"""{PLATFORM_GUARDRAILS}
 
@@ -389,10 +403,31 @@ BİLGİ TABANI:
 TOPLANMASI GEREKEN BİLGİLER (zorunlu):
 {must_prompts}
 
-Tüm zorunlu bilgiler toplandığında: "Bilgilerinizi not aldım, bir danışmanımız sizi en kısa sürede arayacak." de ve görüşmeyi nazikçe sonlandır.
+Fırsat olduğunda toplanabilir:
+{should_prompts}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-KAPSAM DIŞI KONULAR:{blocks_text if blocks_text else " (tanımlı blok yok)"}"""
+VERİ TOPLAMA TARZI:
+- Bilgileri DOĞAL konuşma akışı içinde, birer birer topla.
+- Müşteriye "form dolduruyormuş" hissi verme.
+- Bir bilgiyi zaten vermiş olabilir — tekrar sorma.
+- Detay açıklama yapma, sadece sor.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KAPSAM DIŞI KONULAR:{blocks_text if blocks_text else " (tanımlı blok yok)"}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HANDOFF TETİKLEYİCİLER:
+- Müşteri açıkça "insan ile konuşmak istiyorum" veya "yöneticiyle görüşeyim" derse → handoff başlat.
+- 2+ kez aynı soruya tatmin edici cevap veremediysen → handoff başlat.
+- Müşteri sinirli veya şikayetçi → handoff başlat.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HALÜSİNASYON KURALI:
+Bilgi tabanında olmayan bilgiyi UYDURMA. Emin olmadığın konularda: "Bu konuda uzmanımız size en doğru bilgiyi verecektir." de.
+
+Tüm zorunlu bilgiler toplandığında: "Bilgilerinizi not aldım, bir danışmanımız sizi en kısa sürede arayacak." de ve görüşmeyi nazikçe sonlandır.
+{few_shot_text}"""
 
 
 # ── Özel görev şablonları (sektörden bağımsız, outbound/teyit) ─────────────────

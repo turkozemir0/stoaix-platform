@@ -41,3 +41,8 @@ tests:
   - file://tests/sectors/dental.yaml
   - file://tests/sectors/hair-transplant.yaml
   - file://tests/sectors/medical-aesthetics.yaml
+  - file://tests/sectors/surgical-aesthetics.yaml
+  - file://tests/sectors/physiotherapy.yaml
+  - file://tests/sectors/ophthalmology.yaml
+  - file://tests/sectors/general-practice.yaml
+  - file://tests/sectors/other.yaml
