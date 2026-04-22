@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
       meta.reminder_hours = '24'
     }
     if (scenario === 'reactivation') {
-      meta.offer = 'Bu ay size özel indirimli konsültasyon fırsatımız var.'
+      meta.offer_text = 'Bu ay size özel indirimli konsültasyon fırsatımız var.'
     }
     if (scenario === 'treatment_reminder') {
       meta.interval_days = '180'
