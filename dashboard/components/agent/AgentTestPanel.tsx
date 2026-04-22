@@ -49,6 +49,7 @@ interface AgentTestPanelProps {
   hasChat: boolean
   kbCount: number
   promptLength: number
+  scenario?: string
 }
 
 // ─── Model Selector ───────────────────────────────────────────────────────────
@@ -413,7 +414,7 @@ function VoiceTestInner({
   )
 }
 
-function VoiceTest({ orgId, model }: { orgId: string; model: string }) {
+function VoiceTest({ orgId, model, scenario }: { orgId: string; model: string; scenario?: string }) {
   const [phase, setPhase] = useState<'idle' | 'connecting' | 'active' | 'error'>('idle')
   const [error, setError]   = useState('')
   const [connDetails, setConnDetails] = useState<{ token: string; url: string } | null>(null)
@@ -454,7 +455,7 @@ function VoiceTest({ orgId, model }: { orgId: string; model: string }) {
       const res = await fetch('/api/agent/voice-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orgId, model }),
+        body: JSON.stringify({ orgId, model, scenario }),
       })
       if (!res.ok) throw new Error('Token alınamadı')
       const data = await res.json()
@@ -468,7 +469,7 @@ function VoiceTest({ orgId, model }: { orgId: string; model: string }) {
       setPhase('error')
       setError(e?.message || 'Bağlantı hatası')
     }
-  }, [orgId, model])
+  }, [orgId, model, scenario])
 
   useEffect(() => () => stopTimer(), [stopTimer])
 
@@ -630,7 +631,7 @@ function ReadinessGate({
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 
 export default function AgentTestPanel({
-  orgId, activeChannel, hasVoice, hasChat, kbCount, promptLength,
+  orgId, activeChannel, hasVoice, hasChat, kbCount, promptLength, scenario,
 }: AgentTestPanelProps) {
   const [model, setModel] = useState('claude-sonnet-4-6')
 
@@ -653,7 +654,7 @@ export default function AgentTestPanel({
     <ReadinessGate kbCount={kbCount} promptLength={promptLength}>
       <ModelSelector model={model} onChange={setModel} />
       {showChat  && <ChatTest  orgId={orgId} channel="whatsapp" model={model} />}
-      {showVoice && <VoiceTest orgId={orgId} model={model} />}
+      {showVoice && <VoiceTest orgId={orgId} model={model} scenario={scenario} />}
     </ReadinessGate>
   )
 }

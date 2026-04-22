@@ -58,6 +58,7 @@ interface EditorView {
   channel: Channel
   templateId: string
   templateName: string
+  scenario?: string
 }
 
 interface RoutingRule {
@@ -547,7 +548,8 @@ function AgentPageInner() {
     }
     const name = t === 'custom' ? 'Özelleştirilmiş' : (t as AgentTemplate).name
     const id   = t === 'custom' ? 'custom' : (t as AgentTemplate).id
-    setEditorView({ channel, templateId: id, templateName: name })
+    const scenario = t !== 'custom' ? (t as AgentTemplate).scenario : undefined
+    setEditorView({ channel, templateId: id, templateName: name, scenario })
     setEditorTab('settings')
   }
 
@@ -1496,6 +1498,7 @@ function AgentPageInner() {
                   ? voice.systemPrompt.length
                   : whatsapp.systemPrompt.length
               }
+              scenario={editorView?.scenario}
             />
           </div>
         )}

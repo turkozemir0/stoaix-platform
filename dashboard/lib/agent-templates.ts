@@ -7,6 +7,7 @@ export interface AgentTemplate {
   channel: 'voice' | 'whatsapp'
   recommended?: boolean
   requiresCalendar?: boolean
+  scenario?: string
   playbook: {
     systemPrompt: string
     openingMessage: string
@@ -98,6 +99,7 @@ Müşteri sinirli, gergin veya acil tıbbi durumdan bahsediyorsa → "Sizi hemen
     name: 'Randevu Teyit & Hatırlatma',
     description: 'Mevcut randevuları teyit et veya hatırlat. Kısa, net ve hedefli aramalar için.',
     channel: 'voice',
+    scenario: 'appt_confirm',
     recommended: false,
     requiresCalendar: false,
     playbook: {
@@ -146,6 +148,7 @@ Sen {KLINIK_ADI} kliniğinin asistanısın. Adın {PERSONA_ADI}. Bu aramayı ran
   {
     id: 'reactivation_voice',
     name: 'Reaktivasyon Araması',
+    scenario: 'reactivation',
     description: 'Uzun süredir haber alınamayan eski müşterileri geri kazanmak için nazik hatırlatma araması.',
     channel: 'voice',
     recommended: false,
