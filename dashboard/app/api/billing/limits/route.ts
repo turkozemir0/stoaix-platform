@@ -27,7 +27,7 @@ export async function GET() {
   // Subscription bilgisi
   const { data: sub } = await service
     .from('org_subscriptions')
-    .select('plan_id, status, trial_ends_at, current_period_end, grace_period_ends_at, cancel_at_period_end')
+    .select('plan_id, status, trial_ends_at, current_period_end, grace_period_ends_at, cancel_at_period_end, billing_interval')
     .eq('organization_id', orgId)
     .maybeSingle()
 
@@ -49,6 +49,7 @@ export async function GET() {
     current_period_end: sub?.current_period_end ?? null,
     grace_period_ends_at: sub?.grace_period_ends_at ?? null,
     cancel_at_period_end: sub?.cancel_at_period_end ?? false,
+    billing_interval: sub?.billing_interval ?? null,
     entitlements,
   })
 }

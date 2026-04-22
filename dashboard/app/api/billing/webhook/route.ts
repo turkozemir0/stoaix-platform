@@ -57,6 +57,23 @@ async function handleEvent(event: Stripe.Event, service: ReturnType<typeof getSe
   switch (event.type) {
     case 'checkout.session.completed': {
       const session = event.data.object as Stripe.Checkout.Session
+
+      // Kart güncelleme (setup mode)
+      if (session.mode === 'setup') {
+        const setupIntent = session.setup_intent as string
+        if (setupIntent) {
+          const si = await getStripe().setupIntents.retrieve(setupIntent)
+          const pmId = si.payment_method as string
+          const customerId = session.customer as string
+          if (pmId && customerId) {
+            await getStripe().customers.update(customerId, {
+              invoice_settings: { default_payment_method: pmId },
+            })
+          }
+        }
+        break
+      }
+
       if (session.mode !== 'subscription') break
 
       const orgId = session.metadata?.organization_id

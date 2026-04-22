@@ -4,7 +4,8 @@ import { useState, useEffect, Suspense } from 'react'
 import {
   Settings, Loader2, Lock, ToggleLeft, ToggleRight, CreditCard,
   Check, X, Zap, Star, Building2, Rocket,
-  Plus, ChevronDown, LifeBuoy,
+  Plus, ChevronDown, LifeBuoy, Download, RefreshCw,
+  XCircle, Calendar,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
@@ -12,6 +13,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useT } from '@/lib/lang-context'
 import DunningBanner from '@/components/billing/DunningBanner'
 import TrialBanner from '@/components/billing/TrialBanner'
+import CancelSubscriptionModal from '@/components/billing/CancelSubscriptionModal'
 import PipelineSettings from '@/components/settings/PipelineSettings'
 
 // ─── Module labels ────────────────────────────────────────────────────────────
@@ -264,35 +266,88 @@ const PLANS: Plan[] = [
   },
 ]
 
+// ─── Card brand icon helper ──────────────────────────────────────────────────
+function cardBrandLabel(brand: string) {
+  const map: Record<string, string> = { visa: 'Visa', mastercard: 'Mastercard', amex: 'Amex', discover: 'Discover' }
+  return map[brand] || brand
+}
+
+// ─── Invoice status badge ────────────────────────────────────────────────────
+function InvoiceStatus({ status }: { status: string }) {
+  const map: Record<string, { bg: string; text: string; label: string }> = {
+    paid:          { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Ödendi' },
+    open:          { bg: 'bg-amber-100',   text: 'text-amber-700',   label: 'Açık' },
+    draft:         { bg: 'bg-slate-100',   text: 'text-slate-500',   label: 'Taslak' },
+    void:          { bg: 'bg-slate-100',   text: 'text-slate-400',   label: 'İptal' },
+    uncollectible: { bg: 'bg-red-100',     text: 'text-red-700',     label: 'Tahsil edilemez' },
+  }
+  const cfg = map[status] || { bg: 'bg-slate-100', text: 'text-slate-500', label: status }
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.text}`}>
+      {cfg.label}
+    </span>
+  )
+}
+
 function BillingSection() {
   const [interval, setInterval] = useState<Interval>('monthly')
   const [limitsData, setLimitsData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [selectingPlan, setSelectingPlan] = useState<string | null>(null)
-  const [portalLoading, setPortalLoading] = useState(false)
+
+  // Subscription management state
+  const [cancelModalOpen, setCancelModalOpen] = useState(false)
+  const [reactivating, setReactivating] = useState(false)
+  const [paymentMethod, setPaymentMethod] = useState<{ brand: string; last4: string; exp_month: number; exp_year: number } | null>(null)
+  const [pmLoading, setPmLoading] = useState(false)
+  const [pmUpdateLoading, setPmUpdateLoading] = useState(false)
+  const [invoices, setInvoices] = useState<any[]>([])
+  const [invoicesLoading, setInvoicesLoading] = useState(false)
+  const [payingInvoice, setPayingInvoice] = useState<string | null>(null)
 
   const currentPlanId: string | null = limitsData?.plan_id ?? null
   const status: string = limitsData?.status ?? ''
   const trialEndsAt: string | null = limitsData?.trial_ends_at ?? null
+  const billingInterval: string | null = limitsData?.billing_interval ?? null
+  const periodEnd: string | null = limitsData?.current_period_end ?? null
+  const cancelAtPeriodEnd: boolean = limitsData?.cancel_at_period_end ?? false
   const isLegacy = currentPlanId === 'legacy'
+  const isCustom = currentPlanId === 'custom'
   const hasNoPlan = currentPlanId === null
+  const hasSub = currentPlanId && !isLegacy && !hasNoPlan
+  const isTrial = status === 'trialing'
+
+  const planLabel = PLANS.find(p => p.id === currentPlanId)?.name ?? currentPlanId ?? ''
 
   useEffect(() => {
     async function load() {
       try {
         const res = await fetch('/api/billing/limits')
-        if (res.ok) {
-          const data = await res.json()
-          setLimitsData(data)
-        }
-      } catch {
-        // ignore
-      } finally {
-        setLoading(false)
-      }
+        if (res.ok) setLimitsData(await res.json())
+      } catch { /* ignore */ }
+      finally { setLoading(false) }
     }
     load()
   }, [])
+
+  // Load payment method + invoices when we have a subscription
+  useEffect(() => {
+    if (!hasSub || loading) return
+
+    setPmLoading(true)
+    fetch('/api/billing/payment-method')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setPaymentMethod(d.card) })
+      .catch(() => {})
+      .finally(() => setPmLoading(false))
+
+    setInvoicesLoading(true)
+    fetch('/api/billing/invoices')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setInvoices(d.invoices ?? []) })
+      .catch(() => {})
+      .finally(() => setInvoicesLoading(false))
+  }, [hasSub, loading])
 
   async function handleSelect(planId: string) {
     setSelectingPlan(planId)
@@ -306,27 +361,65 @@ function BillingSection() {
         const data = await res.json()
         if (data.url) window.location.href = data.url
       }
-    } catch {
-      // ignore
-    } finally {
-      setSelectingPlan(null)
-    }
+    } catch { /* ignore */ }
+    finally { setSelectingPlan(null) }
   }
 
-  async function handlePortal() {
-    setPortalLoading(true)
+  async function handleReactivate() {
+    setReactivating(true)
     try {
-      const res = await fetch('/api/billing/portal', { method: 'POST' })
+      const res = await fetch('/api/billing/reactivate', { method: 'POST' })
+      if (res.ok) {
+        setLimitsData((prev: any) => prev ? { ...prev, cancel_at_period_end: false } : prev)
+      }
+    } catch { /* ignore */ }
+    finally { setReactivating(false) }
+  }
+
+  async function handleUpdatePaymentMethod() {
+    setPmUpdateLoading(true)
+    try {
+      const res = await fetch('/api/billing/payment-method/update', { method: 'POST' })
       if (res.ok) {
         const data = await res.json()
         if (data.url) window.location.href = data.url
       }
-    } catch {
-      // ignore
-    } finally {
-      setPortalLoading(false)
-    }
+    } catch { /* ignore */ }
+    finally { setPmUpdateLoading(false) }
   }
+
+  async function handlePayInvoice(invoiceId: string) {
+    setPayingInvoice(invoiceId)
+    try {
+      const res = await fetch('/api/billing/pay-invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice_id: invoiceId }),
+      })
+      const data = await res.json()
+      if (data.paid) {
+        setInvoices(prev => prev.map(inv => inv.id === invoiceId ? { ...inv, status: 'paid' } : inv))
+      } else if (data.hosted_url) {
+        window.open(data.hosted_url, '_blank')
+      }
+    } catch { /* ignore */ }
+    finally { setPayingInvoice(null) }
+  }
+
+  function handleCanceled() {
+    setCancelModalOpen(false)
+    setLimitsData((prev: any) => prev ? { ...prev, cancel_at_period_end: true } : prev)
+  }
+
+  function handleRetained() {
+    setCancelModalOpen(false)
+    // Refresh limits
+    fetch('/api/billing/limits').then(r => r.ok ? r.json() : null).then(d => { if (d) setLimitsData(d) })
+  }
+
+  const periodEndStr = periodEnd
+    ? new Date(periodEnd).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null
 
   return (
     <div className="space-y-6">
@@ -382,14 +475,13 @@ function BillingSection() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {PLANS.map((plan, planIndex) => {
             const isCurrent = plan.id === currentPlanId
-            const isCustom = plan.id === 'custom'
+            const isPlanCustom = plan.id === 'custom'
             const isMostPopular = plan.id === 'business'
             const price = interval === 'annual' ? plan.annualPrice : plan.monthlyPrice
             const isBusy = selectingPlan === plan.id
 
-            // Plan sırası: essential=0, professional=1, business=2, custom=3
             const currentIndex = PLANS.findIndex(p => p.id === currentPlanId)
-            const isDowngrade = currentIndex >= 0 && planIndex < currentIndex && !isCustom
+            const isDowngrade = currentIndex >= 0 && planIndex < currentIndex && !isPlanCustom
 
             return (
               <div
@@ -420,7 +512,7 @@ function BillingSection() {
                   <h3 className="text-base font-semibold text-slate-800">{plan.name}</h3>
                 </div>
                 <div className="mb-5">
-                  {isCustom ? (
+                  {isPlanCustom ? (
                     <div className="flex items-end gap-1">
                       <span className="text-2xl font-bold text-slate-900">Görüşmeli</span>
                     </div>
@@ -461,7 +553,7 @@ function BillingSection() {
                   <div className="rounded-lg border border-slate-200 bg-slate-50 py-2 text-center text-sm font-medium text-slate-400 cursor-not-allowed">
                     Mevcut planınız daha üst
                   </div>
-                ) : isCustom ? (
+                ) : isPlanCustom ? (
                   <a
                     href="https://calendly.com/ataulufer1/30min"
                     target="_blank"
@@ -485,21 +577,143 @@ function BillingSection() {
         </div>
       )}
 
-      {!loading && currentPlanId && !isLegacy && !hasNoPlan && (
-        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-5">
-          <div>
-            <p className="text-sm font-semibold text-slate-800">Mevcut aboneliği yönet</p>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Fatura bilgileri, ödeme yöntemi ve abonelik detayları.
-            </p>
+      {/* ── Abonelik Durumu Kartı ── */}
+      {!loading && hasSub && !isCustom && (
+        <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">Abonelik Durumu</h3>
+              <div className="mt-1 flex items-center gap-3 text-sm text-slate-500">
+                <span className="font-medium text-slate-700">{planLabel}</span>
+                <span className="text-slate-300">|</span>
+                <span>{billingInterval === 'annual' ? 'Yıllık' : 'Aylık'}</span>
+                {periodEndStr && (
+                  <>
+                    <span className="text-slate-300">|</span>
+                    <span className="flex items-center gap-1">
+                      <Calendar size={13} />
+                      Sonraki fatura: {periodEndStr}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+            {isTrial && (
+              <span className="rounded-full bg-blue-100 px-3 py-0.5 text-xs font-semibold text-blue-700">
+                Deneme
+              </span>
+            )}
           </div>
-          <button
-            onClick={handlePortal}
-            disabled={portalLoading}
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60"
-          >
-            {portalLoading ? 'Yükleniyor...' : 'Abonelik Portalı'}
-          </button>
+
+          {cancelAtPeriodEnd ? (
+            <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <XCircle size={16} className="text-amber-500" />
+                <p className="text-sm text-amber-800">
+                  Aboneliğiniz {periodEndStr ? <strong>{periodEndStr}</strong> : 'dönem sonunda'} sona erecek.
+                </p>
+              </div>
+              <button
+                onClick={handleReactivate}
+                disabled={reactivating}
+                className="shrink-0 flex items-center gap-1.5 rounded-lg bg-amber-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-amber-600 disabled:opacity-60 transition-colors"
+              >
+                {reactivating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                İptali Geri Al
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setCancelModalOpen(true)}
+              className="text-sm text-slate-400 hover:text-red-500 transition-colors"
+            >
+              Aboneliği İptal Et
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Ödeme Yöntemi Kartı ── */}
+      {!loading && hasSub && (
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">Ödeme Yöntemi</h3>
+              {pmLoading ? (
+                <p className="mt-1 text-sm text-slate-400">Yükleniyor...</p>
+              ) : paymentMethod ? (
+                <div className="mt-1 flex items-center gap-2 text-sm text-slate-600">
+                  <CreditCard size={16} className="text-slate-400" />
+                  <span className="font-medium">{cardBrandLabel(paymentMethod.brand)}</span>
+                  <span>****{paymentMethod.last4}</span>
+                  <span className="text-slate-400">
+                    {String(paymentMethod.exp_month).padStart(2, '0')}/{paymentMethod.exp_year}
+                  </span>
+                </div>
+              ) : (
+                <p className="mt-1 text-sm text-slate-400">Kayıtlı kart bulunamadı</p>
+              )}
+            </div>
+            <button
+              onClick={handleUpdatePaymentMethod}
+              disabled={pmUpdateLoading}
+              className="shrink-0 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60 transition-colors"
+            >
+              {pmUpdateLoading ? 'Yükleniyor...' : 'Güncelle'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Fatura Geçmişi ── */}
+      {!loading && hasSub && (
+        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h3 className="text-sm font-semibold text-slate-800">Fatura Geçmişi</h3>
+          </div>
+          {invoicesLoading ? (
+            <div className="px-5 py-8 text-center text-sm text-slate-400">Yükleniyor...</div>
+          ) : invoices.length === 0 ? (
+            <div className="px-5 py-8 text-center text-sm text-slate-400">Henüz fatura yok.</div>
+          ) : (
+            <div className="divide-y divide-slate-50">
+              {invoices.map(inv => (
+                <div key={inv.id} className="flex items-center justify-between px-5 py-3">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <span className="text-sm text-slate-500 w-28 shrink-0">
+                      {inv.date ? new Date(inv.date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}
+                    </span>
+                    <span className="text-sm font-medium text-slate-700">
+                      ${inv.amount.toFixed(2)}
+                    </span>
+                    <InvoiceStatus status={inv.status} />
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {inv.status === 'open' && (
+                      <button
+                        onClick={() => handlePayInvoice(inv.id)}
+                        disabled={payingInvoice === inv.id}
+                        className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-600 disabled:opacity-60 transition-colors"
+                      >
+                        {payingInvoice === inv.id ? 'Ödeniyor...' : 'Şimdi Öde'}
+                      </button>
+                    )}
+                    {inv.pdf_url && (
+                      <a
+                        href={inv.pdf_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-lg border border-slate-200 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors"
+                        title="PDF İndir"
+                      >
+                        <Download size={14} />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -517,6 +731,17 @@ function BillingSection() {
           ))}
         </div>
       )}
+
+      {/* Cancel Subscription Modal */}
+      <CancelSubscriptionModal
+        open={cancelModalOpen}
+        onClose={() => setCancelModalOpen(false)}
+        onCanceled={handleCanceled}
+        onRetained={handleRetained}
+        planName={planLabel}
+        periodEnd={periodEnd}
+        isTrial={isTrial}
+      />
     </div>
   )
 }
