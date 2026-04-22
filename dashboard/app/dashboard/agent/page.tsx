@@ -871,7 +871,13 @@ function AgentPageInner() {
           </div>
           <div className="flex flex-wrap gap-4">
             {getVoiceTemplates(clinicType, hasCalendar)
-              .filter(t => !t.scenario || !scenarioPlaybooks[t.scenario]?.id)
+              .filter(t => {
+                // Senaryo zaten kaydedilmişse gizle
+                if (t.scenario && scenarioPlaybooks[t.scenario]?.id) return false
+                // Ana template (scenario yok) ve ana playbook zaten varsa gizle
+                if (!t.scenario && voice.id) return false
+                return true
+              })
               .map(t => (
               <Phase1Card
                 key={t.id}
@@ -889,7 +895,11 @@ function AgentPageInner() {
           <h2 className="text-sm font-semibold text-slate-700">Mesajlaşma (WhatsApp)</h2>
           <div className="flex flex-wrap gap-4">
             {getWhatsappTemplates(clinicType, hasCalendar)
-              .filter(t => !t.scenario || !scenarioPlaybooks[t.scenario]?.id)
+              .filter(t => {
+                if (t.scenario && scenarioPlaybooks[t.scenario]?.id) return false
+                if (!t.scenario && whatsapp.id) return false
+                return true
+              })
               .map(t => (
               <Phase1Card
                 key={t.id}
