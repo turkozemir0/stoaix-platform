@@ -1944,6 +1944,11 @@ RULE: Never make up information not in the knowledge base.
 """
                 opening = _opening("default")
 
+        # Playbook'taki opening_message varsa hardcoded opening'i ezsin
+        _pb_opening = (playbook or {}).get("opening_message")
+        if _pb_opening:
+            opening = _pb_opening
+
         direction  = "outbound"
         phone_from = os.environ.get("PLATFORM_OUTBOUND_NUMBER", "")
 
