@@ -52,6 +52,7 @@ export interface WorkflowTemplate {
   config_fields: ConfigField[]
   n8n_workflow_id: string    // n8n webhook key
   steps_summary: string[]    // {{variable}} interpolasyonu
+  comingSoon?: boolean       // n8n karşılığı henüz yok → UI'da devre dışı
 }
 
 // DB: org_workflows

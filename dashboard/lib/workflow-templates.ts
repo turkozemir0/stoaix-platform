@@ -385,6 +385,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     trigger_type: 'lead_created',
     required_feature: 'workflow_sync_flows',
     n8n_workflow_id: 'chat-then-call',
+    comingSoon: true,
     config_fields: [
       { key: 'interest_score_threshold', label: 'Minimum ilgi skoru', type: 'number', default: 60 },
       { key: 'call_delay_minutes',       label: 'İlgi tespit edilince kaç dk sonra arasın?', type: 'number', default: 2, unit: 'dakika' },
@@ -406,6 +407,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     trigger_type: 'contact_inactive',
     required_feature: 'workflow_sync_flows',
     n8n_workflow_id: 'reactivation-sync',
+    comingSoon: true,
     config_fields: [
       { key: 'inactive_days', label: 'Son etkileşimden kaç gün geçmişse?', type: 'number', default: 90, unit: 'gün' },
       { key: 'offer_text',    label: 'Özel teklif metni (isteğe bağlı)',   type: 'text',   default: '' },
@@ -427,6 +429,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     trigger_type: 'lead_created',
     required_feature: 'workflow_sync_flows',
     n8n_workflow_id: 'omnichannel-followup',
+    comingSoon: true,
     config_fields: [
       { key: 'step_delay_hours', label: 'Adımlar arası bekleme süresi', type: 'number', default: 2, unit: 'saat' },
     ],

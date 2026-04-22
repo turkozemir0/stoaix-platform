@@ -45,23 +45,29 @@ function WorkflowCard({
   toggling: string | null
 }) {
   const Icon = CATEGORY_ICONS[template.category] ?? Zap
+  const comingSoon = !!template.comingSoon
   const locked = !template.plan_allowed
-  const channelMissing = !locked && !template.channel_ready
+  const channelMissing = !locked && !comingSoon && !template.channel_ready
   const workflowId = template.active_workflow_id
 
   return (
-    <div className={`bg-white rounded-xl border ${locked ? 'border-slate-100' : channelMissing ? 'border-amber-200' : 'border-slate-200'} p-5`}>
+    <div className={`bg-white rounded-xl border ${locked || comingSoon ? 'border-slate-100' : channelMissing ? 'border-amber-200' : 'border-slate-200'} p-5`}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3 min-w-0">
-          <div className={`mt-0.5 shrink-0 p-2 rounded-lg ${locked ? 'bg-slate-50' : channelMissing ? 'bg-amber-50' : 'bg-brand-50'}`}>
-            <Icon size={16} className={locked ? 'text-slate-300' : channelMissing ? 'text-amber-500' : 'text-brand-600'} />
+          <div className={`mt-0.5 shrink-0 p-2 rounded-lg ${locked || comingSoon ? 'bg-slate-50' : channelMissing ? 'bg-amber-50' : 'bg-brand-50'}`}>
+            <Icon size={16} className={locked || comingSoon ? 'text-slate-300' : channelMissing ? 'text-amber-500' : 'text-brand-600'} />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className={`font-semibold text-sm ${locked ? 'text-slate-400' : 'text-slate-800'}`}>
+              <h3 className={`font-semibold text-sm ${locked || comingSoon ? 'text-slate-400' : 'text-slate-800'}`}>
                 {template.name}
               </h3>
-              {!locked && template.is_active && (
+              {comingSoon && (
+                <span className="inline-flex items-center text-xs bg-slate-100 text-slate-500 border border-slate-200 rounded-full px-2 py-0.5 font-medium">
+                  Yakında
+                </span>
+              )}
+              {!locked && !comingSoon && template.is_active && (
                 <span className="inline-flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                   Aktif
@@ -74,14 +80,14 @@ function WorkflowCard({
                 </span>
               )}
             </div>
-            <p className={`text-xs mt-0.5 ${locked ? 'text-slate-300' : 'text-slate-500'}`}>
+            <p className={`text-xs mt-0.5 ${locked || comingSoon ? 'text-slate-300' : 'text-slate-500'}`}>
               {template.description}
             </p>
           </div>
         </div>
 
         <div className="shrink-0 flex items-center gap-2">
-          {locked ? (
+          {comingSoon ? null : locked ? (
             <Link
               href="/dashboard/billing"
               className="flex items-center gap-1 text-xs text-brand-600 font-medium hover:text-brand-700"
@@ -125,7 +131,7 @@ function WorkflowCard({
         </div>
       )}
 
-      {!locked && (
+      {!locked && !comingSoon && (
         <div className="mt-4 flex items-center gap-2 flex-wrap">
           {channelMissing ? (
             <span
