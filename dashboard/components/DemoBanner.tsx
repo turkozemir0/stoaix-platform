@@ -37,8 +37,8 @@ export default function DemoBanner() {
       <div className="flex items-center justify-between max-w-screen-xl mx-auto">
         <span>
           {lang === 'tr'
-            ? 'Demo Hesap — Ses ve chatbot testini deneyebilirsiniz'
-            : 'Demo Account — You can try voice and chatbot testing'}
+            ? 'Demo Hesap — Ses ve chatbot testini deneyebilirsiniz (günlük limit)'
+            : 'Demo Account — You can try voice and chatbot testing (daily limit)'}
         </span>
 
         {metrics.length > 0 && (
