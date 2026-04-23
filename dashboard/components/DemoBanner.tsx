@@ -30,6 +30,7 @@ export default function DemoBanner() {
 
   const voice = metrics.find(m => m.key === 'voice_minutes')
   const chat = metrics.find(m => m.key === 'chatbot_messages')
+  const anyExhausted = metrics.some(m => m.remaining === 0)
 
   return (
     <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 text-sm font-medium text-amber-800">
@@ -63,6 +64,14 @@ export default function DemoBanner() {
           </div>
         )}
       </div>
+
+      {anyExhausted && (
+        <p className="text-center text-xs mt-1.5 text-red-600 font-medium">
+          {lang === 'tr'
+            ? 'Günlük demo kullanım limitiniz doldu. Limitler her gün sıfırlanır.'
+            : 'Your daily demo usage limit has been reached. Limits reset every day.'}
+        </p>
+      )}
     </div>
   )
 }
