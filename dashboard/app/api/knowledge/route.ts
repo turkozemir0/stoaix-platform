@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import OpenAI from 'openai'
 import { checkEntitlement, incrementUsage } from '@/lib/entitlements'
 import { getSchema } from '@/lib/kb-schemas'
+import { demoWriteBlock } from '@/lib/demo-guard'
 
 function getOpenAI() { return new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) }
 
@@ -58,6 +59,9 @@ export async function POST(request: NextRequest) {
   if (!title || !organization_id) {
     return NextResponse.json({ error: 'title ve organization_id zorunlu' }, { status: 400 })
   }
+
+  const blocked = demoWriteBlock(organization_id)
+  if (blocked) return blocked
 
   const ent = await checkEntitlement(organization_id, 'kb_write')
   if (!ent.enabled) return NextResponse.json({ error: 'upgrade_required', feature: 'kb_write' }, { status: 403 })

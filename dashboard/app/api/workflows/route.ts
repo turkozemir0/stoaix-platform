@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { checkEntitlement } from '@/lib/entitlements'
 import { getTemplate } from '@/lib/workflow-templates'
 import { checkChannelReady } from '@/lib/integration-health'
+import { demoWriteBlock } from '@/lib/demo-guard'
 
 function getServiceClient() {
   return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -46,6 +47,10 @@ export async function POST(request: NextRequest) {
     .maybeSingle()
 
   if (!orgUser) return NextResponse.json({ error: 'No org' }, { status: 403 })
+
+  const blocked = demoWriteBlock(orgUser.organization_id)
+  if (blocked) return blocked
+
   if (!['admin', 'yönetici'].includes(orgUser.role ?? '')) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }

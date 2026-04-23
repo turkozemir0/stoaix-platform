@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { checkEntitlement, incrementUsage } from '@/lib/entitlements'
+import { demoWriteBlock } from '@/lib/demo-guard'
 import * as Sentry from '@sentry/nextjs'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -41,6 +42,9 @@ export async function POST(request: NextRequest) {
     .eq('id', conversationId)
     .maybeSingle()
   if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+
+  const blocked = demoWriteBlock(conv.organization_id)
+  if (blocked) return blocked
 
   // Auth + role check
   const { data: orgUser } = await service

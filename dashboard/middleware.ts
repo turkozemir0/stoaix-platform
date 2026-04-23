@@ -35,6 +35,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/reset-password') ||
+    pathname.startsWith('/demo') ||
     pathname === '/privacy' ||
     pathname === '/terms' ||
     pathname === '/'
@@ -61,14 +62,15 @@ export async function middleware(request: NextRequest) {
   // Check org user with onboarding status
   const { data: orgUser } = await supabase
     .from('org_users')
-    .select('id, role, organizations(onboarding_status)')
+    .select('id, role, organizations(onboarding_status, is_demo)')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .maybeSingle()
 
   if (orgUser) {
-    const org = orgUser.organizations as unknown as { onboarding_status: string } | null
+    const org = orgUser.organizations as unknown as { onboarding_status: string; is_demo?: boolean } | null
     const onboardingCompleted = org?.onboarding_status === 'completed'
+    const isDemo = org?.is_demo === true
     const userRole = orgUser.role
 
     // Org users cannot access /admin
@@ -87,6 +89,16 @@ export async function middleware(request: NextRequest) {
     // Onboarding completed → redirect away from /onboarding
     if (pathname.startsWith('/onboarding')) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
+
+    // Demo org route restrictions
+    if (isDemo) {
+      const demoBlocked = [
+        '/dashboard/settings', '/dashboard/billing', '/dashboard/workflows', '/dashboard/integrations',
+      ]
+      if (demoBlocked.some(p => pathname.startsWith(p))) {
+        return NextResponse.redirect(new URL('/dashboard', request.url))
+      }
     }
 
     // Role-based route restrictions

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
+import { isDemoOrg, getDemoRef, checkDemoRateLimit, incrementDemoUsage } from '@/lib/demo-guard'
 
 function getServiceClient() {
   return createClient(
@@ -33,6 +34,14 @@ export async function POST(req: NextRequest) {
 
   if (!message || !orgId) {
     return NextResponse.json({ error: 'message and orgId required' }, { status: 400 })
+  }
+
+  // Demo rate limiting
+  if (isDemoOrg(orgId)) {
+    const ref = getDemoRef()
+    const limit = await checkDemoRateLimit(ref, 'chatbot_messages')
+    if (limit) return NextResponse.json({ error: limit.error, limit: limit.limit, used: limit.used, message: 'Günlük demo limitiniz doldu.' }, { status: 429 })
+    await incrementDemoUsage(ref, 'chatbot_messages', 1)
   }
 
   // Playbook'u çek

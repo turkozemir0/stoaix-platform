@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AccessToken, AgentDispatchClient } from 'livekit-server-sdk'
 import { checkEntitlement } from '@/lib/entitlements'
+import { isDemoOrg, getDemoRef, checkDemoRateLimit, incrementDemoUsage } from '@/lib/demo-guard'
 
 const LIVEKIT_URL    = process.env.LIVEKIT_URL!
 const LIVEKIT_KEY    = process.env.LIVEKIT_API_KEY!
@@ -10,6 +11,14 @@ export async function POST(req: NextRequest) {
   const { orgId, model = 'claude-sonnet-4-6', scenario } = await req.json()
 
   if (!orgId) return NextResponse.json({ error: 'orgId required' }, { status: 400 })
+
+  // Demo rate limiting
+  if (isDemoOrg(orgId)) {
+    const ref = getDemoRef()
+    const limit = await checkDemoRateLimit(ref, 'voice_minutes')
+    if (limit) return NextResponse.json({ error: limit.error, limit: limit.limit, used: limit.used, message: 'Günlük demo limitiniz doldu.' }, { status: 429 })
+    await incrementDemoUsage(ref, 'voice_minutes', 1)
+  }
 
   const ent = await checkEntitlement(orgId, 'voice_agent_inbound')
   if (!ent.enabled) return NextResponse.json({ error: 'upgrade_required', feature: 'voice_agent_inbound' }, { status: 403 })

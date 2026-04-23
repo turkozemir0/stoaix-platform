@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabase } from '@supabase/supabase-js'
 import { WORKFLOW_TEMPLATES } from '@/lib/workflow-templates'
+import { demoWriteBlock } from '@/lib/demo-guard'
 
 function getServiceClient() {
   return createSupabase(
@@ -91,6 +92,9 @@ export async function POST(req: Request) {
 
   const orgId = await getOrgId(user.id)
   if (!orgId) return NextResponse.json({ error: 'Org bulunamadı' }, { status: 403 })
+
+  const blocked = demoWriteBlock(orgId)
+  if (blocked) return blocked
 
   const body = await req.json()
   const { feature_key, enabled } = body

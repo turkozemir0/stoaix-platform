@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { MessageSquare, Phone, Instagram, Send, RefreshCw } from 'lucide-react'
+import { useIsDemo } from '@/lib/demo-context'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -122,6 +123,7 @@ const LEAD_STATUS_LABELS: Record<string, Record<string, string>> = {
 }
 
 export default function InboxClient({ orgId, lang }: Props) {
+  const isDemo = useIsDemo()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -466,6 +468,7 @@ export default function InboxClient({ orgId, lang }: Props) {
           </div>
 
           {/* Reply box */}
+          {!isDemo && (
           <div className="border-t border-slate-200 bg-white px-4 py-3">
             {isVoice ? (
               <p className="text-sm text-slate-400 text-center py-2">
@@ -495,6 +498,7 @@ export default function InboxClient({ orgId, lang }: Props) {
               <p className="text-xs text-red-500 mt-1.5">{sendError}</p>
             )}
           </div>
+          )}
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center text-slate-400">

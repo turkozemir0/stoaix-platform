@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as sbAdmin } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { checkEntitlement } from '@/lib/entitlements'
+import { demoWriteBlock } from '@/lib/demo-guard'
 
 function getServiceClient() {
   return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -53,6 +54,9 @@ export async function PATCH(
   if (!orgUser) {
     return NextResponse.json({ error: 'No organization found' }, { status: 403 })
   }
+
+  const blocked = demoWriteBlock(orgUser.organization_id)
+  if (blocked) return blocked
 
   // Verify contact belongs to this org
   const { data: contact } = await service

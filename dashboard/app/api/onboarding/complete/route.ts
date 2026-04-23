@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { buildClinicPlaybookDefaults } from '@/lib/agent-templates'
 import { CLINIC_INTAKE_SCHEMAS } from '@/lib/clinic-intake-schemas'
+import { demoWriteBlock } from '@/lib/demo-guard'
 
 export async function POST(request: NextRequest) {
   const supabase = createClient()
@@ -22,6 +23,9 @@ export async function POST(request: NextRequest) {
   if (!orgUser) return NextResponse.json({ error: 'Org bulunamadı' }, { status: 404 })
 
   const orgId = orgUser.organization_id
+
+  const blocked = demoWriteBlock(orgId)
+  if (blocked) return blocked
 
   // Önce mevcut ai_persona'yı oku
   const { data: existing } = await service

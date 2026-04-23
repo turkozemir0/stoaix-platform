@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import AgentTestPanel from '@/components/agent/AgentTestPanel'
+import { useIsDemo } from '@/lib/demo-context'
 import { getWhatsappTemplates, getVoiceTemplates } from '@/lib/agent-templates'
 import type { AgentTemplate } from '@/lib/agent-templates'
 import KnowledgeClient from '../knowledge/KnowledgeClient'
@@ -17,7 +18,7 @@ import type { KnowledgeItem } from '@/lib/types'
 
 // ─── Knowledge tab content ────────────────────────────────────────────────────
 
-function KnowledgeTabSection({ orgId }: { orgId: string }) {
+function KnowledgeTabSection({ orgId, readOnly }: { orgId: string; readOnly?: boolean }) {
   const [items, setItems] = useState<KnowledgeItem[]>([])
   const [sector, setSector] = useState('other')
   const [loading, setLoading] = useState(true)
@@ -48,7 +49,7 @@ function KnowledgeTabSection({ orgId }: { orgId: string }) {
     )
   }
 
-  return <KnowledgeClient items={items} orgId={orgId} sector={sector} />
+  return <KnowledgeClient items={items} orgId={orgId} sector={sector} readOnly={readOnly} />
 }
 
 type Channel = 'voice' | 'whatsapp'
@@ -180,6 +181,7 @@ function AgentPageInner() {
   const searchParams = useSearchParams()
   const initialPageTab = searchParams.get('tab') === 'knowledge' ? 'knowledge' : 'agent'
   const [pageTab, setPageTab] = useState<'agent' | 'knowledge'>(initialPageTab as 'agent' | 'knowledge')
+  const isDemo = useIsDemo()
 
   const [orgId, setOrgId] = useState('')
   const [loading, setLoading] = useState(true)
@@ -855,7 +857,7 @@ function AgentPageInner() {
               ))}
             </div>
           </div>
-          <KnowledgeTabSection orgId={orgId} />
+          <KnowledgeTabSection orgId={orgId} readOnly={isDemo} />
         </div>
       )
     }
@@ -1017,7 +1019,7 @@ function AgentPageInner() {
               </span>
             </h1>
           </div>
-          {editorTab !== 'test' && (
+          {editorTab !== 'test' && !isDemo && (
             <button
               onClick={onSaveClick}
               disabled={saveBusy}

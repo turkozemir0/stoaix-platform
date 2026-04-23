@@ -10,6 +10,7 @@ import {
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import KanbanBoard from '../leads/KanbanBoard'
+import { useIsDemo } from '@/lib/demo-context'
 import PipelineSelector from '@/components/crm/PipelineSelector'
 import StatCard from '@/components/StatCard'
 import type { Pipeline } from '@/lib/types'
@@ -91,6 +92,7 @@ function ScoreBadge({ score }: { score: number }) {
 }
 
 function LeadsTab({ orgId }: { orgId: string }) {
+  const isDemo = useIsDemo()
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<FilterStatus>('all')
@@ -205,13 +207,15 @@ function LeadsTab({ orgId }: { orgId: string }) {
               onChange={setActivePipelineId}
             />
           )}
-          <Link
-            href="/dashboard/admin/import"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 border border-slate-200 text-slate-600 rounded-lg text-xs font-medium hover:bg-slate-200 transition-colors"
-          >
-            <Plus size={13} />
-            Import
-          </Link>
+          {!isDemo && (
+            <Link
+              href="/dashboard/admin/import"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 border border-slate-200 text-slate-600 rounded-lg text-xs font-medium hover:bg-slate-200 transition-colors"
+            >
+              <Plus size={13} />
+              Import
+            </Link>
+          )}
           <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
             <button
               onClick={() => setViewMode('table')}
@@ -233,6 +237,7 @@ function LeadsTab({ orgId }: { orgId: string }) {
         <KanbanBoard
           orgId={orgId}
           pipeline={pipelines.find(p => p.id === activePipelineId) ?? null}
+          readOnly={isDemo}
         />
       ) : (
         <>
