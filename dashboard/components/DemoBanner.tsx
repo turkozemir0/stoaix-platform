@@ -95,7 +95,7 @@ function LimitPill({
     }`}>
       {icon}
       <span className="font-medium">{label}:</span>
-      <span>{remaining}/{limit} {unit}</span>
+      <span>{used}/{limit} {unit}</span>
     </div>
   )
 }
