@@ -91,16 +91,6 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
 
-    // Demo org route restrictions
-    if (isDemo) {
-      const demoBlocked = [
-        '/dashboard/settings', '/dashboard/billing', '/dashboard/workflows', '/dashboard/integrations',
-      ]
-      if (demoBlocked.some(p => pathname.startsWith(p))) {
-        return NextResponse.redirect(new URL('/dashboard', request.url))
-      }
-    }
-
     // Role-based route restrictions
     const restrictedForMuhasebe = [
       '/dashboard/knowledge', '/dashboard/agent', '/dashboard/settings', '/dashboard/billing',

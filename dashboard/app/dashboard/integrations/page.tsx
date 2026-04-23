@@ -13,6 +13,7 @@ import { DentSoftConfig } from '@/components/integrations/DentSoftConfig'
 import { ExcludedPhonesConfig } from '@/components/integrations/ExcludedPhonesConfig'
 import { VoiceProviderConfig } from '@/components/integrations/VoiceProviderConfig'
 import { VOICE_PROVIDERS, PROVIDER_LIST } from '@/lib/voice-providers'
+import { useIsDemo } from '@/lib/demo-context'
 import {
   WhatsAppIcon,
   NetgsmIcon,
@@ -43,7 +44,13 @@ const VOICE_ICON_MAP: Record<string, React.ReactNode> = {
 }
 
 export default function IntegrationsPage() {
+  const isDemo = useIsDemo()
   const [activeDrawer, setActiveDrawer] = useState<DrawerId>(null)
+
+  function openDrawer(id: DrawerId) {
+    if (isDemo) return
+    setActiveDrawer(id)
+  }
 
   // Status tracking for cards
   const [waStatus, setWaStatus] = useState<{ connected: boolean; label?: string }>({ connected: false })
@@ -73,7 +80,7 @@ export default function IntegrationsPage() {
               helperText="Meta Business Suite'ten Phone Number ID ve Access Token ile baglanin."
               status={waStatus.connected ? 'connected' : 'disconnected'}
               statusLabel={waStatus.label}
-              onClick={() => setActiveDrawer('whatsapp')}
+              onClick={() => openDrawer('whatsapp')}
             />
           </Suspense>
           <Suspense fallback={<CardSkeleton />}>
@@ -93,7 +100,7 @@ export default function IntegrationsPage() {
               description="Instagram Direct mesajlari"
               status={igStatus.connected ? 'connected' : 'disconnected'}
               statusLabel={igStatus.label}
-              onClick={() => setActiveDrawer('instagram')}
+              onClick={() => openDrawer('instagram')}
             />
           </Suspense>
         </div>
@@ -112,7 +119,7 @@ export default function IntegrationsPage() {
               name={p.name}
               description={p.description}
               status={voiceStatus[p.id] ? 'connected' : 'disconnected'}
-              onClick={() => setActiveDrawer(p.id)}
+              onClick={() => openDrawer(p.id)}
             />
           ))}
         </div>
@@ -130,7 +137,7 @@ export default function IntegrationsPage() {
               name="Google Takvim"
               description="Randevu yonetimi"
               status={calStatus.connected ? 'connected' : 'disconnected'}
-              onClick={() => setActiveDrawer('calendar')}
+              onClick={() => openDrawer('calendar')}
             />
           </Suspense>
           <Suspense fallback={<CardSkeleton />}>
@@ -139,7 +146,7 @@ export default function IntegrationsPage() {
               name="DentSoft"
               description="Dis klinigi takvim entegrasyonu"
               status={dsStatus.connected ? 'connected' : 'disconnected'}
-              onClick={() => setActiveDrawer('dentsoft')}
+              onClick={() => openDrawer('dentsoft')}
             />
           </Suspense>
         </div>
@@ -156,7 +163,7 @@ export default function IntegrationsPage() {
             name="Haric Numaralar"
             description="AI yanit vermesin istediginiz numaralar"
             status="disconnected"
-            onClick={() => setActiveDrawer('excluded-phones')}
+            onClick={() => openDrawer('excluded-phones')}
           />
         </div>
       </section>

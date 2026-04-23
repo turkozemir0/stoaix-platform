@@ -57,9 +57,8 @@ export default function Sidebar({ orgName, isSuperAdmin, userRole, userId, orgId
     { href: '/dashboard/settings',       label: lang === 'tr' ? 'Hesap Ayarları' : 'Account',  icon: Settings,        roles: ['admin','yönetici','satisci'] },
   ]
 
-  const demoHidden = ['/dashboard/settings', '/dashboard/workflows', '/dashboard/integrations']
   const navItems = allNavItems.filter(item => {
-    if (isDemo && demoHidden.includes(item.href)) return false
+    if (isDemo) return true // demo shows all tabs (read-only enforced in UI)
     return isSuperAdmin || item.roles === null || (userRole && item.roles.includes(userRole))
   })
 

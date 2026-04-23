@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useT } from '@/lib/lang-context'
+import { useIsDemo } from '@/lib/demo-context'
 import DunningBanner from '@/components/billing/DunningBanner'
 import TrialBanner from '@/components/billing/TrialBanner'
 import CancelSubscriptionModal from '@/components/billing/CancelSubscriptionModal'
@@ -46,6 +47,7 @@ interface ModuleFeature {
 }
 
 function ModulesSection() {
+  const isDemo = useIsDemo()
   const [features, setFeatures] = useState<ModuleFeature[]>([])
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState<string | null>(null)
@@ -59,6 +61,7 @@ function ModulesSection() {
   }, [])
 
   async function toggle(featureKey: string, newEnabled: boolean) {
+    if (isDemo) return
     setToggling(featureKey)
     try {
       await fetch('/api/settings/modules', {
@@ -150,7 +153,7 @@ function ModulesSection() {
                   {!f.plan_enabled ? (
                     <Link
                       href="/dashboard/settings?tab=billing"
-                      className="shrink-0 text-xs text-brand-600 font-medium hover:text-brand-700 flex items-center gap-1"
+                      className={`shrink-0 text-xs text-brand-600 font-medium hover:text-brand-700 flex items-center gap-1 ${isDemo ? 'pointer-events-none opacity-50' : ''}`}
                     >
                       <CreditCard size={12} />
                       Yükselt
@@ -158,8 +161,8 @@ function ModulesSection() {
                   ) : (
                     <button
                       onClick={() => toggle(f.key, !f.effective_enabled)}
-                      disabled={isToggling}
-                      title={f.effective_enabled ? 'Kapat' : 'Aç'}
+                      disabled={isToggling || isDemo}
+                      title={isDemo ? 'Demo modunda değiştirilemez' : f.effective_enabled ? 'Kapat' : 'Aç'}
                       className="shrink-0 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50"
                     >
                       {isToggling ? (
@@ -290,6 +293,7 @@ function InvoiceStatus({ status }: { status: string }) {
 }
 
 function BillingSection() {
+  const isDemo = useIsDemo()
   const [interval, setInterval] = useState<Interval>('monthly')
   const [limitsData, setLimitsData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -350,6 +354,7 @@ function BillingSection() {
   }, [hasSub, loading])
 
   async function handleSelect(planId: string) {
+    if (isDemo) return
     setSelectingPlan(planId)
     try {
       const res = await fetch('/api/billing/checkout', {
@@ -366,6 +371,7 @@ function BillingSection() {
   }
 
   async function handleReactivate() {
+    if (isDemo) return
     setReactivating(true)
     try {
       const res = await fetch('/api/billing/reactivate', { method: 'POST' })
@@ -377,6 +383,7 @@ function BillingSection() {
   }
 
   async function handleUpdatePaymentMethod() {
+    if (isDemo) return
     setPmUpdateLoading(true)
     try {
       const res = await fetch('/api/billing/payment-method/update', { method: 'POST' })
@@ -389,6 +396,7 @@ function BillingSection() {
   }
 
   async function handlePayInvoice(invoiceId: string) {
+    if (isDemo) return
     setPayingInvoice(invoiceId)
     try {
       const res = await fetch('/api/billing/pay-invoice', {
@@ -565,7 +573,7 @@ function BillingSection() {
                 ) : (
                   <button
                     onClick={() => handleSelect(plan.id)}
-                    disabled={isBusy || !!selectingPlan}
+                    disabled={isBusy || !!selectingPlan || isDemo}
                     className="w-full rounded-lg bg-brand-500 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-600 disabled:opacity-60"
                   >
                     {isBusy ? 'Yükleniyor...' : 'Yükselt'}
@@ -615,21 +623,21 @@ function BillingSection() {
               </div>
               <button
                 onClick={handleReactivate}
-                disabled={reactivating}
+                disabled={reactivating || isDemo}
                 className="shrink-0 flex items-center gap-1.5 rounded-lg bg-amber-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-amber-600 disabled:opacity-60 transition-colors"
               >
                 {reactivating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                 İptali Geri Al
               </button>
             </div>
-          ) : (
+          ) : !isDemo ? (
             <button
               onClick={() => setCancelModalOpen(true)}
               className="text-sm text-slate-400 hover:text-red-500 transition-colors"
             >
               Aboneliği İptal Et
             </button>
-          )}
+          ) : null}
         </div>
       )}
 
@@ -656,7 +664,7 @@ function BillingSection() {
             </div>
             <button
               onClick={handleUpdatePaymentMethod}
-              disabled={pmUpdateLoading}
+              disabled={pmUpdateLoading || isDemo}
               className="shrink-0 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60 transition-colors"
             >
               {pmUpdateLoading ? 'Yükleniyor...' : 'Güncelle'}
@@ -692,7 +700,7 @@ function BillingSection() {
                     {inv.status === 'open' && (
                       <button
                         onClick={() => handlePayInvoice(inv.id)}
-                        disabled={payingInvoice === inv.id}
+                        disabled={payingInvoice === inv.id || isDemo}
                         className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-600 disabled:opacity-60 transition-colors"
                       >
                         {payingInvoice === inv.id ? 'Ödeniyor...' : 'Şimdi Öde'}
@@ -772,6 +780,7 @@ interface Ticket {
 }
 
 function SupportSection() {
+  const isDemo = useIsDemo()
   const t = useT()
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [orgId, setOrgId] = useState('')
@@ -811,6 +820,7 @@ function SupportSection() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (isDemo) return
     if (!subject.trim() || !message.trim() || !orgId) return
     setSubmitting(true)
     setError('')
@@ -841,13 +851,15 @@ function SupportSection() {
           <h2 className="text-base font-bold text-slate-900">{t.ticketsTitle}</h2>
           <p className="text-sm text-slate-500 mt-0.5">Sorun ve taleplerinizi buradan iletebilirsiniz.</p>
         </div>
-        <button
-          onClick={() => setShowForm(v => !v)}
-          className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
-        >
-          <Plus size={16} />
-          Yeni Talep
-        </button>
+        {!isDemo && (
+          <button
+            onClick={() => setShowForm(v => !v)}
+            className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+          >
+            <Plus size={16} />
+            Yeni Talep
+          </button>
+        )}
       </div>
 
       {showForm && (

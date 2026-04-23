@@ -13,7 +13,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/login', req.url))
   }
 
-  const ref = req.nextUrl.searchParams.get('ref') || '_no_ref'
+  const ref = req.nextUrl.searchParams.get('ref')
+  if (!ref) {
+    return NextResponse.redirect(new URL('/login', req.url))
+  }
 
   // Create Supabase SSR client (sets auth cookies on response)
   const cookieStore = cookies()

@@ -11,6 +11,7 @@ import type { TemplateWithStatus } from '@/lib/workflow-types'
 import type { WorkflowCategory } from '@/lib/workflow-types'
 import ActivateModal from './ActivateModal'
 import RunHistoryDrawer from './RunHistoryDrawer'
+import { useIsDemo } from '@/lib/demo-context'
 
 // ── Category config ───────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ function WorkflowCard({
   onRunHistory,
   onManualRun,
   toggling,
+  isDemo,
 }: {
   template: TemplateWithStatus
   onEdit: (t: TemplateWithStatus) => void
@@ -43,6 +45,7 @@ function WorkflowCard({
   onRunHistory: (id: string, name: string) => void
   onManualRun: (t: TemplateWithStatus) => void
   toggling: string | null
+  isDemo?: boolean
 }) {
   const Icon = CATEGORY_ICONS[template.category] ?? Zap
   const comingSoon = !!template.comingSoon
@@ -87,7 +90,9 @@ function WorkflowCard({
         </div>
 
         <div className="shrink-0 flex items-center gap-2">
-          {comingSoon ? null : locked ? (
+          {comingSoon ? null : isDemo ? (
+            <span className="text-xs text-slate-400">Salt okunur</span>
+          ) : locked ? (
             <Link
               href="/dashboard/billing"
               className="flex items-center gap-1 text-xs text-brand-600 font-medium hover:text-brand-700"
@@ -144,7 +149,8 @@ function WorkflowCard({
           ) : (
             <button
               onClick={() => onEdit(template)}
-              className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 transition-colors"
+              disabled={isDemo}
+              className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Settings2 size={12} />
               {workflowId ? 'Düzenle' : 'Kur & Aktif Et'}
@@ -164,7 +170,8 @@ function WorkflowCard({
           {workflowId && template.is_active && !channelMissing && (
             <button
               onClick={() => onManualRun(template)}
-              className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg px-3 py-1.5 transition-colors"
+              disabled={isDemo}
+              className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Play size={12} />
               Manuel Çalıştır
@@ -260,6 +267,7 @@ function ManualRunModal({
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function WorkflowsClient() {
+  const isDemo = useIsDemo()
   const [templates, setTemplates]     = useState<TemplateWithStatus[]>([])
   const [loading, setLoading]         = useState(true)
   const [activeCategory, setActiveCategory] = useState<WorkflowCategory | 'all'>('all')
@@ -282,6 +290,7 @@ export default function WorkflowsClient() {
   useEffect(() => { fetchTemplates() }, [fetchTemplates])
 
   async function handleToggle(workflowId: string, current: boolean) {
+    if (isDemo) return
     setToggling(workflowId)
     setToggleError(null)
     try {
@@ -378,11 +387,12 @@ export default function WorkflowsClient() {
             <WorkflowCard
               key={template.id}
               template={template}
-              onEdit={setEditingTemplate}
+              onEdit={isDemo ? () => {} : setEditingTemplate}
               onToggle={handleToggle}
               onRunHistory={(id, name) => setHistoryWorkflow({ id, name })}
-              onManualRun={setManualRunTemplate}
+              onManualRun={isDemo ? () => {} : setManualRunTemplate}
               toggling={toggling}
+              isDemo={isDemo}
             />
           ))}
         </div>
