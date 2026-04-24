@@ -30,10 +30,17 @@ export interface IntegrationHealthResult {
 function checkWhatsApp(cc: any): ChannelHealth {
   if (!cc?.whatsapp) return { status: 'not_configured', detail: null }
   const wa = cc.whatsapp
-  if (wa.active && wa.waba_id && wa.phone_number_id) {
-    return { status: 'connected', detail: wa.display_phone_number || wa.phone_number_id }
+  const creds = wa.credentials ?? {}
+  // manual-connect saves inside credentials; embedded signup may save at top level
+  const wabaId = wa.waba_id || creds.waba_id
+  const phoneNumId = wa.phone_number_id || creds.phone_number_id
+  const accessToken = wa.access_token || creds.access_token
+  const displayPhone = wa.display_phone_number || creds.phone_number || phoneNumId
+
+  if (wa.active && wabaId && phoneNumId) {
+    return { status: 'connected', detail: displayPhone }
   }
-  if (wa.waba_id || wa.phone_number_id || wa.access_token) {
+  if (wabaId || phoneNumId || accessToken) {
     return { status: 'missing_config', detail: 'Eksik yapılandırma' }
   }
   return { status: 'not_configured', detail: null }
