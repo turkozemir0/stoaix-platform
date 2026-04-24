@@ -422,15 +422,7 @@ async function runChatEngine(
     const bridgeMsg = (playbook as any).handoff_bridge_message
       ?? 'Bilgilerinizi aldım, uzman ekibimiz en kısa sürede sizinle iletişime geçecek. 👋'
 
-    // Save AI reply first (if any), then bridge message
-    if (reply) {
-      await supabase.from('messages').insert({
-        conversation_id: conversationId, organization_id: orgId,
-        role: 'assistant', content: reply, content_type: 'text', channel,
-      })
-      await sendReply(reply)
-    }
-
+    // Only send bridge message on handoff — skip AI reply to avoid contradictory double-message
     await supabase.from('messages').insert({
       conversation_id: conversationId, organization_id: orgId,
       role: 'assistant', content: bridgeMsg, content_type: 'text', channel,
