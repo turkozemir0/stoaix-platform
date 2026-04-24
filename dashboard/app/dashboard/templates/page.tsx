@@ -200,16 +200,24 @@ export default function TemplatesPage() {
     })
   }, [])
 
+  // Sync template statuses from Meta, then reload
+  const syncFromMeta = useCallback(async () => {
+    try {
+      await fetch('/api/templates/sync', { method: 'POST' })
+    } catch { /* ignore sync errors */ }
+  }, [])
+
   const loadTemplates = useCallback(async () => {
     setLoading(true)
     try {
+      await syncFromMeta()
       const res = await fetch('/api/templates')
       const data = await res.json()
       if (res.ok) setTemplates(data.templates ?? [])
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [syncFromMeta])
 
   const loadPresets = useCallback(async () => {
     setPresetsLoading(true)
