@@ -394,7 +394,7 @@ function LeadsTab({ orgId }: { orgId: string }) {
                           </td>
                           <td className="px-4 py-3">
                             {phone ? (
-                              <a href={`tel:${phone}`} className="font-mono text-sm text-slate-800 hover:text-brand-600">{phone}</a>
+                              <span className="font-mono text-sm text-slate-800">{phone}</span>
                             ) : <span className="text-xs text-slate-400">—</span>}
                           </td>
                           <td className="px-4 py-3"><ScoreBadge score={lead.qualification_score} /></td>
@@ -405,16 +405,9 @@ function LeadsTab({ orgId }: { orgId: string }) {
                           </td>
                           <td className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">{updatedAt}</td>
                           <td className="px-4 py-3">
-                            <div className="flex items-center gap-2 justify-end">
-                              {phone && (
-                                <a href={`tel:${phone}`} className="flex items-center gap-1 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium hover:bg-brand-700 transition-colors">
-                                  <Phone size={12} /> Ara
-                                </a>
-                              )}
-                              <Link href={`/dashboard/leads/${lead.id}`} className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-medium hover:bg-slate-200 transition-colors">
-                                <MessageSquare size={12} /> Detay
-                              </Link>
-                            </div>
+                            <Link href={`/dashboard/leads/${lead.id}`} className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-medium hover:bg-slate-200 transition-colors">
+                              <MessageSquare size={12} /> Detay
+                            </Link>
                           </td>
                         </tr>
                       )
