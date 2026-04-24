@@ -59,6 +59,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }, { status: 400 })
   }
 
+  // Auto-add example values for components with variables (Meta requires this)
+  const EXAMPLE_VALUES = ['Max', '25.04.2026', '14:00', 'Beispiel', 'Muster']
+  const componentsWithExamples = (template.components as any[]).map((comp: any) => {
+    if (comp.type !== 'BODY' || !comp.text) return comp
+    const vars = comp.text.match(/\{\{\d+\}\}/g)
+    if (!vars || vars.length === 0) return comp
+    if (comp.example) return comp // already has examples
+    return {
+      ...comp,
+      example: { body_text: [vars.map((_: any, i: number) => EXAMPLE_VALUES[i] ?? `Beispiel${i + 1}`)] },
+    }
+  })
+
   // Submit to Meta Graph API
   const metaRes = await fetch(`${GRAPH}/${waCreds.waba_id}/message_templates`, {
     method: 'POST',
@@ -70,15 +83,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       name:       template.name,
       language:   template.language,
       category:   template.category,
-      components: template.components,
+      components: componentsWithExamples,
     }),
   })
 
   const metaData = await metaRes.json()
 
   if (!metaRes.ok || metaData.error) {
+    const errDetail = metaData.error?.error_data?.details ?? ''
     const msg = metaData.error?.message ?? 'Meta API hatası'
-    return NextResponse.json({ error: msg }, { status: 400 })
+    console.error('[templates/submit] Meta error:', JSON.stringify(metaData.error))
+    return NextResponse.json({ error: errDetail ? `${msg} — ${errDetail}` : msg }, { status: 400 })
   }
 
   // Update template status
