@@ -150,14 +150,11 @@ async function callGPTVision(imageUrl: string, prompt: string): Promise<string> 
       }),
     })
     if (!res.ok) {
-      const body = await res.text()
-      console.error(`GPT-4o Vision failed ${res.status}: ${body}`)
+      console.error(`GPT-4o Vision failed ${res.status}`)
       return ''
     }
     const data = await res.json()
-    const result = data.choices?.[0]?.message?.content ?? ''
-    console.log(`Vision analysis result (${result.length} chars): ${result.slice(0, 100)}`)
-    return result
+    return data.choices?.[0]?.message?.content ?? ''
   } catch (err) {
     console.error('Vision error:', err)
     return ''
@@ -292,8 +289,6 @@ async function handleImageMessage(
   const mime    = infoData.mime_type ?? 'image/jpeg'
   const dataUrl = `data:${mime};base64,${toBase64(blob)}`
 
-  console.log(`Image downloaded: ${blob.byteLength} bytes, mime: ${mime}`)
-
   const sector     = (org as any).sector ?? 'default'
   const langPrompts = VISION_PROMPTS[lang] ?? VISION_PROMPTS.tr
   const prompt     = langPrompts[sector] ?? langPrompts.default
@@ -301,10 +296,9 @@ async function handleImageMessage(
 
   const supabase = getSupabase()
   if (analysis) {
-    console.log(`Vision OK, saving to lead for waId: ${waId}`)
     await updateLeadWithVision(supabase, org.id, waId, analysis, message.id)
   } else {
-    console.error(`Vision returned empty for waId: ${waId}, mediaId: ${mediaId}`)
+    console.error(`Vision returned empty for waId: ${waId}`)
   }
 
   await sendMetaMessage(accessToken, phoneNumberId, waId, msgs.imageAck)
