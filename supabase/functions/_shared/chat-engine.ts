@@ -450,8 +450,27 @@ async function runChatEngine(
 
       await supabase
         .from('leads')
-        .update({ status: 'handed_off' })
+        .update({ status: 'handed_off', handoff_at: new Date().toISOString() })
         .eq('id', leadRow.id)
+
+      // Schedule handoff follow-up tasks (4h + 24h reminders)
+      const handoffTasks = [
+        { stage: 'handoff_check_4h',  hours: 4 },
+        { stage: 'handoff_check_24h', hours: 24 },
+      ]
+      for (const t of handoffTasks) {
+        await supabase.from('follow_up_tasks').insert({
+          organization_id: orgId,
+          contact_id:      contactId,
+          lead_id:         leadRow.id,
+          conversation_id: conversationId,
+          task_type:       'handoff_reminder',
+          sequence_stage:  t.stage,
+          status:          'pending',
+          channel,
+          scheduled_at:    new Date(Date.now() + t.hours * 60 * 60 * 1000).toISOString(),
+        })
+      }
     }
 
     // Notification for org team
