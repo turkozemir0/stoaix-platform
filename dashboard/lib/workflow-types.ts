@@ -38,6 +38,7 @@ export interface ConfigField {
   unit?: string
   options?: ConfigFieldOption[]
   description?: string
+  template_purpose?: string  // followup | reengagement | appointment_reminder | satisfaction
 }
 
 export interface WorkflowTemplate {
