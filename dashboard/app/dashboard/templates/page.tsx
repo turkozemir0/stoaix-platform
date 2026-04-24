@@ -146,8 +146,11 @@ function MyTemplateCard({
             disabled={submitting === template.id}
             className="flex items-center gap-1.5 text-xs font-medium bg-brand-50 text-brand-700 hover:bg-brand-100 px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors"
           >
-            {submitting === template.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-            Meta&apos;ya Gönder
+            {submitting === template.id ? (
+              <><Loader2 size={12} className="animate-spin" /> Meta&apos;ya gönderiliyor...</>
+            ) : (
+              <><Send size={12} /> Meta&apos;ya Gönder</>
+            )}
           </button>
         )}
         <button
@@ -178,6 +181,7 @@ export default function TemplatesPage() {
   const [submitting, setSubmitting] = useState<string | null>(null)
   const [deleting, setDeleting]     = useState<string | null>(null)
   const [error, setError]           = useState('')
+  const [success, setSuccess]       = useState('')
 
   // Load org sector
   useEffect(() => {
@@ -237,11 +241,14 @@ export default function TemplatesPage() {
   async function submit(id: string) {
     setSubmitting(id)
     setError('')
+    setSuccess('')
     try {
       const res = await fetch(`/api/templates/${id}/submit`, { method: 'POST' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Gönderim başarısız')
       setTemplates((prev) => prev.map((t) => t.id === id ? { ...t, status: 'pending' } : t))
+      setSuccess('Template Meta\'ya gönderildi! Onay süreci genellikle birkaç dakika ile 24 saat arasında sürer.')
+      setTimeout(() => setSuccess(''), 8000)
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -303,6 +310,12 @@ export default function TemplatesPage() {
         </div>
       </div>
 
+      {success && (
+        <div className="mb-4 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-700 flex items-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0"><path d="M8 1a7 7 0 110 14A7 7 0 018 1zm2.354 4.646a.5.5 0 00-.708 0L7 8.293 6.354 7.646a.5.5 0 10-.708.708l1 1a.5.5 0 00.708 0l3-3a.5.5 0 000-.708z" fill="currentColor"/></svg>
+          {success}
+        </div>
+      )}
       {error && (
         <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-600">
           {error}
