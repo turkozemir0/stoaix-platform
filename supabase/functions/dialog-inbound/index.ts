@@ -103,7 +103,7 @@ async function resolveLanguage(
       .from('contacts')
       .select('preferred_language')
       .eq('organization_id', orgId)
-      .filter(`channel_identifiers->>'${identifierKey}'`, 'eq', identifierVal)
+      .filter(`channel_identifiers->>${identifierKey}`, 'eq', identifierVal)
       .maybeSingle()
     if (contact?.preferred_language) return contact.preferred_language
   } catch { /* ignore — fall through */ }
@@ -190,7 +190,7 @@ async function handleHumanEcho(
     .from('contacts')
     .select('id')
     .eq('organization_id', orgId)
-    .filter("channel_identifiers->>'wa_id'", 'eq', customerWaId)
+    .filter('channel_identifiers->>wa_id', 'eq', customerWaId)
     .maybeSingle()
 
   if (!contact?.id) return

@@ -670,24 +670,28 @@ export async function updateLeadWithVision(
   wamid:         string
 ): Promise<void> {
   try {
-    // Find contact
-    const { data: contact } = await supabase
+    console.log(`updateLeadWithVision START — org: ${orgId}, waId: ${waId}`)
+
+    // Find contact — try JSONB arrow filter first, fallback to text search
+    const { data: contact, error: contactErr } = await supabase
       .from('contacts')
       .select('id')
       .eq('organization_id', orgId)
-      .filter("channel_identifiers->>'wa_id'", 'eq', waId)
+      .filter('channel_identifiers->>wa_id', 'eq', waId)
       .maybeSingle()
 
+    console.log(`Contact lookup: ${contact?.id ?? 'NOT FOUND'}${contactErr ? ' err: ' + contactErr.message : ''}`)
     if (!contact?.id) return
 
     // Find lead
-    const { data: lead } = await supabase
+    const { data: lead, error: leadLookupErr } = await supabase
       .from('leads')
       .select('id, qualification_score, notes')
       .eq('organization_id', orgId)
       .eq('contact_id', contact.id)
       .maybeSingle()
 
+    console.log(`Lead lookup: ${lead?.id ?? 'NOT FOUND'}${leadLookupErr ? ' err: ' + leadLookupErr.message : ''}`)
     if (!lead?.id) return
 
     // Find active conversation
@@ -711,7 +715,7 @@ export async function updateLeadWithVision(
 
     const newScore = Math.min(100, (lead.qualification_score ?? 0) + 10)
 
-    await supabase
+    const { error: leadErr } = await supabase
       .from('leads')
       .update({
         notes:               updatedNotes,
@@ -720,9 +724,12 @@ export async function updateLeadWithVision(
       })
       .eq('id', lead.id)
 
+    if (leadErr) console.error('Vision lead update failed:', leadErr.message)
+    else console.log(`Vision notes saved to lead ${lead.id}`)
+
     // Save system message to conversation (if one exists)
     if (convo?.id) {
-      await supabase.from('messages').insert({
+      const { error: msgErr } = await supabase.from('messages').insert({
         conversation_id: convo.id,
         organization_id: orgId,
         role:            'system',
@@ -731,6 +738,9 @@ export async function updateLeadWithVision(
         external_id:     wamid,
         channel:         'whatsapp',
       })
+      if (msgErr) console.error('Vision message insert failed:', msgErr.message)
+    } else {
+      console.log('Vision: no active conversation found, skipping message insert')
     }
   } catch (err) {
     console.error('updateLeadWithVision failed:', err)

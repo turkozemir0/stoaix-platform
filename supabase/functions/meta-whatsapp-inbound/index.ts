@@ -129,10 +129,12 @@ async function sendMetaMessage(
 
 async function callGPTVision(imageUrl: string, prompt: string): Promise<string> {
   try {
+    const apiKey = Deno.env.get('OPENAI_API_KEY')
+    if (!apiKey) { console.error('OPENAI_API_KEY not set'); return '' }
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')!}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type':  'application/json',
       },
       body: JSON.stringify({
@@ -148,11 +150,14 @@ async function callGPTVision(imageUrl: string, prompt: string): Promise<string> 
       }),
     })
     if (!res.ok) {
-      console.error(`GPT-4o Vision failed ${res.status}`)
+      const body = await res.text()
+      console.error(`GPT-4o Vision failed ${res.status}: ${body}`)
       return ''
     }
     const data = await res.json()
-    return data.choices?.[0]?.message?.content ?? ''
+    const result = data.choices?.[0]?.message?.content ?? ''
+    console.log(`Vision analysis result (${result.length} chars): ${result.slice(0, 100)}`)
+    return result
   } catch (err) {
     console.error('Vision error:', err)
     return ''
@@ -178,7 +183,7 @@ async function handleHumanEcho(
     .from('contacts')
     .select('id')
     .eq('organization_id', orgId)
-    .filter("channel_identifiers->>'wa_id'", 'eq', customerWaId)
+    .filter('channel_identifiers->>wa_id', 'eq', customerWaId)
     .maybeSingle()
 
   if (!contact?.id) return
@@ -234,7 +239,7 @@ async function resolveLanguage(
       .from('contacts')
       .select('preferred_language')
       .eq('organization_id', orgId)
-      .filter(`channel_identifiers->>'${identifierKey}'`, 'eq', identifierVal)
+      .filter(`channel_identifiers->>${identifierKey}`, 'eq', identifierVal)
       .maybeSingle()
     if (contact?.preferred_language) return contact.preferred_language
   } catch { /* ignore — fall through */ }
@@ -287,6 +292,8 @@ async function handleImageMessage(
   const mime    = infoData.mime_type ?? 'image/jpeg'
   const dataUrl = `data:${mime};base64,${toBase64(blob)}`
 
+  console.log(`Image downloaded: ${blob.byteLength} bytes, mime: ${mime}`)
+
   const sector     = (org as any).sector ?? 'default'
   const langPrompts = VISION_PROMPTS[lang] ?? VISION_PROMPTS.tr
   const prompt     = langPrompts[sector] ?? langPrompts.default
@@ -294,7 +301,10 @@ async function handleImageMessage(
 
   const supabase = getSupabase()
   if (analysis) {
+    console.log(`Vision OK, saving to lead for waId: ${waId}`)
     await updateLeadWithVision(supabase, org.id, waId, analysis, message.id)
+  } else {
+    console.error(`Vision returned empty for waId: ${waId}, mediaId: ${mediaId}`)
   }
 
   await sendMetaMessage(accessToken, phoneNumberId, waId, msgs.imageAck)
@@ -553,8 +563,7 @@ serve(async (req) => {
     }
   }
 
-  // Ack immediately — Meta requires fast response to avoid retries
-  // @ts-ignore Deno-specific global
-  EdgeRuntime.waitUntil(Promise.all(tasks))
+  // Run all tasks before responding — waitUntil may not complete on edge runtime
+  await Promise.all(tasks)
   return new Response('OK', { status: 200 })
 })
