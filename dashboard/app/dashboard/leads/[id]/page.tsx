@@ -155,6 +155,14 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
         </div>
       </div>
 
+      {/* Notes (vision analysis etc.) */}
+      {lead.notes && (
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+          <h2 className="text-sm font-semibold text-slate-700 mb-3">Notlar</h2>
+          <div className="text-sm text-slate-700 whitespace-pre-line">{lead.notes}</div>
+        </div>
+      )}
+
       {/* Handoff */}
       {handoff && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
