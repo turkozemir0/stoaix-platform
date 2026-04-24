@@ -1,0 +1,63 @@
+{
+  "name": "stoaix — SCHED Drip Reactivation",
+  "nodes": [
+
+    {
+      "id": "dr01",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "minutes", "minutesInterval": 30 }
+          ]
+        }
+      }
+    },
+
+    {
+      "id": "dr02",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [420, 300],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "cfg_sb_url", "name": "SUPABASE_URL",         "value": "https://ablntzdbsrzbqyrnfwpl.supabase.co", "type": "string" },
+            { "id": "cfg_sb_key", "name": "SUPABASE_SERVICE_KEY", "value": "YOUR_SUPABASE_SERVICE_ROLE_KEY",           "type": "string" }
+          ]
+        },
+        "options": {}
+      }
+    },
+
+    {
+      "id": "dr03",
+      "name": "Drip Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300],
+      "parameters": {
+        "jsCode": "const SB_URL = $('Config').first().json.SUPABASE_URL;\nconst SB_KEY = $('Config').first().json.SUPABASE_SERVICE_KEY;\nconst headers = {\n  'apikey': SB_KEY,\n  'Authorization': 'Bearer ' + SB_KEY,\n  'Content-Type': 'application/json',\n  'Prefer': 'return=minimal'\n};\n\nasync function sbGet(path) {\n  const res = await fetch(SB_URL + '/rest/v1/' + path, {\n    headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY }\n  });\n  if (!res.ok) return [];\n  return res.json();\n}\n\nasync function sbPost(path, body) {\n  const res = await fetch(SB_URL + '/rest/v1/' + path, {\n    method: 'POST',\n    headers,\n    body: JSON.stringify(body)\n  });\n  return res.ok;\n}\n\nasync function sbRpc(fn, params) {\n  const res = await fetch(SB_URL + '/rest/v1/rpc/' + fn, {\n    method: 'POST',\n    headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' },\n    body: JSON.stringify(params)\n  });\n  return res.ok;\n}\n\n// ── Helpers ──\nfunction todayStr() { return new Date().toISOString().slice(0, 10); }\nfunction daysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString(); }\nfunction billingPeriod() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }\n\n// ── 1. Aktif reactivation_chat workflow'ları ──\nconst workflows = await sbGet(\n  'org_workflows?template_id=eq.reactivation_chat&is_active=eq.true' +\n  '&select=id,organization_id,config'\n);\n\nif (!workflows.length) {\n  return [{ json: { processed: 0, message: 'No active reactivation workflows' } }];\n}\n\nconst results = [];\n\nfor (const wf of workflows) {\n  const orgId = wf.organization_id;\n  const cfg = wf.config || {};\n  const inactiveDays = cfg.inactive_days || 90;\n  const cooldownDays = cfg.cooldown_days || 30;\n  const dailyLimit   = cfg.daily_limit   || 50;\n  const batchSize    = cfg.batch_size    || 10;\n  const targetStatuses = (cfg.target_statuses || 'lost,new,in_progress').split(',');\n  const templateName = cfg.message_template || '';\n\n  if (!templateName) {\n    results.push({ org: orgId, status: 'skip', reason: 'no_template' });\n    continue;\n  }\n\n  // ── 2. Quota check ──\n  const period = billingPeriod();\n  const usage = await sbGet(\n    'usage_counters?organization_id=eq.' + orgId +\n    '&metric=eq.reactivation_lead_count&billing_period=eq.' + period +\n    '&select=value&limit=1'\n  );\n  const usedCount = (usage[0] && usage[0].value) || 0;\n\n  // Plan limit\n  const subRows = await sbGet(\n    'org_subscriptions?organization_id=eq.' + orgId + '&select=plan_id&limit=1'\n  );\n  const planId = (subRows[0] && subRows[0].plan_id) || 'legacy';\n\n  let effectiveLimit = 999999; // legacy = unlimited\n  if (planId !== 'legacy') {\n    const entRows = await sbGet(\n      'plan_entitlements?plan_id=eq.' + planId +\n      '&feature_key=eq.workflow_reactivation&select=limit_value&limit=1'\n    );\n    const planLimit = (entRows[0] && entRows[0].limit_value) || 0;\n\n    const overrideRows = await sbGet(\n      'org_entitlement_overrides?organization_id=eq.' + orgId +\n      '&feature_key=eq.workflow_reactivation&select=limit_override&limit=1'\n    );\n    effectiveLimit = (overrideRows[0] && overrideRows[0].limit_override) || planLimit;\n  }\n\n  if (usedCount >= effectiveLimit) {\n    results.push({ org: orgId, status: 'skip', reason: 'quota_exceeded', used: usedCount, limit: effectiveLimit });\n    continue;\n  }\n\n  // ── 3. Daily limit check ──\n  const todayRuns = await sbGet(\n    'workflow_runs?org_workflow_id=eq.' + wf.id +\n    '&status=eq.success&created_at=gte.' + todayStr() + 'T00:00:00Z' +\n    '&select=id&limit=' + (dailyLimit + 1)\n  );\n\n  if (todayRuns.length >= dailyLimit) {\n    results.push({ org: orgId, status: 'skip', reason: 'daily_limit', sent_today: todayRuns.length });\n    continue;\n  }\n\n  const remaining = Math.min(batchSize, dailyLimit - todayRuns.length, effectiveLimit - usedCount);\n  if (remaining <= 0) {\n    results.push({ org: orgId, status: 'skip', reason: 'no_remaining' });\n    continue;\n  }\n\n  // ── 4. WA credentials check ──\n  const orgRows = await sbGet(\n    'organizations?id=eq.' + orgId + '&select=channel_config&limit=1'\n  );\n  const orgConfig = (orgRows[0] && orgRows[0].channel_config) || {};\n  const waConfig = orgConfig.whatsapp || {};\n  const wabaId = waConfig.waba_id;\n  const phoneNumberId = waConfig.phone_number_id;\n  const accessToken = waConfig.access_token;\n\n  if (!wabaId || !phoneNumberId || !accessToken) {\n    results.push({ org: orgId, status: 'skip', reason: 'no_wa_credentials' });\n    continue;\n  }\n\n  // ── 5. Eligible leads (partial index, LIMIT) ──\n  const cutoff = daysAgo(inactiveDays);\n  const statusFilter = targetStatuses.map(s => s.trim()).join(',');\n  const leads = await sbGet(\n    'leads?organization_id=eq.' + orgId +\n    '&status=in.(' + statusFilter + ')' +\n    '&updated_at=lte.' + cutoff +\n    '&select=id,contact_id' +\n    '&order=updated_at.asc' +\n    '&limit=' + (remaining * 3)\n  );\n\n  if (!leads.length) {\n    results.push({ org: orgId, status: 'skip', reason: 'no_eligible_leads' });\n    continue;\n  }\n\n  // ── 6. Dedup: cooldown check ──\n  const contactIds = [...new Set(leads.map(l => l.contact_id).filter(Boolean))];\n  const cooldownCutoff = daysAgo(cooldownDays);\n  const recentRuns = await sbGet(\n    'workflow_runs?org_workflow_id=eq.' + wf.id +\n    '&contact_id=in.(' + contactIds.join(',') + ')' +\n    '&status=eq.success' +\n    '&created_at=gte.' + cooldownCutoff +\n    '&select=contact_id'\n  );\n  const recentContactIds = new Set(recentRuns.map(r => r.contact_id));\n\n  const eligibleLeads = leads.filter(l => l.contact_id && !recentContactIds.has(l.contact_id)).slice(0, remaining);\n\n  if (!eligibleLeads.length) {\n    results.push({ org: orgId, status: 'skip', reason: 'all_in_cooldown' });\n    continue;\n  }\n\n  // ── 7. Fetch contact phones ──\n  const batchContactIds = eligibleLeads.map(l => l.contact_id);\n  const contacts = await sbGet(\n    'contacts?id=in.(' + batchContactIds.join(',') + ')&select=id,phone,full_name'\n  );\n  const contactMap = {};\n  for (const c of contacts) contactMap[c.id] = c;\n\n  // ── 8. Send templates ──\n  let sent = 0;\n  let failed = 0;\n\n  for (const lead of eligibleLeads) {\n    const contact = contactMap[lead.contact_id];\n    if (!contact || !contact.phone) {\n      failed++;\n      continue;\n    }\n\n    // Format phone (remove + prefix for Meta API)\n    const phone = contact.phone.replace(/^\\+/, '');\n\n    try {\n      // Meta Graph API — send template message\n      const waRes = await fetch(\n        'https://graph.facebook.com/v21.0/' + phoneNumberId + '/messages',\n        {\n          method: 'POST',\n          headers: {\n            'Authorization': 'Bearer ' + accessToken,\n            'Content-Type': 'application/json'\n          },\n          body: JSON.stringify({\n            messaging_product: 'whatsapp',\n            to: phone,\n            type: 'template',\n            template: {\n              name: templateName,\n              language: { code: 'tr' }\n            }\n          })\n        }\n      );\n\n      const waOk = waRes.ok;\n      const waStatus = waOk ? 'success' : 'failed';\n\n      // Log workflow_run\n      await sbPost('workflow_runs', {\n        org_workflow_id: wf.id,\n        organization_id: orgId,\n        contact_id: lead.contact_id,\n        lead_id: lead.id,\n        status: waStatus,\n        result: waOk ? { template: templateName, phone: phone } : { error: 'wa_send_failed', http_status: waRes.status }\n      });\n\n      if (waOk) {\n        sent++;\n        // Increment usage counter via RPC\n        await sbRpc('increment_usage', {\n          p_organization_id: orgId,\n          p_metric: 'reactivation_lead_count',\n          p_amount: 1\n        });\n      } else {\n        failed++;\n      }\n    } catch (err) {\n      failed++;\n      // Log failed run\n      await sbPost('workflow_runs', {\n        org_workflow_id: wf.id,\n        organization_id: orgId,\n        contact_id: lead.contact_id,\n        lead_id: lead.id,\n        status: 'failed',\n        result: { error: String(err) }\n      });\n    }\n  }\n\n  results.push({ org: orgId, status: 'done', sent, failed, eligible: eligibleLeads.length });\n}\n\nreturn [{ json: { total_orgs: workflows.length, results } }];"
+      }
+    }
+
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[ { "node": "Config", "type": "main", "index": 0 } ]]
+    },
+    "Config": {
+      "main": [[ { "node": "Drip Processor", "type": "main", "index": 0 } ]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    { "name": "stoaix-platform" }
+  ]
+}

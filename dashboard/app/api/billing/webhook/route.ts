@@ -74,6 +74,17 @@ async function handleEvent(event: Stripe.Event, service: ReturnType<typeof getSe
         break
       }
 
+      // One-time addon purchase (credit packs)
+      if (session.mode === 'payment' && session.metadata?.addon_id) {
+        const orgId = session.metadata.organization_id
+        const featureKey = session.metadata.feature_key
+        const bonusAmount = parseInt(session.metadata.bonus_amount || '0', 10)
+        if (orgId && featureKey && bonusAmount > 0) {
+          await handleAddonPurchase(orgId, featureKey, bonusAmount, service)
+        }
+        break
+      }
+
       if (session.mode !== 'subscription') break
 
       const orgId = session.metadata?.organization_id
@@ -228,4 +239,51 @@ async function getOrgIdByCustomer(customerId: string, service: ReturnType<typeof
     .eq('stripe_customer_id', customerId)
     .maybeSingle()
   return data?.organization_id ?? null
+}
+
+// Addon credit purchase — org_entitlement_overrides.limit_override += bonus
+async function handleAddonPurchase(
+  orgId: string,
+  featureKey: string,
+  bonusAmount: number,
+  service: ReturnType<typeof getServiceClient>
+) {
+  // Mevcut override'ı oku
+  const { data: existing } = await service
+    .from('org_entitlement_overrides')
+    .select('limit_override')
+    .eq('organization_id', orgId)
+    .eq('feature_key', featureKey)
+    .maybeSingle()
+
+  // Plan default'u oku
+  const { data: sub } = await service
+    .from('org_subscriptions')
+    .select('plan_id')
+    .eq('organization_id', orgId)
+    .maybeSingle()
+  const planId = sub?.plan_id ?? 'legacy'
+
+  const { data: entRow } = await service
+    .from('plan_entitlements')
+    .select('limit_value')
+    .eq('plan_id', planId)
+    .eq('feature_key', featureKey)
+    .maybeSingle()
+  const planDefault = entRow?.limit_value ?? 0
+
+  // Yeni limit = mevcut effective limit + bonus
+  const currentLimit = existing?.limit_override ?? planDefault
+  const newLimit = currentLimit + bonusAmount
+
+  // Upsert override
+  await service.from('org_entitlement_overrides').upsert({
+    organization_id: orgId,
+    feature_key: featureKey,
+    enabled: true,
+    limit_override: newLimit,
+    reason: 'addon_purchase',
+  }, { onConflict: 'organization_id,feature_key' })
+
+  invalidateCache(orgId)
 }

@@ -308,6 +308,7 @@ function BillingSection() {
   const [invoices, setInvoices] = useState<any[]>([])
   const [invoicesLoading, setInvoicesLoading] = useState(false)
   const [payingInvoice, setPayingInvoice] = useState<string | null>(null)
+  const [addonLoading, setAddonLoading] = useState(false)
 
   const currentPlanId: string | null = limitsData?.plan_id ?? null
   const status: string = limitsData?.status ?? ''
@@ -423,6 +424,23 @@ function BillingSection() {
     setCancelModalOpen(false)
     // Refresh limits
     fetch('/api/billing/limits').then(r => r.ok ? r.json() : null).then(d => { if (d) setLimitsData(d) })
+  }
+
+  async function handleBuyAddon() {
+    if (isDemo) return
+    setAddonLoading(true)
+    try {
+      const res = await fetch('/api/billing/addon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ addon_id: 'reactivation_10k' }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.url) window.location.href = data.url
+      }
+    } catch { /* ignore */ }
+    finally { setAddonLoading(false) }
   }
 
   const periodEndStr = periodEnd
@@ -724,6 +742,43 @@ function BillingSection() {
           )}
         </div>
       )}
+
+      {/* ── Reactivation Kredi Paketi ── */}
+      {!loading && hasSub && (() => {
+        const ent = limitsData?.entitlements?.workflow_reactivation
+        if (!ent || !ent.enabled) return null
+        const used = ent.used ?? 0
+        const limit = ent.limit ?? 0
+        const remaining = ent.remaining ?? (limit - used)
+        const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0
+        return (
+          <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-3">
+            <h3 className="text-sm font-semibold text-slate-800">Reactivation Kredileri</h3>
+            <div className="flex items-end justify-between">
+              <div>
+                <p className="text-2xl font-bold text-slate-900">
+                  {used.toLocaleString('tr-TR')} <span className="text-sm font-normal text-slate-400">/ {limit.toLocaleString('tr-TR')}</span>
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">{remaining.toLocaleString('tr-TR')} lead kaldı</p>
+              </div>
+              <button
+                onClick={handleBuyAddon}
+                disabled={addonLoading || isDemo}
+                className="flex items-center gap-1.5 rounded-lg bg-purple-500 px-4 py-2 text-sm font-medium text-white hover:bg-purple-600 disabled:opacity-60 transition-colors"
+              >
+                {addonLoading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                +10.000 Lead — $19
+              </button>
+            </div>
+            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </div>
+        )
+      })()}
 
       {loading && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
