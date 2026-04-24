@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { createClient as sbAdmin } from '@supabase/supabase-js'
 import { checkEntitlement, incrementUsage } from '@/lib/entitlements'
+
+function getServiceClient() {
+  return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
 import { demoWriteBlock } from '@/lib/demo-guard'
 import * as Sentry from '@sentry/nextjs'
 
@@ -33,7 +38,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Mesaj en fazla ${MAX_CONTENT_LEN} karakter olabilir` }, { status: 400 })
   }
 
-  const service = createServiceClient()
+  const service = getServiceClient()
 
   // Fetch conversation
   const { data: conv } = await service

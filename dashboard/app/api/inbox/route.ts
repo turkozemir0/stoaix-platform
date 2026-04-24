@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { createClient as sbAdmin } from '@supabase/supabase-js'
 import { checkEntitlement } from '@/lib/entitlements'
+
+function getServiceClient() {
+  return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
 
 const VALID_CHANNELS = ['whatsapp', 'instagram', 'voice', 'web']
 
-async function resolveOrgId(userId: string, service: ReturnType<typeof createServiceClient>) {
+async function resolveOrgId(userId: string, service: ReturnType<typeof getServiceClient>) {
   const { data: orgUser } = await service
     .from('org_users')
     .select('organization_id')
@@ -34,7 +39,7 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const service = createServiceClient()
+  const service = getServiceClient()
   const orgId = await resolveOrgId(user.id, service)
   if (!orgId) return NextResponse.json({ error: 'No org' }, { status: 403 })
 

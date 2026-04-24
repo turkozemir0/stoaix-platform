@@ -147,8 +147,11 @@ export default function InboxClient({ orgId, lang }: Props) {
       if (channelFilter !== 'all') params.set('channel', channelFilter)
       if (statusFilter !== 'all') params.set('leadStatus', statusFilter)
       const res = await fetch(`/api/inbox?${params}`)
+      if (!res.ok) { console.error(`[inbox] conversations fetch ${res.status}`); return }
       const json = await res.json()
       if (json.conversations) setConversations(json.conversations)
+    } catch (err) {
+      console.error('[inbox] conversations fetch error:', err)
     } finally {
       setLoadingConvs(false)
     }
@@ -162,8 +165,11 @@ export default function InboxClient({ orgId, lang }: Props) {
     setMessages([])
     try {
       const res = await fetch(`/api/inbox/${convId}/messages`)
+      if (!res.ok) { console.error(`[inbox] messages fetch ${res.status}`); return }
       const json = await res.json()
       if (json.messages) setMessages(json.messages)
+    } catch (err) {
+      console.error('[inbox] messages fetch error:', err)
     } finally {
       setLoadingMsgs(false)
     }
@@ -182,15 +188,18 @@ export default function InboxClient({ orgId, lang }: Props) {
   useEffect(() => {
     if (!selectedId) return
     const interval = setInterval(async () => {
-      const res = await fetch(`/api/inbox/${selectedId}/messages`)
-      const json = await res.json()
-      if (!json.messages) return
-      setMessages(prev => {
-        const prevIds = new Set(prev.map(m => m.id))
-        const newMsgs = (json.messages as Message[]).filter(m => !prevIds.has(m.id) && !m.id.startsWith('sent-'))
-        if (!newMsgs.length) return prev
-        return [...prev, ...newMsgs]
-      })
+      try {
+        const res = await fetch(`/api/inbox/${selectedId}/messages`)
+        if (!res.ok) return
+        const json = await res.json()
+        if (!json.messages) return
+        setMessages(prev => {
+          const prevIds = new Set(prev.map(m => m.id))
+          const newMsgs = (json.messages as Message[]).filter(m => !prevIds.has(m.id) && !m.id.startsWith('sent-'))
+          if (!newMsgs.length) return prev
+          return [...prev, ...newMsgs]
+        })
+      } catch { /* silent poll failure */ }
     }, 15_000)
     return () => clearInterval(interval)
   }, [selectedId])
@@ -265,7 +274,8 @@ export default function InboxClient({ orgId, lang }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversationId: selectedId, content: replyText.trim() }),
       })
-      const json = await res.json()
+      let json: any
+      try { json = await res.json() } catch { json = {} }
       if (!res.ok) { setSendError(json.error ?? 'Gönderilemedi'); return }
       const sentContent = replyText.trim()
       setReplyText('')
