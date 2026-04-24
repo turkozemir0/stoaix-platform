@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { MessageSquare, Phone, Instagram, Send, RefreshCw } from 'lucide-react'
+import { MessageSquare, Phone, Instagram, Send, RefreshCw, Bot, User } from 'lucide-react'
 import { useIsDemo } from '@/lib/demo-context'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -100,6 +100,8 @@ function formatTime(dateStr: string): string {
 interface Props {
   orgId: string
   lang: string
+  currentUserId: string
+  userRole: string | null
 }
 
 const CHANNELS = ['all', 'whatsapp', 'instagram', 'voice']
@@ -122,7 +124,7 @@ const LEAD_STATUS_LABELS: Record<string, Record<string, string>> = {
   en: { all: 'All', new: 'New', in_progress: 'Qualifying', qualified: 'Appt.', handed_off: 'Hot Lead', nurturing: 'Nurturing', converted: 'Won', lost: 'Lost' },
 }
 
-export default function InboxClient({ orgId, lang }: Props) {
+export default function InboxClient({ orgId, lang, currentUserId, userRole }: Props) {
   const isDemo = useIsDemo()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -134,6 +136,7 @@ export default function InboxClient({ orgId, lang }: Props) {
   const [loadingMsgs, setLoadingMsgs] = useState(false)
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
+  const [handoffLoading, setHandoffLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const supabase = useMemo(() => createClient(), [])
 
@@ -262,6 +265,37 @@ export default function InboxClient({ orgId, lang }: Props) {
     const interval = setInterval(() => void fetchConversations(), 30_000)
     return () => clearInterval(interval)
   }, [fetchConversations])
+
+  // ─── Handoff: takeover / release ─────────────────────────────────────────
+  const canTakeover = ['admin', 'yönetici', 'satisci'].includes(userRole ?? '')
+
+  async function handleTakeover() {
+    if (!selectedId || handoffLoading) return
+    setHandoffLoading(true)
+    try {
+      const res = await fetch(`/api/conversations/${selectedId}/takeover`, { method: 'POST' })
+      if (res.ok) {
+        setConversations(prev => prev.map(c =>
+          c.id === selectedId ? { ...c, mode: 'human' } : c
+        ))
+      }
+    } catch { /* ignore */ }
+    setHandoffLoading(false)
+  }
+
+  async function handleRelease() {
+    if (!selectedId || handoffLoading) return
+    setHandoffLoading(true)
+    try {
+      const res = await fetch(`/api/conversations/${selectedId}/release`, { method: 'POST' })
+      if (res.ok) {
+        setConversations(prev => prev.map(c =>
+          c.id === selectedId ? { ...c, mode: 'ai' } : c
+        ))
+      }
+    } catch { /* ignore */ }
+    setHandoffLoading(false)
+  }
 
   // ─── Send reply ──────────────────────────────────────────────────────────
   async function handleSend() {
@@ -436,6 +470,28 @@ export default function InboxClient({ orgId, lang }: Props) {
                 </span>
               </div>
             </div>
+            {/* Handoff / Release button */}
+            {canTakeover && !isVoice && (
+              selected.mode === 'ai' ? (
+                <button
+                  onClick={handleTakeover}
+                  disabled={handoffLoading}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white text-xs font-medium rounded-lg transition-colors shrink-0"
+                >
+                  <User size={12} />
+                  {handoffLoading ? '...' : (lang === 'tr' ? 'Devral' : 'Take Over')}
+                </button>
+              ) : (
+                <button
+                  onClick={handleRelease}
+                  disabled={handoffLoading}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 disabled:opacity-60 text-white text-xs font-medium rounded-lg transition-colors shrink-0"
+                >
+                  <Bot size={12} />
+                  {handoffLoading ? '...' : (lang === 'tr' ? "AI'a Bırak" : 'Release to AI')}
+                </button>
+              )
+            )}
           </div>
 
           {/* Messages */}
