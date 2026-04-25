@@ -175,6 +175,12 @@ export async function POST(request: NextRequest) {
       continue
     }
 
+    // C1: WhatsApp/IG'den gelen leadlerde skip — chatbot zaten AI cevap verdi
+    if (template.id === 'lead_first_contact_chat' &&
+        ['whatsapp', 'instagram'].includes(contactData.lead_source)) {
+      continue
+    }
+
     // workflow_runs INSERT
     const isValidUuid = (v: any) => typeof v === 'string' &&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
