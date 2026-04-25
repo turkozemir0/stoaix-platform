@@ -45,19 +45,21 @@ export async function GET(req: NextRequest) {
     }
 
     const service = getServiceClient()
-    await service.from('system_alerts').insert({
-      service: 'n8n',
-      status,
-      latency_ms: latency,
-      message,
-    })
 
-    // Son 24 saatte 'down' veya 'degraded' alertleri temizle (opsiyonel — sadece son 500 kaydı tut)
-    // Eski kayıtları sil
+    // Sadece hata/degraded durumunda DB'ye yaz (disk IO tasarrufu)
+    if (status !== 'ok') {
+      await service.from('system_alerts').insert({
+        service: 'n8n',
+        status,
+        latency_ms: latency,
+        message,
+      })
+    }
+
+    // 3 günden eski kayıtları temizle
     await service.from('system_alerts')
       .delete()
-      .lt('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-      .eq('service', 'n8n')
+      .lt('created_at', new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
 
     return NextResponse.json({ ok: true, status, latency_ms: latency })
   } catch (err: any) {

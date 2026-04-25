@@ -36,10 +36,20 @@ ALTER TABLE public.follow_up_tasks
     'handoff_check_24h'
   ));
 
--- 3. Trigger: lead status handed_off'tan değişince pending handoff taskları iptal et
+-- 3. Trigger: handoff geçişlerinde ilgili follow-up taskları iptal et
 CREATE OR REPLACE FUNCTION fn_cancel_handoff_tasks()
 RETURNS trigger AS $$
 BEGIN
+  -- Lead handed_off'A geçince → tüm pending organik follow-up taskları iptal
+  IF NEW.status = 'handed_off' AND OLD.status <> 'handed_off' THEN
+    UPDATE follow_up_tasks
+       SET status = 'cancelled'
+     WHERE lead_id = NEW.id
+       AND status = 'pending'
+       AND task_type <> 'handoff_reminder';
+  END IF;
+
+  -- Lead handed_off'TAN çıkınca → handoff reminder taskları iptal
   IF OLD.status = 'handed_off' AND NEW.status <> 'handed_off' THEN
     UPDATE follow_up_tasks
        SET status = 'cancelled'
@@ -47,6 +57,7 @@ BEGIN
        AND task_type = 'handoff_reminder'
        AND status = 'pending';
   END IF;
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

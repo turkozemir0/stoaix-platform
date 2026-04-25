@@ -1555,6 +1555,14 @@ async def entrypoint(ctx: JobContext):
         outbound_playbook_text = playbook.get("system_prompt_template", "") if playbook else ""
         outbound_guardrails = build_outbound_guardrails(lang, playbook)
 
+        # Helper: org name'de zaten "klinik/kliniği" varsa "kliniğinden" ekleme
+        def _org_from():
+            n = org['name']
+            low = n.lower()
+            if any(k in low for k in ("klinik", "kliniği", "clinic")):
+                return f"{n}'nden"
+            return f"{n} kliniğinden"
+
         # Helper for multilang opening from OPENINGS dict
         def _opening(scenario_key, **kwargs):
             """Get opening for current lang with fallback to default."""
@@ -1588,7 +1596,7 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
 """
                 opening = (
                     f"Merhaba{', ' + contact_name if contact_name else ''}! "
-                    f"Ben {org['name']}'dan {persona_name}. "
+                    f"Ben {_org_from()} {persona_name}. "
                     "Bize ilgi gösterdiğinizi gördük, iki dakikanız var mı?"
                 )
             else:
@@ -1624,7 +1632,7 @@ KURAL: Max 3-4 tur konuşma.
 """
                 opening = (
                     f"Merhaba{', ' + contact_name if contact_name else ''}! "
-                    f"Ben {org['name']}'dan {persona_name}. "
+                    f"Ben {_org_from()} {persona_name}. "
                     "Geçen görüşmemizden sonra aklınıza takılan bir şey var mı?"
                 )
             else:
@@ -1661,7 +1669,7 @@ KURAL: "Başka bir konuda yardımcı olabilir miyim?" YASAK.
 """
                 opening = (
                     f"Merhaba{' ' + contact_name if contact_name else ''}! "
-                    f"Ben {org['name']} kliniğinden {persona_name}. "
+                    f"Ben {_org_from()} {persona_name}. "
                     + (f"{appt_display} randevunuzu teyit etmek istedim, " if appt_time else "Yaklaşan randevunuzu teyit etmek istedim, ")
                     + "uygun musunuz?"
                 )
@@ -1697,7 +1705,7 @@ KURAL: Max 3-4 tur.
 """
                 opening = (
                     f"Merhaba{' ' + contact_name if contact_name else ''}! "
-                    f"Ben {org['name']} kliniğinden {persona_name}. "
+                    f"Ben {_org_from()} {persona_name}. "
                     "Bugün sizi bekliyorduk, her şey yolunda mı?"
                 )
             else:
@@ -1733,7 +1741,7 @@ KURAL: "Başka bir konuda yardımcı olabilir miyim?" YASAK.
 """
                 opening = (
                     f"Merhaba{' ' + contact_name if contact_name else ''}! "
-                    f"Ben {org['name']} kliniğinden {persona_name}. "
+                    f"Ben {_org_from()} {persona_name}. "
                     "Kısa bir memnuniyet değerlendirmesi için iki dakikanız var mı?"
                 )
             else:
@@ -1768,7 +1776,7 @@ KURAL: Zorlayıcı olma.
 """
                 opening = (
                     f"Merhaba{' ' + contact_name if contact_name else ''}! "
-                    f"Ben {org['name']} kliniğinden {persona_name}. "
+                    f"Ben {_org_from()} {persona_name}. "
                     "Periyodik kontrol zamanınız geldi, randevu almak ister misiniz?"
                 )
             else:
@@ -1804,7 +1812,7 @@ KURAL: Max 3-4 tur.
 """
                 opening = (
                     f"Merhaba{' ' + contact_name if contact_name else ''}! "
-                    f"Ben {org['name']} kliniğinden {persona_name}. "
+                    f"Ben {_org_from()} {persona_name}. "
                     + (f"{offer} " if offer else "Sizi bir süredir göremedik. ")
                     + "Kısa bir süreniz var mı?"
                 )
@@ -1842,7 +1850,7 @@ KURAL: Max 3-4 tur.
 """
                 opening = (
                     f"Merhaba{' ' + contact_name if contact_name else ''}! "
-                    f"Ben {org['name']} kliniğinden {persona_name}. "
+                    f"Ben {_org_from()} {persona_name}. "
                     "Hesabınızla ilgili kısa bir bilgilendirme yapmak istiyordum, uygun musunuz?"
                 )
             else:
@@ -1882,7 +1890,7 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
 """
                 opening = (
                     f"Merhaba{' ' + contact_name if contact_name else ''}! "
-                    f"Ben {org['name']} kliniğinden {persona_name}. "
+                    f"Ben {_org_from()} {persona_name}. "
                     f"{time_word} randevunuzu hatırlatmak istedim. "
                     + (f"Randevunuz {appt_display} olarak kayıtlı, " if appt_time else "")
                     + "hazır mısınız?"
@@ -1924,7 +1932,7 @@ KURAL: Bilgi tabanında olmayan bir şeyi asla uydurma.
 """
                 opening = (
                     f"Merhaba{' ' + contact_name if contact_name else ''}! "
-                    f"Ben {org['name']} kliniğinden {persona_name}. "
+                    f"Ben {_org_from()} {persona_name}. "
                     "Şu an uygun musunuz, iki dakikanız var mı?"
                 )
             else:
