@@ -169,6 +169,8 @@ export async function POST() {
         }
         collectedData._fb_form_id = formId
         collectedData._fb_lead_id = lead.id
+        if (lead.ad_name) collectedData._fb_ad_name = lead.ad_name
+        if (lead.campaign_name) collectedData._fb_campaign_name = lead.campaign_name
 
         // Insert lead
         const { error: leadErr } = await service
