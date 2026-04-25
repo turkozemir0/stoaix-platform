@@ -4,7 +4,7 @@
 -- Çalıştırma: Supabase Dashboard → SQL Editor
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- DENTAL — TR + EN
+-- DENTAL — TR + EN + DE
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 INSERT INTO public.message_templates
@@ -17,12 +17,16 @@ VALUES
 
 (NULL, 'dental_first_contact_v1_en', 'en', 'MARKETING',
   '[{"type":"BODY","text":"Hi {{1}}, thank you for filling out our form! We noticed you are interested in {{2}}. We will reach out to you shortly. Feel free to message us here if you have any questions."}]',
+  'draft', true, 'dental', 'first_contact'),
+
+(NULL, 'dental_first_contact_v1_de', 'de', 'MARKETING',
+  '[{"type":"BODY","text":"Hallo {{1}}, vielen Dank für das Ausfüllen unseres Formulars! Wir haben gesehen, dass Sie sich für {{2}} interessieren. Unser Spezialistenteam wird sich in Kürze bei Ihnen melden. Bei Fragen können Sie uns gerne hier schreiben."}]',
   'draft', true, 'dental', 'first_contact')
 
 ON CONFLICT DO NOTHING;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- HAIR — TR + EN
+-- HAIR — TR + EN + DE
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 INSERT INTO public.message_templates
@@ -35,12 +39,16 @@ VALUES
 
 (NULL, 'hair_first_contact_v1_en', 'en', 'MARKETING',
   '[{"type":"BODY","text":"Hi {{1}}, thank you for your inquiry! We see you are interested in {{2}}. Our specialist team will contact you shortly. Feel free to message us here with any questions."}]',
+  'draft', true, 'hair', 'first_contact'),
+
+(NULL, 'hair_first_contact_v1_de', 'de', 'MARKETING',
+  '[{"type":"BODY","text":"Hallo {{1}}, vielen Dank für Ihre Anfrage! Wir haben gesehen, dass Sie sich für {{2}} interessieren. Unser Expertenteam wird sich in Kürze bei Ihnen melden. Bei Fragen können Sie uns gerne hier schreiben."}]',
   'draft', true, 'hair', 'first_contact')
 
 ON CONFLICT DO NOTHING;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- AESTHETICS — TR + EN
+-- AESTHETICS — TR + EN + DE
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 INSERT INTO public.message_templates
@@ -53,12 +61,16 @@ VALUES
 
 (NULL, 'aesthetics_first_contact_v1_en', 'en', 'MARKETING',
   '[{"type":"BODY","text":"Hi {{1}}, thank you for reaching out! We noticed you are interested in {{2}}. Our expert consultants will get in touch with you shortly. Feel free to message us here if you have any questions."}]',
+  'draft', true, 'aesthetics', 'first_contact'),
+
+(NULL, 'aesthetics_first_contact_v1_de', 'de', 'MARKETING',
+  '[{"type":"BODY","text":"Hallo {{1}}, vielen Dank für Ihre Kontaktaufnahme! Wir haben gesehen, dass Sie sich für {{2}} interessieren. Unsere Fachberater werden sich in Kürze bei Ihnen melden. Bei Fragen können Sie uns gerne hier schreiben."}]',
   'draft', true, 'aesthetics', 'first_contact')
 
 ON CONFLICT DO NOTHING;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- GENERAL — TR + EN
+-- GENERAL — TR + EN + DE
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 INSERT INTO public.message_templates
@@ -71,6 +83,10 @@ VALUES
 
 (NULL, 'general_first_contact_v1_en', 'en', 'MARKETING',
   '[{"type":"BODY","text":"Hi {{1}}, thank you for filling out our form! We see you are interested in {{2}}. Our team will reach out to you shortly. Feel free to message us here if you have any questions."}]',
+  'draft', true, 'general', 'first_contact'),
+
+(NULL, 'general_first_contact_v1_de', 'de', 'MARKETING',
+  '[{"type":"BODY","text":"Hallo {{1}}, vielen Dank für das Ausfüllen unseres Formulars! Wir haben gesehen, dass Sie sich für {{2}} interessieren. Unser Team wird sich in Kürze bei Ihnen melden. Bei Fragen können Sie uns gerne hier schreiben."}]',
   'draft', true, 'general', 'first_contact')
 
 ON CONFLICT DO NOTHING;
