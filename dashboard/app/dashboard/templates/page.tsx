@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Loader2, Send, Trash2, RefreshCw, MessageSquare, Copy, ChevronDown } from 'lucide-react'
+import { Plus, Loader2, Send, Trash2, RefreshCw, MessageSquare, Copy, ChevronDown, Pencil } from 'lucide-react'
 import TemplateModal from '@/components/templates/TemplateModal'
 import { createClient } from '@/lib/supabase/client'
 
@@ -30,6 +30,7 @@ const STATUS_BADGE: Record<TemplateStatus, { label: string; className: string }>
 }
 
 const PURPOSE_LABELS: Record<string, string> = {
+  first_contact:        'İlk Temas',
   followup:             'Takip',
   reengagement:         'Yeniden Bağlama',
   unsubscribe:          'Listeden Çıkma',
@@ -98,12 +99,14 @@ function MyTemplateCard({
   template,
   onSubmit,
   onDelete,
+  onEdit,
   submitting,
   deleting,
 }: {
   template:   Template
   onSubmit:   (id: string) => void
   onDelete:   (id: string) => void
+  onEdit:     (template: Template) => void
   submitting: string | null
   deleting:   string | null
 }) {
@@ -140,6 +143,14 @@ function MyTemplateCard({
       )}
 
       <div className="flex items-center gap-2 mt-auto">
+        {isDraft && (
+          <button
+            onClick={() => onEdit(template)}
+            className="flex items-center gap-1.5 text-xs font-medium bg-slate-50 text-slate-600 hover:bg-slate-100 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            <Pencil size={12} /> Düzenle
+          </button>
+        )}
         {(isDraft || isRejected) && (
           <button
             onClick={() => onSubmit(template.id)}
@@ -178,6 +189,7 @@ export default function TemplatesPage() {
   const [loading, setLoading]       = useState(true)
   const [presetsLoading, setPresetsLoading] = useState(true)
   const [showModal, setShowModal]   = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
   const [submitting, setSubmitting] = useState<string | null>(null)
   const [deleting, setDeleting]     = useState<string | null>(null)
   const [error, setError]           = useState('')
@@ -242,8 +254,18 @@ export default function TemplatesPage() {
   }
 
   function onSaved(template: Template, _submitted?: boolean) {
-    setTemplates((prev) => [template, ...prev])
+    if (editingTemplate) {
+      setTemplates((prev) => prev.map((t) => t.id === template.id ? template : t))
+    } else {
+      setTemplates((prev) => [template, ...prev])
+    }
     setShowModal(false)
+    setEditingTemplate(null)
+  }
+
+  function openEdit(template: Template) {
+    setEditingTemplate(template)
+    setShowModal(true)
   }
 
   async function submit(id: string) {
@@ -434,6 +456,7 @@ export default function TemplatesPage() {
                   template={t}
                   onSubmit={submit}
                   onDelete={remove}
+                  onEdit={openEdit}
                   submitting={submitting}
                   deleting={deleting}
                 />
@@ -445,8 +468,9 @@ export default function TemplatesPage() {
 
       {showModal && (
         <TemplateModal
-          onClose={() => setShowModal(false)}
+          onClose={() => { setShowModal(false); setEditingTemplate(null) }}
           onSaved={onSaved}
+          editTemplate={editingTemplate}
         />
       )}
     </div>
