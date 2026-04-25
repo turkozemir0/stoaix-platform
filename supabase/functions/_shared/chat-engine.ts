@@ -667,7 +667,8 @@ export async function updateLeadWithVision(
   orgId:         string,
   waId:          string,
   analysisText:  string,
-  wamid:         string
+  wamid:         string,
+  mediaUrl?:     string
 ): Promise<void> {
   try {
     const { data: contact } = await supabase
@@ -724,6 +725,7 @@ export async function updateLeadWithVision(
         role:            'system',
         content:         noteEntry,
         content_type:    'image',
+        media_url:       mediaUrl ?? null,
         external_id:     wamid,
         channel:         'whatsapp',
       })

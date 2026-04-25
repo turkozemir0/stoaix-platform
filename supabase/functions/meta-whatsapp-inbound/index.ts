@@ -296,7 +296,7 @@ async function handleImageMessage(
 
   const supabase = getSupabase()
   if (analysis) {
-    await updateLeadWithVision(supabase, org.id, waId, analysis, message.id)
+    await updateLeadWithVision(supabase, org.id, waId, analysis, message.id, mediaUrl)
   } else {
     console.error(`Vision returned empty for waId: ${waId}`)
   }

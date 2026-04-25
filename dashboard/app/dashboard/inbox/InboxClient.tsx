@@ -42,6 +42,8 @@ interface Message {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
+  content_type?: string
+  media_url?: string
   created_at: string
 }
 
@@ -507,13 +509,25 @@ export default function InboxClient({ orgId, lang, currentUserId, userRole }: Pr
             ) : (
               messages.map(msg => {
                 if (msg.role === 'system') {
+                  const hasImage = msg.content_type === 'image' && msg.media_url
                   return (
-                    <div key={msg.id} className="text-center">
-                      <span className="text-[11px] italic text-slate-400">{msg.content}</span>
+                    <div key={msg.id} className="text-center space-y-1">
+                      {hasImage && (
+                        <a href={msg.media_url} target="_blank" rel="noopener noreferrer" className="inline-block">
+                          <img
+                            src={msg.media_url}
+                            alt="Gönderilen görsel"
+                            className="max-w-[200px] max-h-[200px] rounded-lg border border-slate-200 object-cover hover:opacity-90 transition-opacity"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                          />
+                        </a>
+                      )}
+                      <span className="text-[11px] italic text-slate-400 block">{msg.content}</span>
                     </div>
                   )
                 }
                 const isUser = msg.role === 'user'
+                const hasImage = msg.content_type === 'image' && msg.media_url
                 return (
                   <div key={msg.id} className={`flex ${isUser ? 'justify-start' : 'justify-end'}`}>
                     <div className={`max-w-[72%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
@@ -521,6 +535,16 @@ export default function InboxClient({ orgId, lang, currentUserId, userRole }: Pr
                         ? 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm shadow-sm'
                         : 'bg-brand-500 text-white rounded-tr-sm shadow-sm'
                     }`}>
+                      {hasImage && (
+                        <a href={msg.media_url} target="_blank" rel="noopener noreferrer" className="block mb-2">
+                          <img
+                            src={msg.media_url}
+                            alt="Gönderilen görsel"
+                            className="max-w-full max-h-[240px] rounded-lg object-cover hover:opacity-90 transition-opacity"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                          />
+                        </a>
+                      )}
                       <p className="whitespace-pre-wrap">{msg.content}</p>
                       <p className={`text-[10px] mt-1 ${isUser ? 'text-slate-400' : 'text-brand-100'}`}>
                         {formatTime(msg.created_at)}
