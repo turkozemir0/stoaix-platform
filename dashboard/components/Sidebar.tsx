@@ -8,7 +8,7 @@ import {
   ShieldCheck, Bot, Menu, X,
   Target, Calendar, Inbox, Plug,
   ChevronLeft, ChevronRight, Zap,
-  ClipboardList, HeartHandshake, FileSpreadsheet,
+  ClipboardList, HeartHandshake,
 } from 'lucide-react'
 import { useT, useLang } from '@/lib/lang-context'
 import { createClient } from '@/lib/supabase/client'
@@ -53,7 +53,6 @@ export default function Sidebar({ orgName, isSuperAdmin, userRole, userId, orgId
     { href: '/dashboard/calendar',       label: lang === 'tr' ? 'Takvim' : 'Calendar',         icon: Calendar,        roles: ['admin','yönetici','satisci'] },
     { href: '/dashboard/agent',          label: 'AI Asistan',                                  icon: Bot,             roles: ['admin','yönetici','satisci'] },
     { href: '/dashboard/workflows',      label: lang === 'tr' ? 'İş Akışları' : 'Workflows',   icon: Zap,             roles: ['admin','yönetici'] },
-    { href: '/dashboard/leadgen',        label: lang === 'tr' ? 'Lead Formlar' : 'Lead Forms',      icon: FileSpreadsheet, roles: ['admin','yönetici','satisci'] },
     { href: '/dashboard/integrations',   label: lang === 'tr' ? 'Entegrasyonlar' : 'Integrations', icon: Plug,       roles: ['admin','yönetici'] },
     { href: '/dashboard/settings',       label: lang === 'tr' ? 'Hesap Ayarları' : 'Account',  icon: Settings,        roles: ['admin','yönetici','satisci'] },
   ]

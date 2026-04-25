@@ -16,6 +16,11 @@ import StatCard from '@/components/StatCard'
 import type { Pipeline } from '@/lib/types'
 import ManualTasksPanel from '@/components/followup/ManualTasksPanel'
 import FollowupTabs from '@/components/followup/FollowupTabs'
+import dynamic from 'next/dynamic'
+
+const LeadFormsTab = dynamic(() => import('@/components/leadgen/LeadFormsTab'), {
+  loading: () => <div className="flex items-center gap-2 text-slate-400 py-12 justify-center"><Loader2 size={16} className="animate-spin" /> Yükleniyor...</div>,
+})
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -779,13 +784,13 @@ function FollowupTab({ orgId }: { orgId: string }) {
 
 // ─── CRM Page ─────────────────────────────────────────────────────────────────
 
-type CRMTab = 'leads' | 'proposals' | 'followup'
+type CRMTab = 'leads' | 'leadforms' | 'proposals' | 'followup'
 
 function CRMPageInner() {
   const searchParams = useSearchParams()
   const initialTab = (searchParams.get('tab') as CRMTab) ?? 'leads'
   const [activeTab, setActiveTab] = useState<CRMTab>(
-    ['leads', 'proposals', 'followup'].includes(initialTab) ? initialTab : 'leads'
+    ['leads', 'leadforms', 'proposals', 'followup'].includes(initialTab) ? initialTab : 'leads'
   )
   const [orgId, setOrgId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -808,6 +813,7 @@ function CRMPageInner() {
 
   const tabs: { key: CRMTab; label: string }[] = [
     { key: 'leads',     label: 'Leads' },
+    { key: 'leadforms', label: 'Lead Formlar' },
     { key: 'proposals', label: 'Teklifler & Ödemeler' },
     { key: 'followup',  label: 'Takip' },
   ]
@@ -846,6 +852,7 @@ function CRMPageInner() {
       ) : (
         <>
           {activeTab === 'leads'     && <LeadsTab orgId={orgId} />}
+          {activeTab === 'leadforms' && <LeadFormsTab />}
           {activeTab === 'proposals' && <ProposalsPaymentsTab orgId={orgId} />}
           {activeTab === 'followup'  && <FollowupTab orgId={orgId} />}
         </>

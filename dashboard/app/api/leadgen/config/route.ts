@@ -81,11 +81,28 @@ export async function PATCH(req: NextRequest) {
     .single()
 
   const currentConfig = (org?.channel_config ?? {}) as any
+  const currentLeadgen = currentConfig.meta_leadgen ?? {}
+
+  // connected_at logic:
+  // - If form_ids is non-empty and no connected_at exists → set connected_at now
+  // - If form_ids is empty → reset connected_at and last_sync_at
+  let connected_at = currentLeadgen.connected_at ?? null
+  let last_sync_at = currentLeadgen.last_sync_at ?? null
+
+  if (form_ids.length > 0 && !connected_at) {
+    connected_at = new Date().toISOString()
+  } else if (form_ids.length === 0) {
+    connected_at = null
+    last_sync_at = null
+  }
+
   const updatedConfig = {
     ...currentConfig,
     meta_leadgen: {
-      ...(currentConfig.meta_leadgen ?? {}),
+      ...currentLeadgen,
       active_form_ids: form_ids,
+      connected_at,
+      last_sync_at,
     },
   }
 

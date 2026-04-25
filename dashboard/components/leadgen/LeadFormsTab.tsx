@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import {
-  FileSpreadsheet, Loader2, Settings2, ChevronLeft,
+  Loader2, Settings2, ChevronLeft,
   AlertCircle, CheckSquare, Square, ExternalLink, RefreshCw,
 } from 'lucide-react'
 import { useLang } from '@/lib/lang-context'
@@ -126,7 +126,6 @@ function LeadTable({
   onBack: () => void
   lang: string
 }) {
-  // Collect all unique field names across leads
   const knownFields = ['full_name', 'first_name', 'last_name', 'ad_soyad', 'phone_number', 'telefon', 'email', 'e-posta', 'city', 'şehir']
   const extraFields: string[] = []
   for (const lead of leads) {
@@ -358,8 +357,8 @@ function FormPicker({
   )
 }
 
-// ─── Main Page ──────────────────────────────────────────────────────────────
-export default function LeadGenPage() {
+// ─── Main Tab Component ─────────────────────────────────────────────────────
+export default function LeadFormsTab() {
   const { lang } = useLang()
 
   const [status, setStatus] = useState<'loading' | 'no_instagram' | 'no_forms' | 'ready'>('loading')
@@ -370,6 +369,7 @@ export default function LeadGenPage() {
   const [pickerLoading, setPickerLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [syncMsg, setSyncMsg] = useState('')
 
   // Per-form lead data
   const [formLeads, setFormLeads] = useState<Record<string, Lead[]>>({})
@@ -404,11 +404,28 @@ export default function LeadGenPage() {
 
   useEffect(() => { loadConfig() }, [loadConfig])
 
+  // ── Sync on mount (fire-and-forget) ──
+  useEffect(() => {
+    if (status !== 'ready' || activeFormIds.length === 0) return
+    fetch('/api/leadgen/sync', { method: 'POST' })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.synced && data.synced > 0) {
+          setSyncMsg(
+            lang === 'tr'
+              ? `${data.synced} yeni lead eklendi`
+              : `${data.synced} new leads synced`
+          )
+          setTimeout(() => setSyncMsg(''), 5000)
+        }
+      })
+      .catch(() => {})
+  }, [status, activeFormIds.length, lang])
+
   // ── Load form metadata + preview leads when ready ──
   useEffect(() => {
     if (status !== 'ready' || activeFormIds.length === 0) return
 
-    // Fetch all forms to get metadata
     fetch('/api/leadgen/forms')
       .then((r) => r.json())
       .then((data) => {
@@ -419,7 +436,6 @@ export default function LeadGenPage() {
       })
       .catch(() => {})
 
-    // Fetch preview leads per form
     for (const formId of activeFormIds) {
       setFormLeadsLoading((prev) => ({ ...prev, [formId]: true }))
       fetch(`/api/leadgen/forms/${formId}/leads?limit=5`)
@@ -471,7 +487,6 @@ export default function LeadGenPage() {
         setActiveFormIds(ids)
         setShowPicker(false)
         setStatus(ids.length > 0 ? 'ready' : 'no_forms')
-        // Reset lead caches
         setFormLeads({})
         setAllForms([])
       } else {
@@ -483,6 +498,28 @@ export default function LeadGenPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  // ── Refresh: reload data + trigger sync ──
+  function handleRefresh() {
+    setFormLeads({})
+    setAllForms([])
+    setSyncMsg('')
+    loadConfig()
+    // Also trigger sync
+    fetch('/api/leadgen/sync', { method: 'POST' })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.synced && data.synced > 0) {
+          setSyncMsg(
+            lang === 'tr'
+              ? `${data.synced} yeni lead eklendi`
+              : `${data.synced} new leads synced`
+          )
+          setTimeout(() => setSyncMsg(''), 5000)
+        }
+      })
+      .catch(() => {})
   }
 
   // ── Detail view: load leads for a form ──
@@ -520,28 +557,24 @@ export default function LeadGenPage() {
 
   const detailFormMeta = allForms.find((f) => f.id === detailFormId)
 
-  // ── Render ──
   return (
-    <div className="max-w-5xl mx-auto py-8 px-4">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <FileSpreadsheet size={22} className="text-brand-600" />
-          <div>
-            <h1 className="text-xl font-semibold text-slate-800">
-              {lang === 'tr' ? 'Facebook Lead Formları' : 'Facebook Lead Forms'}
-            </h1>
-            <p className="text-sm text-slate-500 mt-0.5">
-              {lang === 'tr'
-                ? 'Facebook Lead Ads formlarından gelen lead\'leri görüntüleyin.'
-                : 'View leads from your Facebook Lead Ads forms.'}
-            </p>
-          </div>
-        </div>
-        {status === 'ready' && !detailFormId && (
+    <div>
+      {/* Controls row */}
+      {status === 'ready' && !detailFormId && (
+        <div className="flex items-center justify-between mb-5">
+          <p className="text-sm text-slate-500">
+            {lang === 'tr'
+              ? `${activeFormIds.length} form bağlı`
+              : `${activeFormIds.length} forms connected`}
+          </p>
           <div className="flex items-center gap-2">
+            {syncMsg && (
+              <span className="text-xs font-medium text-green-600 bg-green-50 px-2.5 py-1 rounded-full">
+                {syncMsg}
+              </span>
+            )}
             <button
-              onClick={() => { setFormLeads({}); setAllForms([]); loadConfig() }}
+              onClick={handleRefresh}
               className="p-2 text-slate-400 hover:text-slate-600 transition-colors"
               title={lang === 'tr' ? 'Yenile' : 'Refresh'}
             >
@@ -555,8 +588,8 @@ export default function LeadGenPage() {
               {lang === 'tr' ? 'Form Ayarları' : 'Form Settings'}
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-600 flex items-center gap-2">
@@ -601,7 +634,7 @@ export default function LeadGenPage() {
       {status === 'no_forms' && (
         <div className="text-center py-16">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-brand-50 mb-4">
-            <FileSpreadsheet size={28} className="text-brand-500" />
+            <Settings2 size={28} className="text-brand-500" />
           </div>
           <h2 className="text-lg font-semibold text-slate-800 mb-2">
             {lang === 'tr' ? 'Lead Form Seçin' : 'Select Lead Forms'}
