@@ -78,12 +78,12 @@
 
     {
       "id": "n05",
-      "name": "Build Message",
+      "name": "Extract WA Credentials",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1080, 300],
       "parameters": {
-        "jsCode": "const orgArr  = $('Fetch Org WA Credentials').all();\nconst org     = orgArr[0]?.json ?? {};\nconst payload = $('Webhook').first().json.body;\n\nconst wa    = org.channel_config?.whatsapp;\nconst creds = wa?.credentials;\n\nif (!wa?.active || !creds?.phone_number_id || !creds?.access_token) {\n  return [{ json: {\n    skip: true,\n    run_id:       payload.run_id,\n    callback_url: payload.callback_url,\n  } }];\n}\n\nconst lang        = org.ai_persona?.language || 'tr';\nconst contactName = payload.contact_data?.name || '';\nconst apptTime    = payload.contact_data?.appointment_time || payload.config?.appointment_time || '';\nconst orgName     = org.name || '';\n\n// Direct text message for appointment confirm (24h window)\nconst bodyText = lang === 'en'\n  ? `Hello ${contactName}! This is a reminder for your appointment at ${orgName} on ${apptTime}. Please reply YES to confirm or NO to reschedule.`\n  : `Merhaba ${contactName}! ${orgName} randevunuzu hatırlatmak istedik: ${apptTime}. Onaylamak için EVET, yeniden planlamak için HAYIR yazabilir misiniz?`;\n\nreturn [{ json: {\n  skip:             false,\n  phone_number_id:  creds.phone_number_id,\n  access_token:     creds.access_token,\n  to_phone:         payload.phone.replace(/^\\+/, ''),\n  body_text:        bodyText,\n  run_id:           payload.run_id,\n  callback_url:     payload.callback_url,\n} }];"
+        "jsCode": "const orgArr  = $('Fetch Org WA Credentials').all();\nconst org     = orgArr[0]?.json ?? {};\nconst payload = $('Webhook').first().json.body;\n\nconst wa    = org.channel_config?.whatsapp;\nconst creds = wa?.credentials;\n\nif (!wa?.active || !creds?.phone_number_id || !creds?.access_token) {\n  return [{ json: {\n    skip: true,\n    run_id:       payload.run_id,\n    callback_url: payload.callback_url,\n  } }];\n}\n\nconst lang = org.ai_persona?.language || 'tr';\nconst LANG_MAP = { en: 'en_US', de: 'de', tr: 'tr', ar: 'ar', fr: 'fr_FR' };\nconst templateLang = LANG_MAP[lang] || lang;\nconst templateName = payload.config?.message_template || 'appointment_confirm_v1';\n\nreturn [{ json: {\n  skip:             false,\n  phone_number_id:  creds.phone_number_id,\n  access_token:     creds.access_token,\n  to_phone:         payload.phone.replace(/^\\+/, ''),\n  template_name:    templateName,\n  template_lang:    templateLang,\n  run_id:           payload.run_id,\n  callback_url:     payload.callback_url,\n} }];"
       }
     },
 
@@ -111,7 +111,7 @@
 
     {
       "id": "n07",
-      "name": "Send WA Text",
+      "name": "Send WA Template",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [1520, 200],
@@ -128,7 +128,7 @@
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.to_phone }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ $json.body_text }}\" }\n}"
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.to_phone }}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"{{ $json.template_name }}\",\n    \"language\": { \"code\": \"{{ $json.template_lang }}\" }\n  }\n}"
       }
     },
 
@@ -140,7 +140,7 @@
       "position": [1740, 200],
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Build Message').item.json.callback_url }}",
+        "url": "={{ $('Extract WA Credentials').item.json.callback_url }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -150,7 +150,7 @@
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={\n  \"run_id\": \"{{ $('Build Message').item.json.run_id }}\",\n  \"status\": \"success\",\n  \"result\": { \"notes\": \"Appointment confirm WA message sent\" }\n}"
+        "jsonBody": "={\n  \"run_id\": \"{{ $('Extract WA Credentials').item.json.run_id }}\",\n  \"status\": \"success\",\n  \"result\": { \"notes\": \"Appointment confirm WA message sent\" }\n}"
       }
     },
 
@@ -182,20 +182,20 @@
     "Webhook":                  { "main": [[{ "node": "Config",                      "type": "main", "index": 0 }]] },
     "Config":                   { "main": [[{ "node": "Wait Delay",                  "type": "main", "index": 0 }]] },
     "Wait Delay":               { "main": [[{ "node": "Fetch Org WA Credentials",    "type": "main", "index": 0 }]] },
-    "Fetch Org WA Credentials": { "main": [[{ "node": "Build Message",               "type": "main", "index": 0 }]] },
-    "Build Message":            { "main": [[{ "node": "WA Configured?",              "type": "main", "index": 0 }]] },
+    "Fetch Org WA Credentials": { "main": [[{ "node": "Extract WA Credentials",      "type": "main", "index": 0 }]] },
+    "Extract WA Credentials":   { "main": [[{ "node": "WA Configured?",              "type": "main", "index": 0 }]] },
     "WA Configured?": {
       "main": [
-        [{ "node": "Send WA Text",                   "type": "main", "index": 0 }],
+        [{ "node": "Send WA Template",               "type": "main", "index": 0 }],
         [{ "node": "Callback — WA Not Configured",   "type": "main", "index": 0 }]
       ]
     },
-    "Send WA Text": { "main": [[{ "node": "Callback — Success", "type": "main", "index": 0 }]] }
+    "Send WA Template": { "main": [[{ "node": "Callback — Success", "type": "main", "index": 0 }]] }
   },
 
   "active": false,
   "settings": { "executionOrder": "v1", "saveManualExecutions": true },
   "pinData": {},
   "meta": { "instanceId": "stoaix-platform" },
-  "notes": "C3 Appointment Confirm Chat. Sends direct WhatsApp text message T-24h. Note: requires active 24h conversation window or use template instead. Callback on success/fail."
+  "notes": "C3 Appointment Confirm Chat. Sends WhatsApp template message for appointment confirmation. LANG_MAP supports en/de/tr/ar/fr. Callback on success/fail."
 }

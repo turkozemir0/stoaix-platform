@@ -241,10 +241,13 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     config_fields: [
       { key: 'no_reply_hours', label: 'Kaç saat yanıt yoksa?', type: 'number', default: 4, unit: 'saat' },
       { key: 'max_followups',  label: 'Maks follow-up sayısı', type: 'number', default: 2 },
+      { key: 'message_template', label: 'WhatsApp Template', type: 'template_picker', default: '',
+        description: 'Meta\'da onaylı template seçin', template_purpose: 'followup' },
     ],
     steps_summary: [
       '{{no_reply_hours}} saat yanıt yoksa hatırlatma gönderir',
       'Toplam {{max_followups}} kez tekrar eder',
+      'Template: {{message_template}}',
     ],
   },
 
