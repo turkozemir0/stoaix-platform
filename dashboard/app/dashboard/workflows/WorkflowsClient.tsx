@@ -12,7 +12,6 @@ import type { WorkflowCategory } from '@/lib/workflow-types'
 import ActivateModal from './ActivateModal'
 import RunHistoryDrawer from './RunHistoryDrawer'
 import { useIsDemo } from '@/lib/demo-context'
-import { createClient } from '@/lib/supabase/client'
 
 // ── Category config ───────────────────────────────────────────────────────────
 
@@ -283,7 +282,11 @@ export default function WorkflowsClient() {
     setLoading(true)
     try {
       const res = await fetch('/api/workflows/templates')
-      if (res.ok) setTemplates(await res.json())
+      if (res.ok) {
+        const data = await res.json()
+        setTemplates(data.templates)
+        if (data.org_sector) setOrgSector(data.org_sector)
+      }
     } finally {
       setLoading(false)
     }
@@ -291,22 +294,6 @@ export default function WorkflowsClient() {
 
   useEffect(() => { fetchTemplates() }, [fetchTemplates])
 
-  // Fetch org sector
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return
-      supabase
-        .from('org_users')
-        .select('organizations(sector)')
-        .eq('user_id', user.id)
-        .maybeSingle()
-        .then(({ data }) => {
-          const sector = (data as any)?.organizations?.sector
-          if (sector) setOrgSector(sector)
-        })
-    })
-  }, [])
 
   async function handleToggle(workflowId: string, current: boolean) {
     if (isDemo) return
