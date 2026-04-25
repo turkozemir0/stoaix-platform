@@ -219,7 +219,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     config_fields: [
       { key: 'delay_minutes', label: 'Kaç dakika sonra gönderilsin?', type: 'number', default: 2, unit: 'dakika' },
       { key: 'message_template', label: 'WhatsApp Template', type: 'template_picker', default: '',
-        description: 'Meta\'da onaylı template seçin', template_purpose: 'followup' },
+        description: 'Meta\'da onaylı template seçin', template_purpose: 'first_contact' },
     ],
     steps_summary: [
       'Lead oluşunca {{delay_minutes}} dk sonra WA mesajı gönderir',
