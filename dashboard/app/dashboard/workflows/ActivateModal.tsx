@@ -17,6 +17,7 @@ interface OrgTemplate {
   name: string
   status: string
   purpose: string | null
+  components: any[] | null
 }
 
 interface PresetTemplate {
@@ -50,6 +51,12 @@ function getBodyPreview(components: any[]): string {
   return body.text.length > 100 ? body.text.slice(0, 100) + '...' : body.text
 }
 
+// Count {{1}}, {{2}}, etc. parameters in template body
+function getParamCount(components: any[] | null): number {
+  const bodyText = components?.find((c: any) => c.type === 'BODY')?.text ?? ''
+  return (bodyText.match(/\{\{\d+\}\}/g) || []).length
+}
+
 // ─── InlinePresetSuggestions ────────────────────────────────────────────────
 
 function InlinePresetSuggestions({
@@ -59,7 +66,7 @@ function InlinePresetSuggestions({
 }: {
   purpose: string
   orgSector: string
-  onUsed: (templateName: string) => void
+  onUsed: (templateName: string, paramCount: number) => void
 }) {
   const [presets, setPresets] = useState<PresetTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -106,7 +113,8 @@ function InlinePresetSuggestions({
       if (data.warning) {
         setWarning(data.warning)
       }
-      onUsed(data.template.name)
+      const pc = getParamCount(data.template.components ?? [])
+      onUsed(data.template.name, pc)
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -218,7 +226,12 @@ function TemplatePicker({
       <div className="space-y-1.5">
         <select
           value={String(value ?? '')}
-          onChange={e => onChange(field.key, e.target.value)}
+          onChange={e => {
+            const name = e.target.value
+            onChange(field.key, name)
+            const tpl = displayTemplates.find(t => t.name === name)
+            onChange('template_param_count', getParamCount(tpl?.components ?? null))
+          }}
           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
         >
           <option value="">-- Template seçin --</option>
@@ -253,9 +266,13 @@ function TemplatePicker({
   // ── State B: No approved, but pending exists for this purpose
   if (pendingByPurpose.length > 0) {
     const pendingName = pendingByPurpose[0].name
-    // Auto-set the config value to pending template name
+    // Auto-set the config value to pending template name + param count
     if (!value) {
-      setTimeout(() => onChange(field.key, pendingName), 0)
+      const pc = getParamCount(pendingByPurpose[0].components)
+      setTimeout(() => {
+        onChange(field.key, pendingName)
+        onChange('template_param_count', pc)
+      }, 0)
     }
     return (
       <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
@@ -289,8 +306,9 @@ function TemplatePicker({
         <InlinePresetSuggestions
           purpose={purpose}
           orgSector={orgSector}
-          onUsed={(templateName) => {
+          onUsed={(templateName, paramCount) => {
             onChange(field.key, templateName)
+            onChange('template_param_count', paramCount)
             onTemplateCreated()
           }}
         />
@@ -425,6 +443,7 @@ export default function ActivateModal({ template, orgSector, onClose, onSaved }:
           name: t.name,
           status: t.status,
           purpose: t.purpose,
+          components: t.components ?? null,
         }))
       ))
       .catch(() => {})
