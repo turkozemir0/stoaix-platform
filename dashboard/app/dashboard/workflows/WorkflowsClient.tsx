@@ -277,6 +277,7 @@ export default function WorkflowsClient() {
   const [toggling, setToggling]       = useState<string | null>(null)
   const [toggleError, setToggleError] = useState<string | null>(null)
   const [orgSector, setOrgSector]     = useState('general')
+  const [orgLang, setOrgLang]         = useState('tr')
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true)
@@ -286,6 +287,7 @@ export default function WorkflowsClient() {
         const data = await res.json()
         setTemplates(data.templates)
         if (data.org_sector) setOrgSector(data.org_sector)
+        if (data.org_lang) setOrgLang(data.org_lang)
       }
     } finally {
       setLoading(false)
@@ -409,6 +411,7 @@ export default function WorkflowsClient() {
         <ActivateModal
           template={editingTemplate}
           orgSector={orgSector}
+          orgLang={orgLang}
           onClose={() => setEditingTemplate(null)}
           onSaved={() => { setEditingTemplate(null); fetchTemplates() }}
         />

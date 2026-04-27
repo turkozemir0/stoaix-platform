@@ -33,7 +33,7 @@ export async function GET() {
       .eq('organization_id', orgId),
     service
       .from('organizations')
-      .select('channel_config, sector')
+      .select('channel_config, sector, ai_persona')
       .eq('id', orgId)
       .maybeSingle(),
   ])
@@ -63,5 +63,6 @@ export async function GET() {
     })
   )
 
-  return NextResponse.json({ templates: results, org_sector: orgRes.data?.sector ?? 'general' })
+  const orgLang = (orgRes.data?.ai_persona as any)?.language ?? 'tr'
+  return NextResponse.json({ templates: results, org_sector: orgRes.data?.sector ?? 'general', org_lang: orgLang })
 }

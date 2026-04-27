@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { X, Loader2, Send, Save } from 'lucide-react'
+import { PURPOSE_LABELS, LANGUAGE_LABELS } from '@/lib/template-purpose-config'
 
 interface EditTemplate {
   id:         string
@@ -24,19 +25,11 @@ const CATEGORY_LABELS: Record<string, string> = {
   AUTHENTICATION: 'Kimlik Doğrulama',
 }
 
-const LANG_LABELS: Record<string, string> = {
-  tr: 'Türkçe (tr)',
-  en: 'İngilizce (en)',
-  de: 'Almanca (de)',
-}
-
-const PURPOSE_LABELS: Record<string, string> = {
-  first_contact:        'İlk Temas',
-  followup:             'Takip Mesajı',
-  reengagement:         'Yeniden Bağlama',
-  unsubscribe:          'Listeden Çıkma',
-  appointment_reminder: 'Randevu Hatırlatma',
-  other:                'Diğer',
+// Language labels with code suffix for the dropdown
+const LANG_OPTIONS: Record<string, string> = {
+  tr: `${LANGUAGE_LABELS.tr} (tr)`,
+  en: `${LANGUAGE_LABELS.en} (en)`,
+  de: `${LANGUAGE_LABELS.de} (de)`,
 }
 
 export default function TemplateModal({ onClose, onSaved, editTemplate }: Props) {
@@ -178,7 +171,7 @@ export default function TemplateModal({ onClose, onSaved, editTemplate }: Props)
                 onChange={(e) => setLanguage(e.target.value)}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
-                {Object.entries(LANG_LABELS).map(([val, label]) => (
+                {Object.entries(LANG_OPTIONS).map(([val, label]) => (
                   <option key={val} value={val}>{label}</option>
                 ))}
               </select>

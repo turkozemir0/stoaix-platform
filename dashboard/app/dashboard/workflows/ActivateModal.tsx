@@ -3,14 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { X, Loader2, Zap, AlertCircle, Info, ExternalLink, Send, ChevronDown, ChevronUp } from 'lucide-react'
 import type { TemplateWithStatus, ConfigField } from '@/lib/workflow-types'
-
-const PURPOSE_LABELS: Record<string, string> = {
-  followup: 'Takip Mesajı',
-  reengagement: 'Yeniden Aktivasyon',
-  appointment_reminder: 'Randevu Hatırlatma',
-  satisfaction: 'Memnuniyet Anketi',
-  unsubscribe: 'Abonelik İptali',
-}
+import { PURPOSE_LABELS, LANGUAGE_LABELS } from '@/lib/template-purpose-config'
 
 interface OrgTemplate {
   id: string
@@ -32,6 +25,7 @@ interface PresetTemplate {
 interface Props {
   template: TemplateWithStatus
   orgSector: string
+  orgLang: string
   onClose: () => void
   onSaved: () => void
 }
@@ -62,10 +56,12 @@ function getParamCount(components: any[] | null): number {
 function InlinePresetSuggestions({
   purpose,
   orgSector,
+  orgLang,
   onUsed,
 }: {
   purpose: string
   orgSector: string
+  orgLang: string
   onUsed: (templateName: string, paramCount: number) => void
 }) {
   const [presets, setPresets] = useState<PresetTemplate[]>([])
@@ -76,11 +72,11 @@ function InlinePresetSuggestions({
 
   useEffect(() => {
     setLoading(true)
-    // Fetch presets for purpose+sector, fallback to general
+    // Fetch presets for purpose+sector+language, fallback to general
     Promise.all([
-      fetch(`/api/templates/presets?purpose=${purpose}&sector=${orgSector}`).then(r => r.json()),
+      fetch(`/api/templates/presets?purpose=${purpose}&sector=${orgSector}&language=${orgLang}`).then(r => r.json()),
       orgSector !== 'general'
-        ? fetch(`/api/templates/presets?purpose=${purpose}&sector=general`).then(r => r.json())
+        ? fetch(`/api/templates/presets?purpose=${purpose}&sector=general&language=${orgLang}`).then(r => r.json())
         : Promise.resolve({ presets: [] }),
     ])
       .then(([sectorData, generalData]) => {
@@ -95,7 +91,7 @@ function InlinePresetSuggestions({
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [purpose, orgSector])
+  }, [purpose, orgSector, orgLang])
 
   async function handleUseAndSubmit(presetId: string) {
     setSubmitting(presetId)
@@ -146,7 +142,9 @@ function InlinePresetSuggestions({
             <div className="min-w-0">
               <p className="text-xs font-medium text-slate-700">
                 {preset.name}
-                <span className="ml-1.5 text-[10px] text-slate-400 font-normal uppercase">{preset.language}</span>
+                <span className="ml-1.5 text-[10px] text-slate-400 font-normal">
+                  {LANGUAGE_LABELS[preset.language] ?? preset.language.toUpperCase()}
+                </span>
               </p>
               <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">
                 {getBodyPreview(preset.components)}
@@ -191,6 +189,7 @@ function TemplatePicker({
   orgTemplates,
   templatesLoading,
   orgSector,
+  orgLang,
   onTemplateCreated,
 }: {
   field: ConfigField
@@ -199,6 +198,7 @@ function TemplatePicker({
   orgTemplates: OrgTemplate[]
   templatesLoading: boolean
   orgSector: string
+  orgLang: string
   onTemplateCreated: () => void
 }) {
   const purpose = field.template_purpose
@@ -306,6 +306,7 @@ function TemplatePicker({
         <InlinePresetSuggestions
           purpose={purpose}
           orgSector={orgSector}
+          orgLang={orgLang}
           onUsed={(templateName, paramCount) => {
             onChange(field.key, templateName)
             onChange('template_param_count', paramCount)
@@ -333,6 +334,7 @@ function ConfigFieldInput({
   orgTemplates,
   templatesLoading,
   orgSector,
+  orgLang,
   onTemplateCreated,
 }: {
   field: ConfigField
@@ -341,6 +343,7 @@ function ConfigFieldInput({
   orgTemplates: OrgTemplate[]
   templatesLoading: boolean
   orgSector: string
+  orgLang: string
   onTemplateCreated: () => void
 }) {
   if (field.type === 'template_picker') {
@@ -352,6 +355,7 @@ function ConfigFieldInput({
         orgTemplates={orgTemplates}
         templatesLoading={templatesLoading}
         orgSector={orgSector}
+        orgLang={orgLang}
         onTemplateCreated={onTemplateCreated}
       />
     )
@@ -416,7 +420,7 @@ function ConfigFieldInput({
 
 // ─── ActivateModal ──────────────────────────────────────────────────────────
 
-export default function ActivateModal({ template, orgSector, onClose, onSaved }: Props) {
+export default function ActivateModal({ template, orgSector, orgLang, onClose, onSaved }: Props) {
   const [config, setConfig] = useState<Record<string, any>>(() => {
     const initial: Record<string, any> = {}
     for (const field of template.config_fields) {
@@ -539,6 +543,7 @@ export default function ActivateModal({ template, orgSector, onClose, onSaved }:
                   orgTemplates={orgTemplates}
                   templatesLoading={templatesLoading}
                   orgSector={orgSector}
+                  orgLang={orgLang}
                   onTemplateCreated={fetchOrgTemplates}
                 />
               </div>

@@ -1,9 +1,17 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Loader2, Send, Trash2, RefreshCw, MessageSquare, Copy, ChevronDown, Pencil } from 'lucide-react'
+import { Plus, Loader2, Send, Trash2, RefreshCw, MessageSquare, Copy, Pencil, Zap } from 'lucide-react'
 import TemplateModal from '@/components/templates/TemplateModal'
 import { createClient } from '@/lib/supabase/client'
+import {
+  TEMPLATE_PURPOSES,
+  PURPOSE_LABELS,
+  PURPOSE_WORKFLOW_NAMES,
+  LANGUAGE_LABELS,
+  SECTOR_LABELS,
+  SECTOR_GROUPS,
+} from '@/lib/template-purpose-config'
 
 type TemplateStatus = 'draft' | 'pending' | 'approved' | 'rejected'
 
@@ -29,24 +37,6 @@ const STATUS_BADGE: Record<TemplateStatus, { label: string; className: string }>
   rejected: { label: 'Reddedildi', className: 'bg-red-100 text-red-600' },
 }
 
-const PURPOSE_LABELS: Record<string, string> = {
-  first_contact:        'İlk Temas',
-  followup:             'Takip',
-  reengagement:         'Yeniden Bağlama',
-  unsubscribe:          'Listeden Çıkma',
-  appointment_reminder: 'Randevu Hatırlatma',
-  other:                'Diğer',
-}
-
-const SECTOR_LABELS: Record<string, string> = {
-  dental:     '🦷 Diş Kliniği',
-  hair:       '💇 Saç Ekimi',
-  aesthetics: '✨ Estetik',
-  general:    '📋 Genel',
-}
-
-const SECTOR_GROUPS = ['dental', 'hair', 'aesthetics', 'general']
-
 // ─── Preset Card ──────────────────────────────────────────────────────────────
 
 function PresetCard({ preset, onUse }: { preset: Template; onUse: (id: string) => void }) {
@@ -59,7 +49,6 @@ function PresetCard({ preset, onUse }: { preset: Template; onUse: (id: string) =
   }
 
   const bodyText = preset.components.find((c) => c.type === 'BODY')?.text ?? ''
-  const purposeLabel = PURPOSE_LABELS[preset.purpose ?? ''] ?? preset.purpose
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-col gap-3">
@@ -67,9 +56,9 @@ function PresetCard({ preset, onUse }: { preset: Template; onUse: (id: string) =
         <div className="min-w-0">
           <p className="font-mono text-xs text-slate-500 truncate">{preset.name}</p>
           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            {purposeLabel && (
-              <span className="text-xs bg-brand-50 text-brand-700 px-2 py-0.5 rounded-full">
-                {purposeLabel}
+            {preset.sector && (
+              <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+                {SECTOR_LABELS[preset.sector] ?? preset.sector}
               </span>
             )}
             <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full uppercase">
@@ -125,6 +114,9 @@ function MyTemplateCard({
             {purposeLabel && (
               <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{purposeLabel}</span>
             )}
+            <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full uppercase">
+              {template.language}
+            </span>
           </div>
         </div>
         <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${badge.className}`}>
@@ -185,7 +177,10 @@ export default function TemplatesPage() {
   const [templates, setTemplates]   = useState<Template[]>([])
   const [presets, setPresets]       = useState<Template[]>([])
   const [orgSector, setOrgSector]   = useState<string>('general')
+  const [orgLang, setOrgLang]       = useState<string>('tr')
   const [activeSector, setActiveSector] = useState<string>('all')
+  const [activeLang, setActiveLang]     = useState<string>('auto')
+  const [activePurpose, setActivePurpose] = useState<string>('all')
   const [loading, setLoading]       = useState(true)
   const [presetsLoading, setPresetsLoading] = useState(true)
   const [showModal, setShowModal]   = useState(false)
@@ -195,7 +190,7 @@ export default function TemplatesPage() {
   const [error, setError]           = useState('')
   const [success, setSuccess]       = useState('')
 
-  // Load org sector
+  // Load org sector + language
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
@@ -204,11 +199,13 @@ export default function TemplatesPage() {
         .from('org_users').select('organization_id').eq('user_id', user.id).maybeSingle()
       if (!orgUser) return
       const { data: org } = await supabase
-        .from('organizations').select('sector').eq('id', orgUser.organization_id).single()
+        .from('organizations').select('sector, ai_persona').eq('id', orgUser.organization_id).single()
       if (org?.sector) {
         setOrgSector(org.sector)
         setActiveSector(org.sector)
       }
+      const lang = (org?.ai_persona as any)?.language
+      if (lang) setOrgLang(lang)
     })
   }, [])
 
@@ -297,17 +294,46 @@ export default function TemplatesPage() {
     }
   }
 
-  // Filter presets by active sector
-  const filteredPresets = activeSector === 'all'
-    ? presets
-    : presets.filter((p) => p.sector === activeSector)
+  // ── Presets filtering: language + sector, grouped by purpose ──
+  const effectiveLang = activeLang === 'auto' ? orgLang : activeLang
+  const filteredPresets = presets.filter((p) => {
+    if (activeLang !== 'all' && p.language !== effectiveLang) return false
+    if (activeSector !== 'all' && p.sector !== activeSector) return false
+    return true
+  })
 
-  // Group presets by sector for display
-  const presetsBySector = SECTOR_GROUPS.reduce((acc, sector) => {
-    const items = filteredPresets.filter((p) => p.sector === sector)
-    if (items.length > 0) acc[sector] = items
+  const presetsByPurpose = TEMPLATE_PURPOSES.reduce((acc, purpose) => {
+    const items = filteredPresets.filter((p) => p.purpose === purpose)
+    if (items.length > 0) acc[purpose] = items
     return acc
   }, {} as Record<string, Template[]>)
+
+  // ── My Templates filtering: by purpose ──
+  const filteredMyTemplates = activePurpose === 'all'
+    ? templates
+    : templates.filter((t) => t.purpose === activePurpose)
+
+  const myTemplatesByPurpose = TEMPLATE_PURPOSES.reduce((acc, purpose) => {
+    const items = filteredMyTemplates.filter((t) => t.purpose === purpose)
+    if (items.length > 0) acc[purpose] = items
+    return acc
+  }, {} as Record<string, Template[]>)
+
+  // Status summary for My Templates purpose group headers
+  function statusSummary(items: Template[]): string {
+    const approved = items.filter((t) => t.status === 'approved').length
+    const pending  = items.filter((t) => t.status === 'pending').length
+    const draft    = items.filter((t) => t.status === 'draft').length
+    const parts: string[] = []
+    if (approved) parts.push(`${approved} Onaylı`)
+    if (pending)  parts.push(`${pending} Beklemede`)
+    if (draft)    parts.push(`${draft} Taslak`)
+    return parts.join(', ')
+  }
+
+  const langLabel = activeLang === 'auto'
+    ? `${LANGUAGE_LABELS[orgLang] ?? orgLang}`
+    : activeLang === 'all' ? 'Tümü' : LANGUAGE_LABELS[activeLang] ?? activeLang
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
@@ -380,8 +406,31 @@ export default function TemplatesPage() {
       {/* ── Presets Tab ── */}
       {tab === 'presets' && (
         <>
+          {/* Language filter */}
+          <div className="flex gap-2 mb-3 flex-wrap">
+            <span className="text-xs text-slate-400 self-center mr-1">Dil:</span>
+            {(['auto', 'tr', 'en', 'de', 'all'] as const).map((lang) => (
+              <button
+                key={lang}
+                onClick={() => setActiveLang(lang)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
+                  activeLang === lang
+                    ? 'bg-slate-800 text-white border-slate-800'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                {lang === 'auto'
+                  ? `Otomatik (${(LANGUAGE_LABELS[orgLang] ?? orgLang).substring(0, 2).toUpperCase()})`
+                  : lang === 'all'
+                  ? 'Tümü'
+                  : LANGUAGE_LABELS[lang] ?? lang}
+              </button>
+            ))}
+          </div>
+
           {/* Sector filter */}
           <div className="flex gap-2 mb-5 flex-wrap">
+            <span className="text-xs text-slate-400 self-center mr-1">Sektör:</span>
             <button
               onClick={() => setActiveSector('all')}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
@@ -412,21 +461,41 @@ export default function TemplatesPage() {
               <Loader2 size={18} className="animate-spin" /> Yükleniyor...
             </div>
           ) : (
-            <div className="space-y-6">
-              {Object.entries(presetsBySector).map(([sector, items]) => (
-                <div key={sector}>
-                  <h3 className="text-sm font-semibold text-slate-500 mb-3">
-                    {SECTOR_LABELS[sector] ?? sector}
-                  </h3>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {items.map((p) => (
-                      <PresetCard key={p.id} preset={p} onUse={usePreset} />
-                    ))}
+            <div className="space-y-8">
+              {TEMPLATE_PURPOSES.map((purpose) => {
+                const items = presetsByPurpose[purpose]
+                if (!items) return null
+                const workflows = PURPOSE_WORKFLOW_NAMES[purpose] ?? []
+                return (
+                  <div key={purpose}>
+                    <div className="flex items-center gap-2 mb-3 flex-wrap">
+                      <h3 className="text-sm font-semibold text-slate-700">
+                        {PURPOSE_LABELS[purpose] ?? purpose}
+                      </h3>
+                      {workflows.map((wf) => (
+                        <span
+                          key={wf}
+                          className="inline-flex items-center gap-1 text-[10px] bg-brand-50 text-brand-600 border border-brand-100 rounded-full px-2 py-0.5"
+                        >
+                          <Zap size={8} />
+                          {wf}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {items.map((p) => (
+                        <PresetCard key={p.id} preset={p} onUse={usePreset} />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
-              {Object.keys(presetsBySector).length === 0 && (
-                <p className="text-center text-slate-400 py-12">Hazır şablon bulunamadı.</p>
+                )
+              })}
+              {Object.keys(presetsByPurpose).length === 0 && (
+                <p className="text-center text-slate-400 py-12">
+                  {activeLang !== 'all'
+                    ? `${langLabel} dilinde hazır şablon bulunamadı.`
+                    : 'Hazır şablon bulunamadı.'}
+                </p>
               )}
             </div>
           )}
@@ -436,31 +505,97 @@ export default function TemplatesPage() {
       {/* ── My Templates Tab ── */}
       {tab === 'mine' && (
         <>
+          {/* Purpose filter chips */}
+          <div className="flex gap-2 mb-5 flex-wrap">
+            <button
+              onClick={() => setActivePurpose('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
+                activePurpose === 'all'
+                  ? 'bg-slate-800 text-white border-slate-800'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              Tümü
+            </button>
+            {TEMPLATE_PURPOSES.filter((p) => p !== 'other').map((purpose) => (
+              <button
+                key={purpose}
+                onClick={() => setActivePurpose(purpose)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
+                  activePurpose === purpose
+                    ? 'bg-slate-800 text-white border-slate-800'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                {PURPOSE_LABELS[purpose]}
+              </button>
+            ))}
+          </div>
+
           {loading ? (
             <div className="flex items-center gap-2 text-slate-400 py-12 justify-center">
               <Loader2 size={18} className="animate-spin" /> Yükleniyor...
             </div>
-          ) : templates.length === 0 ? (
+          ) : filteredMyTemplates.length === 0 ? (
             <div className="text-center py-16">
               <MessageSquare size={36} className="text-slate-200 mx-auto mb-3" />
               <p className="text-slate-500 font-medium">Henüz template yok</p>
               <p className="text-sm text-slate-400 mt-1">
-                Hazır Şablonlar sekmesinden bir şablon seçin veya "Yeni Template" ile kendiniz oluşturun.
+                Hazır Şablonlar sekmesinden bir şablon seçin veya &quot;Yeni Template&quot; ile kendiniz oluşturun.
               </p>
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {templates.map((t) => (
-                <MyTemplateCard
-                  key={t.id}
-                  template={t}
-                  onSubmit={submit}
-                  onDelete={remove}
-                  onEdit={openEdit}
-                  submitting={submitting}
-                  deleting={deleting}
-                />
-              ))}
+            <div className="space-y-8">
+              {TEMPLATE_PURPOSES.map((purpose) => {
+                const items = myTemplatesByPurpose[purpose]
+                if (!items) return null
+                return (
+                  <div key={purpose}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <h3 className="text-sm font-semibold text-slate-700">
+                        {PURPOSE_LABELS[purpose] ?? purpose}
+                      </h3>
+                      <span className="text-xs text-slate-400">
+                        {statusSummary(items)}
+                      </span>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {items.map((t) => (
+                        <MyTemplateCard
+                          key={t.id}
+                          template={t}
+                          onSubmit={submit}
+                          onDelete={remove}
+                          onEdit={openEdit}
+                          submitting={submitting}
+                          deleting={deleting}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+              {/* Templates with no purpose or unlisted purpose */}
+              {filteredMyTemplates.filter((t) => !t.purpose || !TEMPLATE_PURPOSES.includes(t.purpose as any)).length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700 mb-3">Diğer</h3>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {filteredMyTemplates
+                      .filter((t) => !t.purpose || !TEMPLATE_PURPOSES.includes(t.purpose as any))
+                      .map((t) => (
+                        <MyTemplateCard
+                          key={t.id}
+                          template={t}
+                          onSubmit={submit}
+                          onDelete={remove}
+                          onEdit={openEdit}
+                          submitting={submitting}
+                          deleting={deleting}
+                        />
+                      ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>
