@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import {
-  Rocket, ChevronDown, ChevronUp, Settings,
+  Rocket, ChevronDown, ChevronUp, Settings, ArrowRight, Clock,
   MessageCircle, Instagram, Phone, PhoneOutgoing, Calendar,
   AlertTriangle, CheckCircle2, Plug, Check,
 } from 'lucide-react'
@@ -251,258 +251,90 @@ export default function SetupCommandCenter() {
     )
   }
 
-  /* ── Durum A: Setup tamamlanmamış → tabbed full card ── */
+  /* ── Durum A: Setup tamamlanmamış → gradient banner ── */
 
-  const completedSteps = [
-    { key: 'business', done: setupStatus.business_info_complete, label: 'İşletme Profili' },
-    { key: 'kb', done: setupStatus.has_kb_items, label: 'Bilgi Bankası' },
-    { key: 'channel', done: setupStatus.has_channel, label: 'Kanal Bağlı' },
-    { key: 'playbook', done: setupStatus.has_playbook, label: 'AI Asistanı' },
-    { key: 'conversation', done: setupStatus.has_conversation, label: 'İlk Konuşma' },
-  ].filter(s => s.done)
+  // Estimate remaining time (~2 min per incomplete step)
+  const remainingSteps = 5 - completedCount
+  const remainingMin = remainingSteps * 2
 
-  const incompleteSteps = [
-    {
-      key: 'business', done: setupStatus.business_info_complete,
-      step: 1, title: 'İşletme Profilini Tamamla',
-      description: 'Telefon, e-posta ve şehir bilgilerini ekle',
-      cta: { label: 'Ayarlara Git', href: '/dashboard/settings' },
-    },
-    {
-      key: 'kb', done: setupStatus.has_kb_items,
-      step: 2, title: 'Bilgi Bankası Oluştur',
-      description: setupStatus.has_kb_items ? `${setupStatus.kb_count} içerik eklendi` : 'Web siteni tara veya bilgileri manuel ekle',
-      cta: { label: 'KB Oluştur', href: '/dashboard/knowledge' },
-    },
-    {
-      key: 'channel', done: setupStatus.has_channel,
-      step: 3, title: 'Kanal Bağla',
-      description: 'WhatsApp, Instagram veya ses kanalını aktif et',
-      cta: { label: 'Entegrasyonlar', href: '/dashboard/integrations' },
-    },
-    {
-      key: 'playbook', done: setupStatus.has_playbook,
-      step: 4, title: 'AI Asistanını Kur',
-      description: 'Şablon seç, asistan adını ve davranışını belirle',
-      cta: { label: 'AI Asistanı', href: '/dashboard/agent' },
-    },
-    {
-      key: 'conversation', done: setupStatus.has_conversation,
-      step: 5, title: 'İlk Konuşmayı Bekle',
-      description: 'Kanal bağlandığında AI asistanınız otomatik olarak konuşmalara başlayacak',
-    },
-  ].filter(s => !s.done)
+  // Next incomplete step → CTA link
+  const nextStep = [
+    { key: 'business', done: setupStatus.business_info_complete, href: '/dashboard/settings', desc: 'İşletme profilinizi tamamlayın' },
+    { key: 'kb', done: setupStatus.has_kb_items, href: '/dashboard/knowledge', desc: 'Bilgi bankası oluşturun' },
+    { key: 'channel', done: setupStatus.has_channel, href: '/dashboard/integrations', desc: 'Kanal bağlayın' },
+    { key: 'playbook', done: setupStatus.has_playbook, href: '/dashboard/agent', desc: 'AI asistanınızı kurun' },
+    { key: 'conversation', done: setupStatus.has_conversation, href: '/dashboard/inbox', desc: 'İlk konuşmayı bekleyin' },
+  ].find(s => !s.done)
+
+  // Build summary of what's left
+  const todoSummary = [
+    !setupStatus.has_channel && 'kanalları bağlayın',
+    !setupStatus.has_kb_items && 'bilgi bankasını doldurun',
+    !setupStatus.has_playbook && 'AI asistanını onaylayın',
+  ].filter(Boolean).join(', ')
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center">
-            <Rocket className="w-4 h-4 text-brand-600" />
+    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-teal-600 via-teal-500 to-cyan-500">
+      {/* Subtle mesh/noise overlay */}
+      <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_30%_50%,rgba(255,255,255,0.3),transparent_70%)]" />
+
+      <div className="relative flex items-center justify-between px-6 py-5 gap-6">
+        {/* Left: text content */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-3 mb-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-white/20 text-white backdrop-blur-sm">
+              SETUP · {completedCount} / 5
+            </span>
+            <span className="inline-flex items-center gap-1 text-[11px] text-white/70">
+              <Clock size={11} />
+              ~{remainingMin} dk kaldı
+            </span>
           </div>
-          <h3 className="text-sm font-semibold text-slate-900">Komuta Merkezi</h3>
-        </div>
-        <div className="flex items-center gap-3">
+
+          <h3 className="text-lg font-bold text-white mb-1">
+            Kurulumu tamamlayın
+          </h3>
+          <p className="text-sm text-white/70 max-w-md">
+            {todoSummary
+              ? `${todoSummary.charAt(0).toUpperCase() + todoSummary.slice(1)}.`
+              : 'AI asistanınızı aktif etmek için adımları tamamlayın.'}
+          </p>
+
           {/* Progress bar */}
-          <div className="hidden sm:flex items-center gap-2">
-            <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+          <div className="mt-3 w-full max-w-xs">
+            <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
               <div
-                className="h-full bg-brand-500 rounded-full transition-all duration-500"
+                className="h-full bg-white rounded-full transition-all duration-700 ease-out"
                 style={{ width: `${percent}%` }}
               />
             </div>
-            <span className="text-xs font-medium text-slate-500">%{percent}</span>
           </div>
+        </div>
+
+        {/* Right: CTA with glow + dismiss */}
+        <div className="flex items-center gap-3 shrink-0">
           <button
             onClick={handleCollapse}
-            className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1 rounded hover:bg-slate-50 transition-colors"
+            className="text-xs text-white/50 hover:text-white/80 transition-colors hidden sm:block"
           >
-            Daha Sonra
+            Daha sonra
           </button>
+
+          {nextStep && (
+            <div className="relative">
+              {/* Glow effect behind button */}
+              <div className="absolute inset-0 rounded-xl bg-white/30 blur-xl scale-110" />
+              <Link
+                href={nextStep.href}
+                className="relative inline-flex items-center gap-2 px-5 py-2.5 bg-white text-teal-700 font-semibold text-sm rounded-xl hover:bg-white/90 transition-all shadow-lg shadow-teal-900/20"
+              >
+                Kuruluma devam et
+                <ArrowRight size={16} />
+              </Link>
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Tabs */}
-      <div className="flex border-b border-slate-100">
-        <button
-          onClick={() => setActiveTab('setup')}
-          className={`px-5 py-2.5 text-xs font-medium transition-colors relative ${
-            activeTab === 'setup'
-              ? 'text-brand-600'
-              : 'text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          Kurulum
-          {activeTab === 'setup' && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-500 rounded-t" />
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('integrations')}
-          className={`px-5 py-2.5 text-xs font-medium transition-colors relative ${
-            activeTab === 'integrations'
-              ? 'text-brand-600'
-              : 'text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          Entegrasyonlar
-          {healthData.blocked_workflow_count > 0 && (
-            <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-amber-100 text-amber-700 rounded-full">
-              {healthData.blocked_workflow_count}
-            </span>
-          )}
-          {activeTab === 'integrations' && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-500 rounded-t" />
-          )}
-        </button>
-      </div>
-
-      {/* Tab content */}
-      {activeTab === 'setup' ? (
-        <div className="px-5 py-4">
-          {/* Completed steps as badges */}
-          {completedSteps.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-3">
-              {completedSteps.map(s => (
-                <span
-                  key={s.key}
-                  className="inline-flex items-center gap-1 text-xs font-medium bg-green-50 text-green-700 px-2.5 py-1 rounded-full"
-                >
-                  <Check className="w-3 h-3" />
-                  {s.label}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Incomplete steps */}
-          <div className="divide-y divide-slate-50">
-            {incompleteSteps.map(s => (
-              <div key={s.key} className="flex items-center gap-4 py-3">
-                <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm font-semibold bg-slate-100 text-slate-500">
-                  {s.step}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-semibold text-slate-800">{s.title}</p>
-                    {/* Mini channel dots for "Kanal Bağla" step */}
-                    {s.key === 'channel' && (
-                      <div className="flex items-center gap-1.5 ml-1">
-                        {channelEntries.slice(0, 3).map(({ key, shortLabel, health }) => (
-                          <span
-                            key={key}
-                            className="inline-flex items-center gap-0.5 text-[10px] text-slate-400"
-                            title={`${shortLabel}: ${STATUS_LABEL[health.status]}`}
-                          >
-                            {shortLabel}
-                            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[health.status]}`} />
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-400 mt-0.5">{s.description}</p>
-                </div>
-                {s.cta ? (
-                  <Link
-                    href={s.cta.href}
-                    className="flex-shrink-0 text-xs font-medium px-3 py-1.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors whitespace-nowrap"
-                  >
-                    {s.cta.label}
-                  </Link>
-                ) : (
-                  <span className="flex-shrink-0 text-xs text-slate-400 italic whitespace-nowrap">
-                    Kanal bağlandıktan sonra
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Integration summary line */}
-          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 text-xs text-slate-500">
-            <Plug size={12} className="text-slate-400" />
-            <span>
-              {activeChannelCount}/5 kanal aktif
-              {workflowSummary && <> · {workflowSummary}</>}
-            </span>
-            <button
-              onClick={() => setActiveTab('integrations')}
-              className="ml-auto text-brand-600 hover:text-brand-700 font-medium"
-            >
-              Detaylar →
-            </button>
-          </div>
-        </div>
-      ) : (
-        /* Entegrasyonlar Tab */
-        <div className="px-5 py-4">
-          {/* Channel grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {channelEntries.map(({ key, label, icon, health }) => (
-              <div key={key} className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-slate-50">
-                <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT[health.status]}`} />
-                <span className="shrink-0">{icon}</span>
-                <span className="text-xs text-slate-700 font-medium">{label}</span>
-                <span className="text-xs text-slate-400 truncate ml-auto">
-                  {health.detail ?? STATUS_LABEL[health.status]}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* Go to integrations page */}
-          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
-            <span className="text-xs text-slate-500">
-              {activeChannelCount}/5 kanal bağlı
-            </span>
-            <Link
-              href="/dashboard/integrations"
-              className="text-xs font-medium px-3 py-1.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors"
-            >
-              Entegrasyonları Yönet →
-            </Link>
-          </div>
-
-          {/* Blocked workflows warning */}
-          {healthData.blocked_workflow_count > 0 && (
-            <div className="mt-3 pt-3 border-t border-amber-100">
-              <div className="flex items-start gap-2">
-                <AlertTriangle size={14} className="text-amber-500 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-xs text-amber-700 font-medium">
-                    {healthData.blocked_workflow_count} iş akışı eksik entegrasyon nedeniyle çalışamaz
-                  </p>
-                  <ul className="mt-1 space-y-0.5">
-                    {healthData.blocked_workflows.map((bw, i) => (
-                      <li key={i} className="text-xs text-amber-600">
-                        {bw.name} — {bw.missing.join(', ')} gerekli
-                      </li>
-                    ))}
-                  </ul>
-                  <Link
-                    href="/dashboard/workflows"
-                    className="inline-flex items-center gap-1 mt-1.5 text-xs text-amber-700 hover:text-amber-800 font-medium"
-                  >
-                    İş akışlarını gör
-                  </Link>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Healthy workflows */}
-          {healthData.blocked_workflow_count === 0 && healthData.active_workflow_count > 0 && (
-            <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2">
-              <CheckCircle2 size={14} className="text-emerald-500" />
-              <span className="text-xs text-slate-500">
-                {healthData.active_workflow_count} aktif iş akışı sorunsuz çalışıyor
-              </span>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   )
 }

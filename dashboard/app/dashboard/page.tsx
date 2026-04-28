@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { Users, Flame, TrendingUp, ArrowRight, Star, CalendarDays } from 'lucide-react'
+import { Users, Flame, TrendingUp, ArrowRight, Star, CalendarDays, Plus } from 'lucide-react'
 import StatCard from '@/components/StatCard'
 import TrendChart from '@/components/TrendChart'
 import LeadBadge from '@/components/LeadBadge'
@@ -139,6 +139,16 @@ export default async function DashboardPage() {
       <TopBar
         title={t.dashboardTitle}
         subtitle={lang === 'tr' ? 'Genel performans özeti' : 'Performance overview'}
+        searchPlaceholder={lang === 'tr' ? 'Ara, lead bul, ayar...' : 'Search leads, settings...'}
+        primaryCta={
+          <Link
+            href="/dashboard/crm"
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-brand-500 to-sky-400 hover:from-brand-600 hover:to-sky-500 text-white text-sm font-semibold rounded-xl transition-all shadow-sm"
+          >
+            <Plus size={16} />
+            Add Lead
+          </Link>
+        }
       />
 
       <SetupCommandCenter />

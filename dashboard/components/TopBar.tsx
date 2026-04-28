@@ -20,13 +20,14 @@ export default function TopBar({ title, subtitle, searchPlaceholder, onSearch, p
           {subtitle && <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p>}
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          {onSearch && (
+          {(onSearch || searchPlaceholder) && (
             <div className="relative hidden sm:block">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
                 placeholder={searchPlaceholder ?? 'Ara...'}
-                onChange={e => onSearch(e.target.value)}
+                onChange={onSearch ? (e => onSearch(e.target.value)) : undefined}
+                readOnly={!onSearch}
                 className="w-56 pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl bg-white/70 focus:outline-none focus:ring-2 focus:ring-brand-400/40 placeholder:text-slate-400"
               />
               <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-300 font-mono hidden lg:inline">⌘K</kbd>
