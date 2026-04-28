@@ -2111,11 +2111,11 @@ RULE: Never make up information not in the knowledge base.
     STT_LANG_MAP = {"tr": "tr", "en": "en", "ar": "ar", "de": "de", "ru": "ru", "fr": "fr", "es": "es"}
     stt_language = STT_LANG_MAP.get(tts_lang, "tr")
 
-    # Klinik terminolojisi — Deepgram keyterm prompting ile TR doğruluğu artır
-    clinic_keywords = [
-        "implant:2", "veneer:2", "botoks:2", "rinoplasti:2",
-        "diş:1", "protez:1", "ortodonti:2", "zirkonyum:2",
-        "saç ekimi:2", "PRP:2", "mezoterapi:2",
+    # Klinik terminolojisi — Deepgram Nova-3 keyterm prompting ile TR doğruluğu artır
+    clinic_keyterms = [
+        "implant", "veneer", "botoks", "rinoplasti",
+        "diş", "protez", "ortodonti", "zirkonyum",
+        "saç ekimi", "PRP", "mezoterapi",
     ]
 
     session = AgentSession(
@@ -2123,7 +2123,7 @@ RULE: Never make up information not in the knowledge base.
             model="nova-3",
             language=stt_language,
             endpointing_ms=300,
-            keywords=clinic_keywords,
+            keyterm=clinic_keyterms,
         ),
         llm=llm_instance,
         tts=cartesia.TTS(
