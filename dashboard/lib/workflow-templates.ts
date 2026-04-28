@@ -355,6 +355,14 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       'Günlük maks {{daily_limit}}, gün içine dengeli dağıtılır',
       'Cooldown: {{cooldown_days}} gün — aynı kişiye tekrar gönderilmez',
       'Template: {{message_template}}',
+      'Sequence: 5 adıma kadar artan aralıklı takip (cevap gelince durur)',
+    ],
+    default_sequence: [
+      { step: 1, template: '', param_count: 1, delay_days: 0 },
+      { step: 2, template: '', param_count: 1, delay_days: 3 },
+      { step: 3, template: '', param_count: 1, delay_days: 7 },
+      { step: 4, template: '', param_count: 1, delay_days: 14 },
+      { step: 5, template: '', param_count: 1, delay_days: 30 },
     ],
   },
 

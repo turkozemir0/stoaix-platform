@@ -53,6 +53,7 @@ function ChannelIcon({ channel, size = 14 }: { channel: string; size?: number })
   if (channel === 'whatsapp') return <MessageSquare size={size} className="text-emerald-500" />
   if (channel === 'instagram') return <Instagram size={size} className="text-pink-500" />
   if (channel === 'voice') return <Phone size={size} className="text-blue-500" />
+  if (channel === 'reactivation') return <RefreshCw size={size} className="text-orange-500" />
   return <MessageSquare size={size} className="text-slate-400" />
 }
 
@@ -61,11 +62,13 @@ function ChannelBadge({ channel }: { channel: string }) {
     whatsapp: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
     instagram: 'bg-pink-50 text-pink-700 border border-pink-200',
     voice: 'bg-blue-50 text-blue-700 border border-blue-200',
+    reactivation: 'bg-orange-50 text-orange-700 border border-orange-200',
   }
   const labels: Record<string, string> = {
     whatsapp: 'WhatsApp',
     instagram: 'Instagram',
     voice: 'Voice',
+    reactivation: 'Reactivation',
   }
   return (
     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${styles[channel] ?? 'bg-slate-100 text-slate-600'}`}>
@@ -106,7 +109,7 @@ interface Props {
   userRole: string | null
 }
 
-const CHANNELS = ['all', 'whatsapp', 'instagram', 'voice']
+const CHANNELS = ['all', 'whatsapp', 'instagram', 'voice', 'reactivation']
 
 // Pipeline stages — status value + display label (emoji dahil)
 const PIPELINE_STAGES: { value: string; label: Record<string, string> }[] = [
@@ -335,6 +338,7 @@ export default function InboxClient({ orgId, lang, currentUserId, userRole }: Pr
 
   const selected = conversations.find(c => c.id === selectedId)
   const isVoice = selected?.channel === 'voice'
+  const isReactivation = selected?.channel === 'reactivation'
 
   // ─── Render ──────────────────────────────────────────────────────────────
   return (
@@ -560,9 +564,11 @@ export default function InboxClient({ orgId, lang, currentUserId, userRole }: Pr
           {/* Reply box */}
           {!isDemo && (
           <div className="border-t border-slate-200 bg-white px-4 py-3">
-            {isVoice ? (
+            {isVoice || isReactivation ? (
               <p className="text-sm text-slate-400 text-center py-2">
-                {lang === 'tr' ? 'Ses konuşmalarına yazılı yanıt gönderilemez.' : 'Text replies are not available for voice calls.'}
+                {isReactivation
+                  ? (lang === 'tr' ? 'Reactivation mesajları otomatik gönderilir, yanıt yazılamaz.' : 'Reactivation messages are sent automatically.')
+                  : (lang === 'tr' ? 'Ses konuşmalarına yazılı yanıt gönderilemez.' : 'Text replies are not available for voice calls.')}
               </p>
             ) : (
               <div className="flex gap-2 items-end">

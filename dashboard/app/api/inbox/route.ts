@@ -7,7 +7,7 @@ function getServiceClient() {
   return sbAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 
-const VALID_CHANNELS = ['whatsapp', 'instagram', 'voice', 'web']
+const VALID_CHANNELS = ['whatsapp', 'instagram', 'voice', 'web', 'reactivation']
 
 async function resolveOrgId(userId: string, service: ReturnType<typeof getServiceClient>) {
   const { data: orgUser } = await service

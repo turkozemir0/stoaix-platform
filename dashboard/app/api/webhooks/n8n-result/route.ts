@@ -86,6 +86,23 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Reactivation: lead status → nurturing
+  if (status === 'success' && run.contact_id) {
+    const { data: wfCheck } = await service
+      .from('org_workflows').select('template_id')
+      .eq('id', run.org_workflow_id).single()
+
+    if (wfCheck?.template_id === 'reactivation_chat' || wfCheck?.template_id === 'reactivation_voice') {
+      await service.from('leads').update({
+        status: 'nurturing',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('contact_id', run.contact_id)
+      .eq('organization_id', run.organization_id)
+      .in('status', ['new', 'in_progress', 'lost'])
+    }
+  }
+
   // Retry: next_action === 'retry' → call_queue INSERT
   if (result?.next_action === 'retry') {
     const { data: workflow } = await service

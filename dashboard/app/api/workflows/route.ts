@@ -87,6 +87,11 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Inject default sequence if template defines one and config doesn't have it
+  if (template.default_sequence && !config.sequence) {
+    config.sequence = template.default_sequence
+  }
+
   const service = getServiceClient()
   const { data, error } = await service
     .from('org_workflows')

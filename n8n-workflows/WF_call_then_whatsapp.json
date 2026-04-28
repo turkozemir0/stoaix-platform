@@ -297,7 +297,7 @@
         180
       ],
       "parameters": {
-        "jsCode": "const cfg   = $('Config').first().json;\nconst runId = $('Build Voice + WA Payload').first().json.run_id;\n\nconst res    = await fetch(\n  `${cfg.SUPABASE_URL}/rest/v1/workflow_runs?id=eq.${runId}&select=status&limit=1`,\n  { headers: { apikey: cfg.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${cfg.SUPABASE_SERVICE_KEY}` } }\n);\nconst data   = await res.json();\nconst status = data[0]?.status || 'unknown';\n\nreturn [{ json: { run_status: status, voice_succeeded: status === 'success' } }];"
+        "jsCode": "const _h = this.helpers;\nconst cfg   = $('Config').first().json;\nconst runId = $('Build Voice + WA Payload').first().json.run_id;\n\ntry {\n  const data = await _h.httpRequest({\n    method: 'GET',\n    url: `${cfg.SUPABASE_URL}/rest/v1/workflow_runs?id=eq.${runId}&select=status&limit=1`,\n    headers: { apikey: cfg.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${cfg.SUPABASE_SERVICE_KEY}` },\n    json: true\n  });\n  const arr = Array.isArray(data) ? data : [];\n  const status = arr[0]?.status || 'unknown';\n  return [{ json: { run_status: status, voice_succeeded: status === 'success' } }];\n} catch {\n  return [{ json: { run_status: 'unknown', voice_succeeded: false } }];\n}\n"
       }
     },
     {

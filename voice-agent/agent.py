@@ -1504,7 +1504,7 @@ async def entrypoint(ctx: JobContext):
     calendar_adapter = get_calendar_adapter(org) if features.get("calendar_booking", False) else None
     calendar_enabled = calendar_adapter is not None
 
-    logger.info(f"{'Outbound' if scenario else 'Inbound'} — org: {org['name']} | lang: {lang} | scenario: {scenario}")
+    logger.info(f"{'Outbound' if scenario else 'Inbound'} — org: {org['name']} | lang: {lang} | scenario: {scenario} | pb_voice_id: {features.get('tts_voice_id', '')}")
 
     # Handoff keyword listesi (runtime'da kontrol için)
     handoff_keywords = []
@@ -2070,7 +2070,9 @@ RULE: Never make up information not in the knowledge base.
         # Ses ID'si yoksa (env boş) TR'ye düş
         tts_lang = org_lang_raw if CARTESIA_VOICES.get(org_lang_raw) else "tr"
 
-    voice_id = CARTESIA_VOICES.get(tts_lang) or CARTESIA_VOICES["tr"]
+    # Öncelik: playbook features.tts_voice_id > env var CARTESIA_VOICE_ID_XX > default TR
+    _pb_voice_id = features.get("tts_voice_id", "").strip()
+    voice_id = _pb_voice_id if _pb_voice_id else (CARTESIA_VOICES.get(tts_lang) or CARTESIA_VOICES["tr"])
 
     STT_LANG_MAP = {"tr": "tr", "en": "en", "ar": "ar", "de": "de", "ru": "ru", "fr": "fr", "es": "es"}
     stt_language = STT_LANG_MAP.get(tts_lang, "tr")

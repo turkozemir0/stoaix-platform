@@ -426,6 +426,12 @@ export default function ActivateModal({ template, orgSector, orgLang, onClose, o
     for (const field of template.config_fields) {
       initial[field.key] = template.config?.[field.key] ?? field.default
     }
+    // Inject default sequence for drip workflows (if template defines one)
+    if ((template as any).default_sequence && !template.config?.sequence) {
+      initial.sequence = (template as any).default_sequence
+    } else if (template.config?.sequence) {
+      initial.sequence = template.config.sequence
+    }
     return initial
   })
 

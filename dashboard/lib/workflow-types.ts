@@ -41,6 +41,13 @@ export interface ConfigField {
   template_purpose?: string  // followup | reengagement | appointment_reminder | satisfaction
 }
 
+export interface SequenceStep {
+  step: number
+  template: string
+  param_count: number
+  delay_days: number
+}
+
 export interface WorkflowTemplate {
   id: string
   name: string
@@ -54,6 +61,7 @@ export interface WorkflowTemplate {
   n8n_workflow_id: string    // n8n webhook key
   steps_summary: string[]    // {{variable}} interpolasyonu
   comingSoon?: boolean       // n8n karşılığı henüz yok → UI'da devre dışı
+  default_sequence?: SequenceStep[]  // drip sequence varsayılan adımları
 }
 
 // DB: org_workflows
@@ -77,11 +85,14 @@ export interface WorkflowRun {
   trigger_type: TriggerType
   trigger_ref_id: string | null
   status: 'pending' | 'running' | 'success' | 'failed' | 'no_answer' | 'cancelled'
+  sequence_step: number  // drip sequence adımı (default: 1)
   result: {
     call_duration_seconds?: number
     score?: number
     next_action?: string
     notes?: string
+    template?: string
+    step?: number
   }
   n8n_execution_id: string | null
   started_at: string | null
