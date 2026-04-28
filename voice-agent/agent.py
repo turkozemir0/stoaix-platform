@@ -15,10 +15,9 @@ import json
 import logging
 import os
 import re
+import time
 import urllib.parse
 from datetime import datetime, timedelta, timezone
-from typing import Annotated
-
 from dotenv import load_dotenv
 from prompt_rules import (
     PLATFORM_GUARDRAILS,
@@ -39,11 +38,17 @@ from livekit.agents import (
     BackgroundAudioPlayer,
     BuiltinAudioClip,
     JobContext,
-    RoomInputOptions,
     WorkerOptions,
     cli,
+    function_tool,
     llm,
 )
+from livekit.agents.voice import room_io
+
+try:
+    from livekit.agents import RunContext
+except ImportError:
+    from livekit.agents.voice import RunContext  # type: ignore
 from livekit.plugins import cartesia, deepgram, openai, anthropic, silero
 
 try:
@@ -846,11 +851,13 @@ def build_outbound_guardrails(lang: str, playbook: dict | None) -> str:
 # ── Agent sınıfı ───────────────────────────────────────────────────────────────
 
 class PlatformAgent(Agent):
-    def __init__(self, instructions: str, org_id: str, lang: str = "tr"):
-        super().__init__(instructions=instructions)
-        self.org_id      = org_id
-        self.lang        = lang
-        self._kb_queried = set()
+    def __init__(self, instructions: str, org_id: str, lang: str = "tr", tools: list | None = None):
+        super().__init__(instructions=instructions, tools=tools or [])
+        self.org_id        = org_id
+        self.lang          = lang
+        self._kb_queried   = set()
+        self._kb_cache     = {}    # {query_text: (result, timestamp)}
+        self._kb_cache_ttl = 120   # 2 dakika
 
     async def on_user_turn_completed(self, turn_ctx, new_message):
         user_text = ""
@@ -858,11 +865,29 @@ class PlatformAgent(Agent):
             c = new_message.content
             user_text = c if isinstance(c, str) else str(c)
 
-        if not user_text or user_text in self._kb_queried:
+        if not user_text:
             return
 
-        self._kb_queried.add(user_text)
+        # Cache kontrolü — aynı veya çok benzer sorguyu tekrar atma
+        now = time.time()
+        for cached_q, (cached_result, ts) in list(self._kb_cache.items()):
+            if now - ts > self._kb_cache_ttl:
+                del self._kb_cache[cached_q]
+                continue
+            words_new = set(user_text.lower().split())
+            words_cached = set(cached_q.lower().split())
+            if words_new and words_cached:
+                overlap = len(words_new & words_cached) / max(len(words_new), len(words_cached))
+                if overlap > 0.7:
+                    if cached_result:
+                        turn_ctx.add_message(
+                            role="system",
+                            content=f"[KB Bağlamı — Bu soruyla ilgili bilgi tabanı içeriği:]\n{cached_result}"
+                        )
+                    return
+
         kb_result = await vector_search_kb(self.org_id, user_text)
+        self._kb_cache[user_text] = (kb_result, now)
         if kb_result:
             turn_ctx.add_message(
                 role="system",
@@ -1963,85 +1988,94 @@ RULE: Never make up information not in the knowledge base.
     # ── Conversation aç ───────────────────────────────────────────────────────
     conv_id = await create_conversation(org_id, contact_id, lead_id, room_name)
 
-    # ── Tools ──────────────────────────────────────────────────────────────────
+    # ── Tools (function_tool pattern — v1.5+) ─────────────────────────────────
     _survey_run_id = meta.get("run_id", "")
-    fnc_ctx = None
+    tools_list = []
     needs_survey_tool = scenario == "satisfaction_survey"
-    if (calendar_enabled and calendar_adapter is not None) or needs_survey_tool:
-        fnc_ctx = llm.FunctionContext()
 
-        # ── Satisfaction survey save ───────────────────────────────────────
-        if needs_survey_tool:
-            @fnc_ctx.ai_callable(
-                description="Müşterinin verdiği puan ve yorumu kaydeder. "
-                            "Puan alındıktan sonra çağır."
-            )
-            async def save_survey_result(
-                score: Annotated[int, llm.TypeInfo(description="Memnuniyet puanı (1-5 arası tam sayı)")],
-                comment: Annotated[str, llm.TypeInfo(description="Müşterinin yorumu, yoksa boş bırak")] = "",
-            ) -> str:
+    # ── Satisfaction survey save ─────────────────────────────────────────
+    if needs_survey_tool:
+        @function_tool()
+        async def save_survey_result(
+            context: RunContext,
+            score: int,
+            comment: str = "",
+        ) -> str:
+            """Müşterinin verdiği puan ve yorumu kaydeder. Puan alındıktan sonra çağır.
+
+            Args:
+                score: Memnuniyet puanı (1-5 arası tam sayı)
+                comment: Müşterinin yorumu, yoksa boş bırak
+            """
+            try:
+                sb = get_supabase()
+                sb.table("satisfaction_surveys").insert({
+                    "organization_id": org_id,
+                    "contact_id":      contact_id,
+                    "run_id":          _survey_run_id or None,
+                    "score":           max(1, min(5, score)),
+                    "comment":         comment or None,
+                    "low_score_notified": False,
+                }).execute()
+                logger.info(f"satisfaction_survey saved — score: {score}, run: {_survey_run_id}")
+                return f"Puan kaydedildi: {score}/5. Teşekkürler."
+            except Exception as e:
+                logger.warning(f"save_survey_result failed: {e}")
+                return "Puan kaydedilemedi, ancak geri bildiriminiz için teşekkürler."
+        tools_list.append(save_survey_result)
+
+    # ── Calendar tools (only if calendar adapter is available) ────────────
+    if calendar_enabled and calendar_adapter is not None:
+        @function_tool()
+        async def check_availability(
+            context: RunContext,
+            date: str = "",
+        ) -> str:
+            """Müsait randevu saatlerini listeler. Kullanıcı randevu, görüşme veya müsait saat sorduğunda HEMEN çağır. book_appointment'tan ÖNCE mutlaka bu tool'u çağır.
+
+            Args:
+                date: Kontrol edilecek tarih, YYYY-MM-DD formatında. Belirtilmezse yakın 3 günü döndür.
+            """
+            slots = await calendar_adapter.get_free_slots(days=3)
+            if not slots:
+                return "TAKVİM_HATA: Takvime şu an erişemiyorum. Kullanıcıya ekibimizin en kısa sürede kendisini arayacağını söyle ve görüşmeyi nazikçe sonlandır."
+            return f"Müsait saatler:\n{slots}"
+
+        @function_tool()
+        async def book_appointment(
+            context: RunContext,
+            name: str,
+            phone: str,
+            datetime_str: str,
+            notes: str = "",
+        ) -> str:
+            """Randevu oluşturur. SADECE şu koşullar sağlandığında çağır: (1) ad ve telefon alınmış, (2) check_availability ile uygun saat belirlenmiş, (3) hasta randevu almak istediğini açıkça onaylamış.
+
+            Args:
+                name: Randevu sahibinin adı soyadı
+                phone: Telefon numarası, +90 ile başlayan format
+                datetime_str: Randevu tarihi ve saati, YYYY-MM-DDTHH:MM formatında
+                notes: Ek notlar veya özel istekler
+            """
+            result = await calendar_adapter.create_appointment(name, phone, datetime_str, notes)
+            if result["success"]:
+                sb = get_supabase()
                 try:
-                    sb = get_supabase()
-                    sb.table("satisfaction_surveys").insert({
-                        "organization_id": org_id,
-                        "contact_id":      contact_id,
-                        "run_id":          _survey_run_id or None,
-                        "score":           max(1, min(5, score)),
-                        "comment":         comment or None,
-                        "low_score_notified": False,
-                    }).execute()
-                    logger.info(f"satisfaction_survey saved — score: {score}, run: {_survey_run_id}")
-                    return f"Puan kaydedildi: {score}/5. Teşekkürler."
+                    await save_appointment_to_db(
+                        sb, org_id, contact_id, lead_id, conv_id,
+                        datetime_str, notes=notes,
+                        external_id=result.get("appointment_id"),
+                    )
+                    asyncio.create_task(create_appointment_reminders(
+                        org_id, contact_id, lead_id, conv_id, datetime_str
+                    ))
+                    return f"Randevunuz oluşturuldu: {name}, {datetime_str}. Onay bilgisi size iletilecektir."
                 except Exception as e:
-                    logger.warning(f"save_survey_result failed: {e}")
-                    return "Puan kaydedilemedi, ancak geri bildiriminiz için teşekkürler."
-
-        # ── Calendar tools (only if calendar adapter is available) ───────────
-        if calendar_enabled and calendar_adapter is not None:
-            @fnc_ctx.ai_callable(description=(
-                "Müsait randevu saatlerini listeler. "
-                "Kullanıcı randevu, görüşme veya müsait saat sorduğunda HEMEN çağır. "
-                "book_appointment'tan ÖNCE mutlaka bu tool'u çağır."
-            ))
-            async def check_availability(
-                date: Annotated[str, llm.TypeInfo(description="Kontrol edilecek tarih, YYYY-MM-DD formatında. Belirtilmezse yakın 3 günü döndür.")] = ""
-            ) -> str:
-                slots = await calendar_adapter.get_free_slots(days=3)
-                if not slots:
-                    return "TAKVİM_HATA: Takvime şu an erişemiyorum. Kullanıcıya ekibimizin en kısa sürede kendisini arayacağını söyle ve görüşmeyi nazikçe sonlandır."
-                return f"Müsait saatler:\n{slots}"
-
-            @fnc_ctx.ai_callable(description=(
-                "Randevu oluşturur. SADECE şu koşullar sağlandığında çağır: "
-                "(1) ad ve telefon alınmış, (2) check_availability ile uygun saat belirlenmiş, "
-                "(3) hasta randevu almak istediğini açıkça onaylamış. "
-                "Uygunluk kontrolü için bu tool'u DEĞİL check_availability'yi kullan."
-            ))
-            async def book_appointment(
-                name: Annotated[str, llm.TypeInfo(description="Randevu sahibinin adı soyadı")],
-                phone: Annotated[str, llm.TypeInfo(description="Telefon numarası, +90 ile başlayan format")],
-                datetime_str: Annotated[str, llm.TypeInfo(description="Randevu tarihi ve saati, YYYY-MM-DDTHH:MM formatında")],
-                notes: Annotated[str, llm.TypeInfo(description="Ek notlar veya özel istekler")] = "",
-            ) -> str:
-                result = await calendar_adapter.create_appointment(name, phone, datetime_str, notes)
-                if result["success"]:
-                    sb = get_supabase()
-                    try:
-                        # Save to appointments table (canonical DB source) — await for error propagation
-                        await save_appointment_to_db(
-                            sb, org_id, contact_id, lead_id, conv_id,
-                            datetime_str, notes=notes,
-                            external_id=result.get("appointment_id"),
-                        )
-                        # Reminder tasks fire-and-forget (opsiyonel, failure is non-blocking)
-                        asyncio.create_task(create_appointment_reminders(
-                            org_id, contact_id, lead_id, conv_id, datetime_str
-                        ))
-                        return f"Randevunuz oluşturuldu: {name}, {datetime_str}. Onay bilgisi size iletilecektir."
-                    except Exception as e:
-                        logger.error(f"book_appointment DB save failed: {e}")
-                        return "Kayıt hatası oluştu, lütfen tekrar deneyin."
-                return "Randevu oluşturulurken bir sorun oluştu. Lütfen tekrar deneyin veya bizi arayın."
+                    logger.error(f"book_appointment DB save failed: {e}")
+                    return "Kayıt hatası oluştu, lütfen tekrar deneyin."
+            return "Randevu oluşturulurken bir sorun oluştu. Lütfen tekrar deneyin veya bizi arayın."
+        tools_list.append(check_availability)
+        tools_list.append(book_appointment)
 
     # ── Session ───────────────────────────────────────────────────────────────
     CARTESIA_VOICES = {
@@ -2077,8 +2111,20 @@ RULE: Never make up information not in the knowledge base.
     STT_LANG_MAP = {"tr": "tr", "en": "en", "ar": "ar", "de": "de", "ru": "ru", "fr": "fr", "es": "es"}
     stt_language = STT_LANG_MAP.get(tts_lang, "tr")
 
+    # Klinik terminolojisi — Deepgram keyterm prompting ile TR doğruluğu artır
+    clinic_keywords = [
+        "implant:2", "veneer:2", "botoks:2", "rinoplasti:2",
+        "diş:1", "protez:1", "ortodonti:2", "zirkonyum:2",
+        "saç ekimi:2", "PRP:2", "mezoterapi:2",
+    ]
+
     session = AgentSession(
-        stt=deepgram.STT(model="nova-3", language=stt_language, endpointing_ms=300),
+        stt=deepgram.STT(
+            model="nova-3",
+            language=stt_language,
+            endpointing_ms=300,
+            keywords=clinic_keywords,
+        ),
         llm=llm_instance,
         tts=cartesia.TTS(
             model="sonic-3",
@@ -2095,7 +2141,6 @@ RULE: Never make up information not in the knowledge base.
         min_interruption_words=1,             # 1 kelime ile interrupt
         min_endpointing_delay=0.5,
         max_endpointing_delay=6.0,            # Türkçe uzun cümle desteği
-        **({"fnc_ctx": fnc_ctx} if fnc_ctx else {}),
     )
 
     call_start     = datetime.now(timezone.utc)
@@ -2145,9 +2190,16 @@ RULE: Never make up information not in the knowledge base.
                         break
 
     await session.start(
-        agent=PlatformAgent(instructions=system_prompt, org_id=org_id, lang=tts_lang),
+        agent=PlatformAgent(
+            instructions=system_prompt,
+            org_id=org_id,
+            lang=tts_lang,
+            tools=tools_list if tools_list else None,
+        ),
         room=ctx.room,
-        room_input_options=RoomInputOptions(noise_cancellation=True),
+        room_options=room_io.RoomOptions(
+            audio_input=room_io.AudioInputOptions(noise_cancellation=True),
+        ),
     )
 
     # ── Mic hemen kapat — session.start ile opening arasındaki gürültüyü engelle
@@ -2204,51 +2256,28 @@ async def _save_all(
     conv_id, intake, handoff_reason, room_name,
     run_id=None, callback_url=None, lang="tr", org_lang="tr",
 ):
-    """Çağrı bittikten sonra tüm DB yazımlarını sırayla yap."""
+    """Çağrı bittikten sonra: immediate saves + callback hemen, extraction background'da."""
     duration = int((datetime.now(timezone.utc) - call_start).total_seconds())
+    has_extraction = bool(lead_id and intake)
 
-    # 1. Messages
+    # ── IMMEDIATE: Messages + conversation status ─────────────────────────────
     await save_messages(conv_id, org_id, transcript)
 
-    # 2. Collected data çıkar (call language), AI özet üret (org language for dashboard)
-    collected_data = {}
-    missing_fields = []
-    summary        = ""
-    if lead_id and intake:
-        collected_data = await extract_collected_data(transcript, intake, lang)
-        summary        = await generate_call_summary(transcript, collected_data, org_id, org_lang)
-        await update_lead_data(lead_id, intake, collected_data, summary)
-        must_keys      = {f["key"] for f in intake if f.get("priority") == "must"}
-        missing_fields = [k for k in must_keys if not collected_data.get(k)]
-
-    # 3. Handoff log
     if handoff_reason:
-        ai_summary_for_handoff = await generate_call_summary(transcript, collected_data, org_id, org_lang)
-        summary = ai_summary_for_handoff or \
-            f"Handoff tetiklendi ({handoff_reason}). Süre: {duration}s. Özet üretilemedi."
-        await save_handoff(
-            org_id=org_id,
-            lead_id=lead_id,
-            conv_id=conv_id,
-            trigger_reason=handoff_reason,
-            summary=summary,
-            collected_data=collected_data,
-            missing_fields=missing_fields,
-        )
         if conv_id:
-            get_supabase().table("conversations").update({"status": "handed_off"}).eq("id", conv_id).execute()
+            try:
+                get_supabase().table("conversations").update({"status": "handed_off"}).eq("id", conv_id).execute()
+            except Exception as e:
+                logger.warning(f"conversation handoff update failed: {e}")
     else:
-        # 4. Conversation kapat
         if conv_id:
             await close_conversation(conv_id)
 
-    # 5. Voice call kaydet — debug metadata ile
+    # ── IMMEDIATE: Voice call kaydet (extraction pending) ─────────────────────
     call_metadata = {
         "livekit_room":       room_name,
-        "extraction_status":  "failed" if collected_data.get("_extraction_failed") else "ok",
-        "extraction_error":   collected_data.get("_error"),
-        "summary_generated":  bool(summary),
-        "save_version":       "v2",
+        "extraction_status":  "pending" if has_extraction else "n/a",
+        "save_version":       "v3",
     }
     await save_call(
         org_id=org_id,
@@ -2264,11 +2293,7 @@ async def _save_all(
         metadata=call_metadata,
     )
 
-    logger.info(f"All data saved — duration: {duration}s, handoff: {handoff_reason}")
-
-    # ── Workflow engine callback ───────────────────────────────────────────────
-    # Eğer bu çağrı bir workflow_run tarafından tetiklendiyse sonucu bildir.
-    # < 15 saniye = cevap alınamadı (no_answer); ≥ 15 saniye = başarılı görüşme.
+    # ── IMMEDIATE: Workflow callback (extraction beklenmeden) ─────────────────
     if run_id and callback_url:
         call_status = "no_answer" if duration < 15 else "success"
         cb_payload = json.dumps({
@@ -2289,6 +2314,65 @@ async def _save_all(
             logger.info(f"Workflow callback sent: {call_status} for run {run_id}")
         except Exception as e:
             logger.warning(f"Workflow callback failed: {e}")
+
+    logger.info(f"Immediate save done — duration: {duration}s, handoff: {handoff_reason}")
+
+    # ── BACKGROUND: Extraction + summary (2-6s LLM çağrıları) ────────────────
+    if has_extraction:
+        asyncio.create_task(_extract_and_update(
+            org_id=org_id, lead_id=lead_id, conv_id=conv_id,
+            transcript=transcript, intake=intake,
+            handoff_reason=handoff_reason,
+            room_name=room_name, lang=lang, org_lang=org_lang,
+            duration=duration,
+        ))
+
+
+async def _extract_and_update(
+    org_id, lead_id, conv_id, transcript, intake,
+    handoff_reason, room_name, lang, org_lang, duration,
+):
+    """Background: LLM extraction + summary + lead update. Callback zaten gönderildi."""
+    try:
+        collected_data = await extract_collected_data(transcript, intake, lang)
+        summary = await generate_call_summary(transcript, collected_data, org_id, org_lang)
+        await update_lead_data(lead_id, intake, collected_data, summary)
+
+        must_keys = {f["key"] for f in intake if f.get("priority") == "must"}
+        missing_fields = [k for k in must_keys if not collected_data.get(k)]
+
+        if handoff_reason:
+            await save_handoff(
+                org_id=org_id,
+                lead_id=lead_id,
+                conv_id=conv_id,
+                trigger_reason=handoff_reason,
+                summary=summary or f"Handoff tetiklendi ({handoff_reason}). Süre: {duration}s.",
+                collected_data=collected_data,
+                missing_fields=missing_fields,
+            )
+
+        # Voice call metadata güncelle — extraction sonucu
+        extraction_status = "failed" if collected_data.get("_extraction_failed") else "ok"
+        try:
+            sb = get_supabase()
+            sb.table("voice_calls").update({
+                "metadata": {
+                    "livekit_room":       room_name,
+                    "extraction_status":  extraction_status,
+                    "extraction_error":   collected_data.get("_error"),
+                    "summary_generated":  bool(summary),
+                    "save_version":       "v3",
+                },
+            }).eq("organization_id", org_id).eq(
+                "livekit_room_name", room_name
+            ).execute()
+        except Exception as e:
+            logger.warning(f"voice_calls metadata update failed: {e}")
+
+        logger.info(f"Extraction completed — room: {room_name}, status: {extraction_status}")
+    except Exception as e:
+        logger.error(f"Background extraction failed — room: {room_name}: {e}", exc_info=True)
 
 
 # ── Başlat ─────────────────────────────────────────────────────────────────────
