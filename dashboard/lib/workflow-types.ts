@@ -127,6 +127,9 @@ export interface TemplateWithStatus extends WorkflowTemplate {
   config: Record<string, any>
   channel_ready: boolean         // entegrasyon kurulu mu
   missing_channels: string[]     // eksik kanallar: ['WhatsApp', 'Ses (Giden)']
+  today_runs?: number            // bugün çalıştırılan sayı
+  success_rate?: number          // son 7 gün başarı oranı (0-100)
+  last_run_at?: string | null    // en son çalışma zamanı
 }
 
 // n8n webhook payload (Dashboard → n8n)

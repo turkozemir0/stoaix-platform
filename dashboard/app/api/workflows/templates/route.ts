@@ -45,12 +45,64 @@ export async function GET() {
     orgWorkflows.map(w => [w.template_id, w])
   )
 
+  // Fetch run stats for active workflows
+  const activeWorkflowIds = orgWorkflows.filter(w => w.is_active).map(w => w.id)
+  let runStatsMap: Record<string, { today_runs: number; success_rate: number; last_run_at: string | null }> = {}
+
+  if (activeWorkflowIds.length > 0) {
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+    const [todayRes, weekRes] = await Promise.all([
+      service
+        .from('workflow_runs')
+        .select('org_workflow_id, id')
+        .in('org_workflow_id', activeWorkflowIds)
+        .gte('created_at', todayStart),
+      service
+        .from('workflow_runs')
+        .select('org_workflow_id, status, created_at')
+        .in('org_workflow_id', activeWorkflowIds)
+        .gte('created_at', sevenDaysAgo),
+    ])
+
+    const todayRuns = todayRes.data ?? []
+    const weekRuns = weekRes.data ?? []
+
+    // Aggregate today counts
+    const todayCounts: Record<string, number> = {}
+    for (const r of todayRuns) {
+      todayCounts[r.org_workflow_id] = (todayCounts[r.org_workflow_id] ?? 0) + 1
+    }
+
+    // Aggregate week success rate + last run
+    const weekAgg: Record<string, { total: number; success: number; lastAt: string | null }> = {}
+    for (const r of weekRuns) {
+      if (!weekAgg[r.org_workflow_id]) weekAgg[r.org_workflow_id] = { total: 0, success: 0, lastAt: null }
+      const agg = weekAgg[r.org_workflow_id]
+      agg.total++
+      if (r.status === 'success') agg.success++
+      if (!agg.lastAt || r.created_at > agg.lastAt) agg.lastAt = r.created_at
+    }
+
+    for (const wfId of activeWorkflowIds) {
+      const agg = weekAgg[wfId]
+      runStatsMap[wfId] = {
+        today_runs: todayCounts[wfId] ?? 0,
+        success_rate: agg && agg.total > 0 ? Math.round((agg.success / agg.total) * 100) : 0,
+        last_run_at: agg?.lastAt ?? null,
+      }
+    }
+  }
+
   // Build response with plan_allowed + channel_ready for each template
   const results: TemplateWithStatus[] = await Promise.all(
     WORKFLOW_TEMPLATES.map(async (template) => {
       const ent = await checkEntitlement(orgId, template.required_feature)
       const existing = workflowByTemplateId[template.id]
       const channelCheck = checkChannelReadyFromConfig(channelConfig, template.channel)
+      const stats = existing?.id ? runStatsMap[existing.id] : undefined
       return {
         ...template,
         plan_allowed:       ent.enabled,
@@ -59,6 +111,9 @@ export async function GET() {
         config:             existing?.config ?? {},
         channel_ready:      channelCheck.ready,
         missing_channels:   channelCheck.missing,
+        today_runs:         stats?.today_runs,
+        success_rate:       stats?.success_rate,
+        last_run_at:        stats?.last_run_at ?? null,
       }
     })
   )
