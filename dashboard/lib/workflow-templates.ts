@@ -347,15 +347,13 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
         ],
       },
       { key: 'offer_text',       label: 'Özel teklif metni (isteğe bağlı)',   type: 'text',   default: '' },
-      { key: 'message_template', label: 'WhatsApp Template', type: 'template_picker', default: '', description: 'Meta\'da onaylı template seçin', template_purpose: 'reengagement' },
     ],
     steps_summary: [
       '{{inactive_days}} gün hareketsiz + import edilen lead\'lere WA mesajı',
       '{{working_hours_start}}–{{working_hours_end}} saatleri arasında çalışır',
       'Günlük maks {{daily_limit}}, gün içine dengeli dağıtılır',
       'Cooldown: {{cooldown_days}} gün — aynı kişiye tekrar gönderilmez',
-      'Template: {{message_template}}',
-      'Sequence: 5 adıma kadar artan aralıklı takip (cevap gelince durur)',
+      'Mesaj sırası: her adımda farklı template, cevap gelince durur',
     ],
     default_sequence: [
       { step: 1, template: '', param_count: 1, delay_days: 0 },

@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { X, Loader2, Zap, AlertCircle, Info, ExternalLink, Send, ChevronDown, ChevronUp } from 'lucide-react'
-import type { TemplateWithStatus, ConfigField } from '@/lib/workflow-types'
+import { X, Loader2, Zap, AlertCircle, Info, ExternalLink, Send, ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react'
+import type { TemplateWithStatus, ConfigField, SequenceStep } from '@/lib/workflow-types'
 import { PURPOSE_LABELS, LANGUAGE_LABELS } from '@/lib/template-purpose-config'
 
 interface OrgTemplate {
@@ -418,6 +418,137 @@ function ConfigFieldInput({
   )
 }
 
+// ─── SequenceEditor ─────────────────────────────────────────────────────────
+
+function SequenceEditor({
+  steps,
+  onChange,
+  orgTemplates,
+  templatesLoading,
+  maxSteps = 5,
+}: {
+  steps: SequenceStep[]
+  onChange: (steps: SequenceStep[]) => void
+  orgTemplates: OrgTemplate[]
+  templatesLoading: boolean
+  maxSteps?: number
+}) {
+  const approvedTemplates = orgTemplates.filter(t => t.status === 'approved')
+  // Show reengagement purpose first, then the rest
+  const sortedTemplates = [
+    ...approvedTemplates.filter(t => t.purpose === 'reengagement'),
+    ...approvedTemplates.filter(t => t.purpose !== 'reengagement'),
+  ]
+
+  function updateStep(index: number, patch: Partial<SequenceStep>) {
+    const next = steps.map((s, i) => i === index ? { ...s, ...patch } : s)
+    onChange(next)
+  }
+
+  function removeStep(index: number) {
+    const next = steps
+      .filter((_, i) => i !== index)
+      .map((s, i) => ({ ...s, step: i + 1 }))
+    onChange(next)
+  }
+
+  function addStep() {
+    const lastDelay = steps.length > 0 ? steps[steps.length - 1].delay_days : 0
+    const newDelay = lastDelay > 0 ? lastDelay * 2 : 7
+    onChange([...steps, { step: steps.length + 1, template: '', param_count: 1, delay_days: newDelay }])
+  }
+
+  return (
+    <div className="space-y-3">
+      <label className="block text-xs font-medium text-slate-600">Mesaj Sırası</label>
+
+      {steps.map((step, i) => (
+        <div key={i} className="border border-slate-200 rounded-lg p-3 bg-slate-50 space-y-2">
+          {/* Step header row */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 w-5 h-5 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-[11px] font-bold">
+                {step.step}
+              </span>
+              {i === 0 ? (
+                <span className="text-xs text-slate-500">Hemen gönderilir</span>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={1}
+                    value={step.delay_days}
+                    onChange={e => updateStep(i, { delay_days: Math.max(1, Number(e.target.value)) })}
+                    className="w-14 border border-slate-200 rounded-md px-2 py-1 text-xs text-center focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <span className="text-xs text-slate-500">gün sonra</span>
+                </div>
+              )}
+            </div>
+            {i > 0 && (
+              <button
+                type="button"
+                onClick={() => removeStep(i)}
+                className="text-slate-400 hover:text-red-500 transition-colors p-1"
+                title="Adımı sil"
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
+          </div>
+
+          {/* Template dropdown */}
+          {templatesLoading ? (
+            <div className="h-8 w-full rounded-md bg-slate-100 animate-pulse" />
+          ) : sortedTemplates.length > 0 ? (
+            <select
+              value={step.template}
+              onChange={e => {
+                const name = e.target.value
+                const tpl = sortedTemplates.find(t => t.name === name)
+                updateStep(i, { template: name, param_count: getParamCount(tpl?.components ?? null) })
+              }}
+              className="w-full border border-slate-200 rounded-md px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+            >
+              <option value="">-- Template seçin --</option>
+              {sortedTemplates.map(t => (
+                <option key={t.id} value={t.name}>
+                  {t.name}{t.purpose === 'reengagement' ? ' ★' : ''}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="text-[11px] text-slate-400">
+              Onaylı template yok.{' '}
+              <a href="/dashboard/templates" className="underline hover:text-slate-600">Oluşturun</a>
+            </p>
+          )}
+
+          {/* Warning if no template selected */}
+          {!step.template && (
+            <div className="flex items-center gap-1.5 text-[11px] text-amber-600">
+              <AlertCircle size={11} className="shrink-0" />
+              Template seçilmezse bu adım atlanır
+            </div>
+          )}
+        </div>
+      ))}
+
+      {/* Add step button */}
+      {steps.length < maxSteps && (
+        <button
+          type="button"
+          onClick={addStep}
+          className="flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-700 font-medium transition-colors"
+        >
+          <Plus size={13} />
+          Adım Ekle
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ─── ActivateModal ──────────────────────────────────────────────────────────
 
 export default function ActivateModal({ template, orgSector, orgLang, onClose, onSaved }: Props) {
@@ -466,8 +597,16 @@ export default function ActivateModal({ template, orgSector, orgLang, onClose, o
     setConfig(prev => ({ ...prev, [key]: value }))
   }
 
+  const hasSequence = Boolean((template as any).default_sequence || config.sequence)
+
   // Check if save should be enabled
   function canSave(): boolean {
+    // Sequence check: at least step 1 must have a template
+    if (hasSequence && Array.isArray(config.sequence)) {
+      const step1 = config.sequence[0]
+      if (!step1?.template) return false
+    }
+
     const templateFields = template.config_fields.filter(f => f.type === 'template_picker')
     for (const field of templateFields) {
       const val = config[field.key]
@@ -556,6 +695,16 @@ export default function ActivateModal({ template, orgSector, orgLang, onClose, o
             ))
           ) : (
             <p className="text-sm text-slate-500">Bu workflow için ek konfigürasyon gerekmez.</p>
+          )}
+
+          {/* Sequence editor for drip workflows */}
+          {hasSequence && Array.isArray(config.sequence) && (
+            <SequenceEditor
+              steps={config.sequence}
+              onChange={seq => handleChange('sequence', seq)}
+              orgTemplates={orgTemplates}
+              templatesLoading={templatesLoading}
+            />
           )}
         </div>
 
