@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabase } from '@supabase/supabase-js'
-import { checkEntitlement } from '@/lib/entitlements'
-import { FEATURE_METRIC_MAP } from '@/lib/entitlements/registry'
+import { checkAllEntitlements } from '@/lib/entitlements'
 
 function getServiceClient() {
   return createSupabase(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -31,16 +30,8 @@ export async function GET() {
     .eq('organization_id', orgId)
     .maybeSingle()
 
-  // Tüm feature'ları kontrol et
-  const featureKeys = Object.keys(FEATURE_METRIC_MAP)
-  const entitlements: Record<string, any> = {}
-
-  await Promise.all(
-    featureKeys.map(async (key) => {
-      const ent = await checkEntitlement(orgId, key)
-      entitlements[key] = ent
-    })
-  )
+  // Tüm feature'ları tek seferde kontrol et (~4 sorgu vs ~115)
+  const entitlements = await checkAllEntitlements(orgId)
 
   return NextResponse.json({
     plan_id: sub?.plan_id ?? null,       // null = henüz plan seçilmemiş (legacy değil)
