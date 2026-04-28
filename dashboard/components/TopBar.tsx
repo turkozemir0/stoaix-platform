@@ -27,7 +27,7 @@ export default function TopBar({ title, subtitle, searchPlaceholder, onSearch, p
                 type="text"
                 placeholder={searchPlaceholder ?? 'Ara...'}
                 onChange={onSearch ? (e => onSearch(e.target.value)) : undefined}
-                readOnly={!onSearch}
+
                 className="w-56 pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl bg-white/70 focus:outline-none focus:ring-2 focus:ring-brand-400/40 placeholder:text-slate-400"
               />
               <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-300 font-mono hidden lg:inline">⌘K</kbd>

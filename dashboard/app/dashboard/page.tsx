@@ -146,7 +146,7 @@ export default async function DashboardPage() {
             className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-brand-500 to-sky-400 hover:from-brand-600 hover:to-sky-500 text-white text-sm font-semibold rounded-xl transition-all shadow-sm"
           >
             <Plus size={16} />
-            Add Lead
+            {lang === 'tr' ? 'Müşteri Kayıt' : 'Add Lead'}
           </Link>
         }
       />
