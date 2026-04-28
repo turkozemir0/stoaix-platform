@@ -49,7 +49,7 @@ const STATUS_LABELS: Record<LeadStatus, string> = {
   qualified: 'Randevu', converted: 'Dönüştü', lost: 'Kayıp',
 }
 
-const PAGE_SIZE = 30
+const PAGE_SIZE = 20
 
 function ScoreBadge({ score }: { score: number }) {
   const color =
