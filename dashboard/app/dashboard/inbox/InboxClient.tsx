@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { MessageSquare, Phone, Instagram, Send, RefreshCw, Bot, User, Search, Loader2, Sparkles, PhoneCall, CalendarPlus } from 'lucide-react'
+import { MessageSquare, Phone, Instagram, Send, RefreshCw, Bot, User, Search, Loader2, Sparkles, CalendarPlus } from 'lucide-react'
 import { useIsDemo } from '@/lib/demo-context'
 import Avatar from '@/components/Avatar'
 import ChannelBadge from '@/components/ChannelBadge'
@@ -723,13 +723,9 @@ export default function InboxClient({ orgId, lang, currentUserId, userRole }: Pr
 
               {/* Action buttons */}
               <div className="flex gap-2 mt-4">
-                <button className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-medium rounded-lg transition-colors">
-                  <PhoneCall size={13} />
-                  {lang === 'tr' ? 'Ara' : 'Call'}
-                </button>
-                <button className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-medium rounded-lg transition-colors">
+                <button className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-brand-500 to-sky-400 hover:from-brand-600 hover:to-sky-500 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm">
                   <CalendarPlus size={13} />
-                  {lang === 'tr' ? 'Randevu' : 'Book'}
+                  {lang === 'tr' ? 'Randevu' : 'Book Slot'}
                 </button>
               </div>
             </div>

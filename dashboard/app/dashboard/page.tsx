@@ -9,6 +9,7 @@ import Avatar from '@/components/Avatar'
 import ChannelBadge from '@/components/ChannelBadge'
 import Card from '@/components/Card'
 import TopBar from '@/components/TopBar'
+import GlobalSearch from '@/components/GlobalSearch'
 import { getT } from '@/lib/i18n'
 import { cookies } from 'next/headers'
 import { formatDuration } from '@/lib/types'
@@ -139,15 +140,17 @@ export default async function DashboardPage() {
       <TopBar
         title={t.dashboardTitle}
         subtitle={lang === 'tr' ? 'Genel performans özeti' : 'Performance overview'}
-        searchPlaceholder={lang === 'tr' ? 'Ara, lead bul, ayar...' : 'Search leads, settings...'}
         primaryCta={
-          <Link
-            href="/dashboard/crm"
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-brand-500 to-sky-400 hover:from-brand-600 hover:to-sky-500 text-white text-sm font-semibold rounded-xl transition-all shadow-sm"
-          >
-            <Plus size={16} />
-            {lang === 'tr' ? 'Müşteri Kayıt' : 'Add Lead'}
-          </Link>
+          <div className="flex items-center gap-3">
+            <GlobalSearch />
+            <Link
+              href="/dashboard/crm"
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-brand-500 to-sky-400 hover:from-brand-600 hover:to-sky-500 text-white text-sm font-semibold rounded-xl transition-all shadow-sm"
+            >
+              <Plus size={16} />
+              {lang === 'tr' ? 'Müşteri Kayıt' : 'Add Lead'}
+            </Link>
+          </div>
         }
       />
 
