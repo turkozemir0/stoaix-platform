@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Save, Loader2, Send, CheckCircle2, Calendar } from 'lucide-react'
+import { X, Save, Loader2, Send, CheckCircle2, Calendar, Copy, Check, Eye, EyeOff, Globe } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,6 +50,13 @@ interface VoiceLanguageConfig {
   language?: string
 }
 
+interface WebsiteFormsConfig {
+  active: boolean
+  api_key?: string
+  default_country_code?: string
+  field_mapping?: Record<string, string>
+}
+
 interface ChannelConfig {
   voice_inbound:  VoiceInboundConfig
   voice_outbound: VoiceOutboundConfig
@@ -57,6 +64,7 @@ interface ChannelConfig {
   whatsapp:       WhatsAppChannelConfig
   instagram:      { active: boolean; provider?: string; credentials?: Record<string, string> }
   calendar?:      CalendarConfig
+  website_forms?: WebsiteFormsConfig
 }
 
 interface CrmConfig {
@@ -144,11 +152,29 @@ const VOICE_LANGUAGES_ADVANCED = [
 
 const MULTILANG_PLANS = new Set(['business', 'custom', 'legacy'])
 
+const FORM_MAPPING_TARGETS = [
+  { value: '', label: '— Seç —' },
+  { value: 'full_name', label: 'Ad Soyad' },
+  { value: 'phone', label: 'Telefon' },
+  { value: 'email', label: 'E-posta' },
+  { value: 'city', label: 'Şehir' },
+  { value: 'country', label: 'Ülke' },
+]
+
+const FORM_CC_OPTIONS = [
+  { code: '90',  label: 'TR (+90)' },
+  { code: '49',  label: 'DE (+49)' },
+  { code: '1',   label: 'US/CA (+1)' },
+  { code: '44',  label: 'UK (+44)' },
+  { code: '971', label: 'AE (+971)' },
+]
+
 const TABS = [
   { key: 'channels',  label: 'Kanallar & Mesajlaşma' },
   { key: 'sip',       label: 'Ses / SIP' },
   { key: 'crm',       label: 'Dış CRM' },
   { key: 'calendar',  label: 'Randevu / Takvim' },
+  { key: 'forms',     label: 'Web Formları' },
 ] as const
 
 // ─── Small components ─────────────────────────────────────────────────────────
@@ -209,7 +235,7 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
   const [loading, setLoading]     = useState(true)
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
-  const [activeTab, setActiveTab] = useState<'channels' | 'sip' | 'crm' | 'calendar'>('channels')
+  const [activeTab, setActiveTab] = useState<'channels' | 'sip' | 'crm' | 'calendar' | 'forms'>('channels')
 
   // ── Channels state ──
   const [waActive, setWaActive]       = useState(false)
@@ -263,6 +289,14 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
   const [calDsApiKey, setCalDsApiKey]               = useState('')
   const [calDsClinicId, setCalDsClinicId]           = useState('')
 
+  // ── Web Forms state ──
+  const [formsActive, setFormsActive]           = useState(false)
+  const [formsApiKey, setFormsApiKey]           = useState('')
+  const [formsDefaultCC, setFormsDefaultCC]     = useState('90')
+  const [formsMapping, setFormsMapping]         = useState<{ formField: string; target: string }[]>([{ formField: '', target: '' }])
+  const [formsShowKey, setFormsShowKey]         = useState(false)
+  const [formsCopied, setFormsCopied]           = useState(false)
+
   // ── Load ──
   useEffect(() => {
     fetch(`/api/admin/orgs/${orgId}`).then(r => r.json()).then((data: OrgDetail) => {
@@ -311,6 +345,14 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
       setCalDsApiUrl(cal?.api_url ?? '')
       setCalDsApiKey(cal?.api_key ?? '')
       setCalDsClinicId(cal?.clinic_id ?? '')
+
+      // website forms
+      const wf = cc.website_forms as WebsiteFormsConfig | undefined
+      setFormsActive(wf?.active ?? false)
+      setFormsApiKey(wf?.api_key ?? '')
+      setFormsDefaultCC(wf?.default_country_code ?? '90')
+      const fmRows = Object.entries(wf?.field_mapping ?? {}).map(([formField, target]) => ({ formField, target }))
+      setFormsMapping(fmRows.length > 0 ? fmRows : [{ formField: '', target: '' }])
 
       // crm
       const crm = (data.crm_config ?? { provider: 'none' }) as CrmConfig
@@ -420,6 +462,18 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
     const currentData = await currentRes.json()
     const existingCC = (currentData.channel_config ?? {}) as any
 
+    // Build website_forms config — preserve api_key from existing
+    const formsFieldMapping: Record<string, string> = {}
+    for (const m of formsMapping) {
+      if (m.formField.trim() && m.target) formsFieldMapping[m.formField.trim()] = m.target
+    }
+    const websiteFormsConfig: WebsiteFormsConfig = {
+      active: formsActive,
+      api_key: formsApiKey || existingCC.website_forms?.api_key || undefined,
+      default_country_code: formsDefaultCC,
+      field_mapping: Object.keys(formsFieldMapping).length > 0 ? formsFieldMapping : (existingCC.website_forms?.field_mapping ?? {}),
+    }
+
     const channelConfig: ChannelConfig = {
       voice_inbound:  voiceInbound,
       voice_outbound: voiceOutbound,
@@ -435,6 +489,7 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
             calendar_id: calCalendarId.trim() || 'primary',
           }
         : calendarConfig,
+      website_forms: websiteFormsConfig,
     }
 
     let crmConfig: CrmConfig = { provider: 'none' }
@@ -831,6 +886,101 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
                       <Field label="API Key" value={calDsApiKey} onChange={setCalDsApiKey} placeholder="Bearer token..." />
                       <Field label="Klinik ID" value={calDsClinicId} onChange={setCalDsClinicId} placeholder="klinik_id" />
                     </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── FORMS TAB ── */}
+              {activeTab === 'forms' && (
+                <div className="space-y-5">
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-xs text-slate-500">
+                    Website form webhook ile müşteri web sitesindeki formlar platforma bağlanır. Form gönderildiğinde otomatik lead oluşturulur.
+                  </div>
+
+                  {/* Active toggle */}
+                  <div>
+                    <SectionLabel>Durum</SectionLabel>
+                    <div className="flex items-center justify-between p-3.5 border border-slate-100 rounded-xl">
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">Web Form Webhook</p>
+                        <p className="text-xs text-slate-400">Form gönderimlerini otomatik lead'e dönüştür</p>
+                      </div>
+                      <Toggle active={formsActive} onToggle={() => setFormsActive(v => !v)} />
+                    </div>
+                  </div>
+
+                  {formsActive && (
+                    <>
+                      {/* API Key */}
+                      <div>
+                        <SectionLabel>API Anahtarı</SectionLabel>
+                        {formsApiKey ? (
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                              <code className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-600 truncate">
+                                {formsShowKey ? formsApiKey : formsApiKey.slice(0, 8) + '••••••••' + formsApiKey.slice(-4)}
+                              </code>
+                              <button type="button" onClick={() => setFormsShowKey(v => !v)} className="p-1.5 text-slate-400 hover:text-slate-600">
+                                {formsShowKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                              </button>
+                              <button type="button" onClick={() => { navigator.clipboard.writeText(formsApiKey); setFormsCopied(true); setTimeout(() => setFormsCopied(false), 2000) }}
+                                className="p-1.5 text-slate-400 hover:text-slate-600">
+                                {formsCopied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                              </button>
+                            </div>
+                            <p className="text-xs text-slate-400">
+                              Webhook URL: <code className="font-mono">https://platform.stoaix.com/api/public/form-submit</code>
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-500 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                            API anahtarı henüz oluşturulmamış. Müşteri Dashboard → Ayarlar → Form Webhook sekmesinden oluşturabilir.
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Default Country Code */}
+                      <div>
+                        <SectionLabel>Varsayılan Ülke Kodu</SectionLabel>
+                        <select value={formsDefaultCC} onChange={e => setFormsDefaultCC(e.target.value)}
+                          className="w-48 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500">
+                          {FORM_CC_OPTIONS.map(cc => (
+                            <option key={cc.code} value={cc.code}>{cc.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Field Mapping */}
+                      <div>
+                        <SectionLabel>Alan Eşleştirme</SectionLabel>
+                        <div className="space-y-2">
+                          {formsMapping.map((m, i) => (
+                            <div key={i} className="flex items-center gap-2">
+                              <input value={m.formField} onChange={e => setFormsMapping(prev => prev.map((r, j) => j === i ? { ...r, formField: e.target.value } : r))}
+                                placeholder="Form alan adı"
+                                className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                              <span className="text-slate-300 text-sm">→</span>
+                              <select value={m.target} onChange={e => setFormsMapping(prev => prev.map((r, j) => j === i ? { ...r, target: e.target.value } : r))}
+                                className="w-32 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500">
+                                {FORM_MAPPING_TARGETS.map(t => (
+                                  <option key={t.value} value={t.value}>{t.label}</option>
+                                ))}
+                              </select>
+                              {formsMapping.length > 1 && (
+                                <button type="button" onClick={() => setFormsMapping(prev => prev.filter((_, j) => j !== i))}
+                                  className="p-1 text-slate-400 hover:text-red-500">
+                                  <X size={14} />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        <button type="button" onClick={() => setFormsMapping(prev => [...prev, { formField: '', target: '' }])}
+                          className="text-xs text-brand-600 hover:text-brand-700 mt-2 font-medium">
+                          + Eşleştirme Ekle
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
               )}

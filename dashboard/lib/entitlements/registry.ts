@@ -34,6 +34,7 @@ export const FEATURE_METRIC_MAP: Record<string, string | null> = {
   workflow_satisfaction:      null,
   workflow_reactivation:      'reactivation_lead_count',
   workflow_payment_followup:  null,
+  website_form_webhook:       null,
 }
 
 export function featureKeyToMetric(featureKey: string): string | null {

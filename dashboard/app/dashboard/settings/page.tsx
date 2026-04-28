@@ -5,7 +5,7 @@ import {
   Settings, Loader2, Lock, ToggleLeft, ToggleRight, CreditCard,
   Check, X, Zap, Star, Building2, Rocket,
   Plus, ChevronDown, LifeBuoy, Download, RefreshCw,
-  XCircle, Calendar,
+  XCircle, Calendar, Globe, Copy, Eye, EyeOff, Trash2, TestTube2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
@@ -1028,21 +1028,388 @@ function SupportSection() {
   )
 }
 
+// ─── Form Webhook Section ─────────────────────────────────────────────────────
+
+interface WebhookConfig {
+  active: boolean
+  api_key: string | null
+  default_country_code: string
+  field_mapping: Record<string, string>
+  webhook_url: string
+}
+
+interface MappingRow {
+  formField: string
+  target: string
+}
+
+const MAPPING_TARGETS = [
+  { value: '', label: '— Seç —' },
+  { value: 'full_name', label: 'Ad Soyad' },
+  { value: 'phone', label: 'Telefon' },
+  { value: 'email', label: 'E-posta' },
+  { value: 'city', label: 'Şehir' },
+  { value: 'country', label: 'Ülke' },
+]
+
+const CC_OPTIONS = [
+  { code: '90',  label: 'TR (+90)' },
+  { code: '49',  label: 'DE (+49)' },
+  { code: '7',   label: 'RU (+7)' },
+  { code: '1',   label: 'US/CA (+1)' },
+  { code: '44',  label: 'UK (+44)' },
+  { code: '33',  label: 'FR (+33)' },
+  { code: '971', label: 'AE (+971)' },
+  { code: '966', label: 'SA (+966)' },
+]
+
+function FormWebhookSection() {
+  const isDemo = useIsDemo()
+  const [config, setConfig] = useState<WebhookConfig | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [showKey, setShowKey] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
+  const [mappings, setMappings] = useState<MappingRow[]>([])
+  const [defaultCC, setDefaultCC] = useState('90')
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+
+  useEffect(() => {
+    fetch('/api/settings/form-webhook')
+      .then(r => r.ok ? r.json() : null)
+      .then((data: WebhookConfig | null) => {
+        if (data) {
+          setConfig(data)
+          setDefaultCC(data.default_country_code || '90')
+          const rows = Object.entries(data.field_mapping || {}).map(([formField, target]) => ({ formField, target }))
+          setMappings(rows.length > 0 ? rows : [{ formField: '', target: '' }])
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function handleGenerate(regenerate = false) {
+    if (isDemo) return
+    setSaving(true)
+    try {
+      const fieldMapping: Record<string, string> = {}
+      for (const m of mappings) {
+        if (m.formField.trim() && m.target) fieldMapping[m.formField.trim()] = m.target
+      }
+      const res = await fetch('/api/settings/form-webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ regenerate_key: regenerate, field_mapping: fieldMapping, default_country_code: defaultCC }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setConfig(data)
+        setShowKey(true)
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDeactivate() {
+    if (isDemo) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/settings/form-webhook', { method: 'DELETE' })
+      if (res.ok) setConfig(prev => prev ? { ...prev, active: false } : prev)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleTest() {
+    if (!config?.api_key || !config?.webhook_url) return
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await fetch(config.webhook_url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': config.api_key },
+        body: JSON.stringify({ name: 'Test Kullanıcı', phone: '05551234567', email: 'test@test.com', mesaj: 'Form webhook test' }),
+      })
+      const data = await res.json()
+      setTestResult(data.success
+        ? { success: true, message: `Lead oluşturuldu (ID: ${data.lead_id?.slice(0, 8)}...)` }
+        : { success: false, message: data.message || data.error || 'Bilinmeyen hata' }
+      )
+    } catch (err: any) {
+      setTestResult({ success: false, message: err.message || 'Bağlantı hatası' })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  function copyToClipboard(text: string, label: string) {
+    navigator.clipboard.writeText(text)
+    setCopied(label)
+    setTimeout(() => setCopied(null), 2000)
+  }
+
+  function addMappingRow() {
+    setMappings(prev => [...prev, { formField: '', target: '' }])
+  }
+
+  function removeMappingRow(index: number) {
+    setMappings(prev => prev.filter((_, i) => i !== index))
+  }
+
+  function updateMapping(index: number, field: keyof MappingRow, value: string) {
+    setMappings(prev => prev.map((m, i) => i === index ? { ...m, [field]: value } : m))
+  }
+
+  const maskedKey = config?.api_key
+    ? config.api_key.slice(0, 8) + '••••••••••••••••' + config.api_key.slice(-4)
+    : null
+
+  const jsSnippet = config?.api_key ? `<script>
+document.querySelector('#YOUR_FORM_ID').addEventListener('submit', function(e) {
+  e.preventDefault();
+  fetch('${config.webhook_url}', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json','x-api-key':'${config.api_key}'},
+    body: JSON.stringify(Object.fromEntries(new FormData(this)))
+  }).then(r => r.json()).then(d => { if(d.success) alert('Gönderildi!'); });
+});
+</script>` : ''
+
+  const curlSnippet = config?.api_key ? `curl -X POST ${config.webhook_url} \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: ${config.api_key}" \\
+  -d '{"name":"Test","phone":"05551234567","email":"test@test.com"}'` : ''
+
+  if (loading) {
+    return (
+      <div className="max-w-3xl">
+        <div className="animate-pulse space-y-4">
+          <div className="h-4 w-48 bg-slate-100 rounded" />
+          <div className="h-32 bg-slate-50 rounded-xl" />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-3xl space-y-6">
+      <div>
+        <h2 className="text-base font-bold text-slate-900">Website Form Webhook</h2>
+        <p className="text-sm text-slate-500 mt-0.5">
+          Web sitenizdeki formları platforma bağlayın. Form gönderildiğinde otomatik lead oluşturulur ve AI akışları tetiklenir.
+        </p>
+      </div>
+
+      {/* API Key Section */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Globe size={16} className="text-brand-500" />
+              <span className="text-sm font-semibold text-slate-800">API Anahtarı</span>
+            </div>
+            {config?.active && (
+              <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
+                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Aktif
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          {config?.api_key ? (
+            <>
+              {/* Key display */}
+              <div className="flex items-center gap-2">
+                <code className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono text-slate-700 truncate">
+                  {showKey ? config.api_key : maskedKey}
+                </code>
+                <button onClick={() => setShowKey(v => !v)} className="p-2 text-slate-400 hover:text-slate-600 transition-colors" title={showKey ? 'Gizle' : 'Göster'}>
+                  {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+                <button onClick={() => copyToClipboard(config.api_key!, 'key')} className="p-2 text-slate-400 hover:text-slate-600 transition-colors" title="Kopyala">
+                  {copied === 'key' ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+                </button>
+              </div>
+
+              {/* Webhook URL */}
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Webhook URL</label>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono text-slate-600 truncate">
+                    {config.webhook_url}
+                  </code>
+                  <button onClick={() => copyToClipboard(config.webhook_url, 'url')} className="p-2 text-slate-400 hover:text-slate-600 transition-colors" title="Kopyala">
+                    {copied === 'url' ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-3 pt-1">
+                {!isDemo && (
+                  <>
+                    <button onClick={() => handleGenerate(true)} disabled={saving}
+                      className="flex items-center gap-2 px-3 py-2 text-xs font-medium border border-amber-200 text-amber-700 bg-amber-50 rounded-lg hover:bg-amber-100 disabled:opacity-50 transition-colors">
+                      <RefreshCw size={12} /> Yenile
+                    </button>
+                    <button onClick={handleDeactivate} disabled={saving}
+                      className="flex items-center gap-2 px-3 py-2 text-xs font-medium border border-red-200 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
+                      <Trash2 size={12} /> Devre Dışı Bırak
+                    </button>
+                  </>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-4">
+              <p className="text-sm text-slate-500 mb-3">Henüz API anahtarı oluşturulmadı.</p>
+              {!isDemo && (
+                <button onClick={() => handleGenerate(false)} disabled={saving}
+                  className="flex items-center gap-2 mx-auto px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                  API Anahtarı Oluştur
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Country Code + Field Mapping */}
+      {config?.api_key && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <span className="text-sm font-semibold text-slate-800">Ayarlar</span>
+          </div>
+          <div className="px-5 py-4 space-y-5">
+            {/* Default Country Code */}
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Varsayılan Ülke Kodu</label>
+              <select value={defaultCC} onChange={e => setDefaultCC(e.target.value)}
+                className="w-48 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500">
+                {CC_OPTIONS.map(cc => (
+                  <option key={cc.code} value={cc.code}>{cc.label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-400 mt-1">Ülke kodu olmayan telefon numaraları için kullanılır</p>
+            </div>
+
+            {/* Field Mapping */}
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-2">Alan Eşleştirme</label>
+              <p className="text-xs text-slate-400 mb-3">Formunuzdaki alan adlarını platform alanlarına eşleyin. Eşlenmeyen alanlar ek veri olarak kaydedilir.</p>
+              <div className="space-y-2">
+                {mappings.map((m, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input value={m.formField} onChange={e => updateMapping(i, 'formField', e.target.value)}
+                      placeholder="Form alan adı (ör: ad_soyad)"
+                      className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                    <span className="text-slate-300 text-sm">→</span>
+                    <select value={m.target} onChange={e => updateMapping(i, 'target', e.target.value)}
+                      className="w-36 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500">
+                      {MAPPING_TARGETS.map(t => (
+                        <option key={t.value} value={t.value}>{t.label}</option>
+                      ))}
+                    </select>
+                    {mappings.length > 1 && (
+                      <button onClick={() => removeMappingRow(i)} className="p-1.5 text-slate-400 hover:text-red-500 transition-colors">
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <button onClick={addMappingRow} className="flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-700 mt-2 font-medium">
+                <Plus size={12} /> Eşleştirme Ekle
+              </button>
+            </div>
+
+            {/* Save */}
+            {!isDemo && (
+              <button onClick={() => handleGenerate(false)} disabled={saving}
+                className="flex items-center gap-2 px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                Kaydet
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Code Snippets */}
+      {config?.api_key && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <span className="text-sm font-semibold text-slate-800">Entegrasyon Kodları</span>
+          </div>
+          <div className="px-5 py-4 space-y-4">
+            {/* JS Snippet */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-slate-500">JavaScript</label>
+                <button onClick={() => copyToClipboard(jsSnippet, 'js')} className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700">
+                  {copied === 'js' ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />} Kopyala
+                </button>
+              </div>
+              <pre className="bg-slate-900 text-slate-100 text-xs p-4 rounded-lg overflow-x-auto whitespace-pre">
+                {jsSnippet}
+              </pre>
+            </div>
+
+            {/* cURL */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-slate-500">cURL</label>
+                <button onClick={() => copyToClipboard(curlSnippet, 'curl')} className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700">
+                  {copied === 'curl' ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />} Kopyala
+                </button>
+              </div>
+              <pre className="bg-slate-900 text-slate-100 text-xs p-4 rounded-lg overflow-x-auto whitespace-pre">
+                {curlSnippet}
+              </pre>
+            </div>
+
+            {/* Test */}
+            <div className="flex items-center gap-3 pt-1">
+              <button onClick={handleTest} disabled={testing}
+                className="flex items-center gap-2 px-3 py-2 text-xs font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors">
+                {testing ? <Loader2 size={12} className="animate-spin" /> : <TestTube2 size={12} />}
+                Test Gönder
+              </button>
+              {testResult && (
+                <span className={`text-xs ${testResult.success ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {testResult.message}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Settings Page ───────────────────────────────────────────────────────
 
-type SettingsTab = 'moduller' | 'billing' | 'pipelinelar' | 'support'
+type SettingsTab = 'moduller' | 'billing' | 'pipelinelar' | 'formwebhook' | 'support'
 
 function SettingsPageInner() {
   const searchParams = useSearchParams()
   const initialTab = (searchParams.get('tab') as SettingsTab) ?? 'moduller'
   const [activeTab, setActiveTab] = useState<SettingsTab>(
-    ['moduller', 'billing', 'pipelinelar', 'support'].includes(initialTab) ? initialTab : 'moduller'
+    ['moduller', 'billing', 'pipelinelar', 'formwebhook', 'support'].includes(initialTab) ? initialTab : 'moduller'
   )
 
   const tabs: { key: SettingsTab; label: string }[] = [
     { key: 'moduller',    label: 'Modüller' },
     { key: 'billing',     label: 'Plan & Fatura' },
     { key: 'pipelinelar', label: 'Pipelinelar' },
+    { key: 'formwebhook', label: 'Form Webhook' },
     { key: 'support',     label: 'Destek Talebi' },
   ]
 
@@ -1073,6 +1440,7 @@ function SettingsPageInner() {
       {activeTab === 'moduller'    && <ModulesSection />}
       {activeTab === 'billing'     && <BillingSection />}
       {activeTab === 'pipelinelar' && <PipelineSettings />}
+      {activeTab === 'formwebhook' && <FormWebhookSection />}
       {activeTab === 'support'     && <SupportSection />}
     </div>
   )
