@@ -1168,9 +1168,6 @@ function FormWebhookSection() {
     ? config.api_key.slice(0, 8) + '••••••••••••••••' + config.api_key.slice(-4)
     : null
 
-  // ── Turnstile site key (public, same for all orgs) ──
-  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '0x4AAAAAABx0123456789AB' // placeholder until configured
-
   // ── Embeddable HTML form (ready to paste) ──
   const htmlFormSnippet = config?.api_key ? `<!-- stoaix Lead Form — web sitenize yapıştırın -->
 <form id="stoaix-lead-form" style="max-width:480px;font-family:system-ui,sans-serif;">
@@ -1194,19 +1191,16 @@ function FormWebhookSection() {
     <textarea name="mesaj" rows="3" placeholder="Nasıl yardımcı olabiliriz?"
       style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;resize:vertical;"></textarea>
   </div>
-  <!-- Honeypot: görünmez alan, botlar doldurur, insanlar görmez -->
+  <!-- Honeypot: botları yakalar, kullanıcılar görmez -->
   <div style="position:absolute;left:-9999px;" aria-hidden="true">
     <input type="text" name="_hp_website" tabindex="-1" autocomplete="off">
   </div>
-  <!-- Cloudflare Turnstile CAPTCHA -->
-  <div class="cf-turnstile" data-sitekey="${turnstileSiteKey}" data-theme="light" style="margin-bottom:12px;"></div>
   <button type="submit"
     style="width:100%;padding:12px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">
     Gönder
   </button>
   <p id="stoaix-form-msg" style="margin-top:8px;font-size:13px;text-align:center;display:none;"></p>
 </form>
-<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 <script>
 document.getElementById('stoaix-lead-form').addEventListener('submit',function(e){
   e.preventDefault();
@@ -1214,20 +1208,16 @@ document.getElementById('stoaix-lead-form').addEventListener('submit',function(e
   var msg=document.getElementById('stoaix-form-msg');
   btn.disabled=true; btn.textContent='Gönderiliyor...';
   msg.style.display='none';
-  var fd=Object.fromEntries(new FormData(this));
-  fd['_turnstile']=fd['cf-turnstile-response']||'';
-  delete fd['cf-turnstile-response'];
   fetch('${config.webhook_url}',{
     method:'POST',
     headers:{'Content-Type':'application/json','x-api-key':'${config.api_key}'},
-    body:JSON.stringify(fd)
+    body:JSON.stringify(Object.fromEntries(new FormData(this)))
   })
   .then(function(r){return r.json()})
   .then(function(d){
     if(d.success){
       msg.style.color='#059669'; msg.textContent='Talebiniz alındı! En kısa sürede dönüş yapacağız.';
       msg.style.display='block'; e.target.reset();
-      if(window.turnstile) turnstile.reset();
     } else {
       msg.style.color='#dc2626'; msg.textContent=d.message||'Bir hata oluştu.';
       msg.style.display='block';

@@ -66,31 +66,6 @@ function sanitizeString(value: unknown, maxLen: number): string {
 
 const HONEYPOT_FIELD = '_hp_website'
 
-// ─── Cloudflare Turnstile server-side verification ──────────────────────────
-
-const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
-// Platform-wide Turnstile secret key (set in Vercel env vars)
-const TURNSTILE_SECRET = process.env.TURNSTILE_SECRET_KEY || ''
-
-async function verifyTurnstile(token: string, ip: string | null): Promise<boolean> {
-  if (!TURNSTILE_SECRET) return true // not configured → skip
-  try {
-    const params: Record<string, string> = { secret: TURNSTILE_SECRET, response: token }
-    if (ip) params.remoteip = ip
-    const res = await fetch(TURNSTILE_VERIFY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(params),
-    })
-    const data = await res.json() as { success: boolean }
-    return data.success === true
-  } catch {
-    // Turnstile down → allow through (don't block real users)
-    console.error('[form-submit] Turnstile verification error, allowing through')
-    return true
-  }
-}
-
 // ─── Body size limit ─────────────────────────────────────────────────────────
 
 const MAX_BODY_SIZE = 64 * 1024 // 64 KB
@@ -142,22 +117,10 @@ export async function POST(request: NextRequest) {
       return corsJson({ success: true, contact_id: '00000000-0000-0000-0000-000000000000', lead_id: '00000000-0000-0000-0000-000000000000' })
     }
 
-    // 4. Turnstile verification (if token present or secret configured)
-    const turnstileToken = body['cf-turnstile-response'] || body._turnstile || ''
+    // 4. Clean up any CAPTCHA tokens from body (don't store in collected_data)
     delete body['cf-turnstile-response']
     delete body._turnstile
-
-    if (TURNSTILE_SECRET) {
-      // Secret is configured → Turnstile is required
-      if (!turnstileToken) {
-        return corsJson({ error: 'captcha_required', message: 'CAPTCHA verification is required' }, 403)
-      }
-      const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null
-      const valid = await verifyTurnstile(turnstileToken, clientIp)
-      if (!valid) {
-        return corsJson({ error: 'captcha_failed', message: 'CAPTCHA verification failed' }, 403)
-      }
-    }
+    delete body['g-recaptcha-response']
 
     // 5. Rate limit
     if (isRateLimited(apiKey)) {
