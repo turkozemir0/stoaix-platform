@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { MessageSquare, Phone, Instagram, Send, RefreshCw, Bot, User, Search, Loader2, Sparkles, CalendarPlus } from 'lucide-react'
+import { MessageSquare, Phone, Instagram, Send, RefreshCw, Bot, User, Search, Loader2, Sparkles, CalendarPlus, X, Plus } from 'lucide-react'
 import { useIsDemo } from '@/lib/demo-context'
 import Avatar from '@/components/Avatar'
 import ChannelBadge from '@/components/ChannelBadge'
@@ -134,6 +134,12 @@ export default function InboxClient({ orgId, lang, currentUserId, userRole }: Pr
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [handoffLoading, setHandoffLoading] = useState(false)
+
+  // Appointment modal state
+  const [showApptModal, setShowApptModal] = useState(false)
+  const [apptSaving, setApptSaving] = useState(false)
+  const [apptError, setApptError] = useState('')
+  const [apptForm, setApptForm] = useState({ title: '', date: '', startTime: '10:00', endTime: '11:00', notes: '' })
 
   // Pagination + Search state
   const [hasMore, setHasMore] = useState(false)
@@ -383,6 +389,60 @@ export default function InboxClient({ orgId, lang, currentUserId, userRole }: Pr
   const selected = conversations.find(c => c.id === selectedId)
   const isVoice = selected?.channel === 'voice'
   const isReactivation = selected?.channel === 'reactivation'
+
+  // ─── Create appointment from inbox ──────────────────────────────────────
+  const openApptModal = useCallback(() => {
+    const contactName = selected?.contact?.full_name || ''
+    setApptForm({
+      title: contactName ? `${contactName} ${lang === 'tr' ? 'Randevusu' : 'Appointment'}` : '',
+      date: new Date().toISOString().slice(0, 10),
+      startTime: '10:00',
+      endTime: '11:00',
+      notes: '',
+    })
+    setApptError('')
+    setShowApptModal(true)
+  }, [selected, lang])
+
+  const createInboxAppointment = useCallback(async () => {
+    if (!apptForm.date || !apptForm.startTime) {
+      setApptError(lang === 'tr' ? 'Tarih ve başlangıç saati zorunlu' : 'Date and start time required')
+      return
+    }
+    setApptSaving(true)
+    setApptError('')
+    try {
+      const scheduledAt = new Date(`${apptForm.date}T${apptForm.startTime}:00`).toISOString()
+      const endAt = new Date(`${apptForm.date}T${apptForm.endTime}:00`)
+      const startAt = new Date(`${apptForm.date}T${apptForm.startTime}:00`)
+      const durationMinutes = Math.max(15, Math.round((endAt.getTime() - startAt.getTime()) / 60000))
+
+      const res = await fetch('/api/appointments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scheduled_at: scheduledAt,
+          duration_minutes: durationMinutes,
+          contact_id: selected?.contact?.id ?? null,
+          lead_id: selected?.lead?.id ?? null,
+          conversation_id: selected?.id ?? null,
+          title: apptForm.title || null,
+          notes: apptForm.notes || null,
+          appointment_type: 'consultation',
+          source: 'platform',
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || `HTTP ${res.status}`)
+      }
+      setShowApptModal(false)
+    } catch (err: any) {
+      setApptError(err.message || 'Error')
+    } finally {
+      setApptSaving(false)
+    }
+  }, [apptForm, selected, lang])
 
   // ─── Qualification fields for lead detail panel ─────────────────────────
   const DETAIL_FIELDS = ['interest', 'budget', 'timeline', 'source', 'city', 'age', 'full_name', 'phone', 'email']
@@ -723,7 +783,9 @@ export default function InboxClient({ orgId, lang, currentUserId, userRole }: Pr
 
               {/* Action buttons */}
               <div className="flex gap-2 mt-4">
-                <button className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-brand-500 to-sky-400 hover:from-brand-600 hover:to-sky-500 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm">
+                <button
+                  onClick={openApptModal}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-brand-500 to-sky-400 hover:from-brand-600 hover:to-sky-500 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm">
                   <CalendarPlus size={13} />
                   {lang === 'tr' ? 'Randevu' : 'Book Slot'}
                 </button>
@@ -774,6 +836,73 @@ export default function InboxClient({ orgId, lang, currentUserId, userRole }: Pr
           <div className="text-center">
             <MessageSquare size={40} className="mx-auto mb-3 opacity-30" />
             <p className="text-sm">{lang === 'tr' ? 'Bir konuşma seç' : 'Select a conversation'}</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Appointment Modal ── */}
+      {showApptModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="font-semibold text-slate-800">{lang === 'tr' ? 'Yeni Randevu' : 'New Appointment'}</h2>
+              <button onClick={() => setShowApptModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">{lang === 'tr' ? 'Başlık' : 'Title'}</label>
+                <input value={apptForm.title}
+                  onChange={e => setApptForm(f => ({ ...f, title: e.target.value }))}
+                  placeholder={lang === 'tr' ? 'Randevu başlığı' : 'Appointment title'}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">{lang === 'tr' ? 'Tarih *' : 'Date *'}</label>
+                <input type="date" value={apptForm.date}
+                  onChange={e => setApptForm(f => ({ ...f, date: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">{lang === 'tr' ? 'Başlangıç *' : 'Start *'}</label>
+                  <input type="time" value={apptForm.startTime}
+                    onChange={e => setApptForm(f => ({ ...f, startTime: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">{lang === 'tr' ? 'Bitiş' : 'End'}</label>
+                  <input type="time" value={apptForm.endTime}
+                    onChange={e => setApptForm(f => ({ ...f, endTime: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">{lang === 'tr' ? 'Notlar' : 'Notes'}</label>
+                <textarea value={apptForm.notes} onChange={e => setApptForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder={lang === 'tr' ? 'İsteğe bağlı not...' : 'Optional notes...'} rows={2}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+            </div>
+
+            {apptError && <p className="text-sm text-red-500 mt-3">{apptError}</p>}
+
+            <div className="flex justify-end gap-3 mt-5">
+              <button onClick={() => setShowApptModal(false)}
+                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">
+                {lang === 'tr' ? 'İptal' : 'Cancel'}
+              </button>
+              <button onClick={createInboxAppointment} disabled={apptSaving}
+                className="flex items-center gap-2 bg-brand-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors">
+                {apptSaving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                {lang === 'tr' ? 'Oluştur' : 'Create'}
+              </button>
+            </div>
           </div>
         </div>
       )}
