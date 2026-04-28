@@ -1168,7 +1168,68 @@ function FormWebhookSection() {
     ? config.api_key.slice(0, 8) + '••••••••••••••••' + config.api_key.slice(-4)
     : null
 
-  const jsSnippet = config?.api_key ? `<script>
+  // ── Embeddable HTML form (ready to paste) ──
+  const htmlFormSnippet = config?.api_key ? `<!-- stoaix Lead Form — web sitenize yapıştırın -->
+<form id="stoaix-lead-form" style="max-width:480px;font-family:system-ui,sans-serif;">
+  <div style="margin-bottom:12px;">
+    <label style="display:block;font-size:14px;font-weight:500;margin-bottom:4px;">Ad Soyad *</label>
+    <input type="text" name="full_name" required placeholder="Adınız Soyadınız"
+      style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;">
+  </div>
+  <div style="margin-bottom:12px;">
+    <label style="display:block;font-size:14px;font-weight:500;margin-bottom:4px;">Telefon *</label>
+    <input type="tel" name="phone" required placeholder="05XX XXX XX XX"
+      style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;">
+  </div>
+  <div style="margin-bottom:12px;">
+    <label style="display:block;font-size:14px;font-weight:500;margin-bottom:4px;">E-posta</label>
+    <input type="email" name="email" placeholder="ornek@email.com"
+      style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;">
+  </div>
+  <div style="margin-bottom:16px;">
+    <label style="display:block;font-size:14px;font-weight:500;margin-bottom:4px;">Mesajınız</label>
+    <textarea name="mesaj" rows="3" placeholder="Nasıl yardımcı olabiliriz?"
+      style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;resize:vertical;"></textarea>
+  </div>
+  <button type="submit"
+    style="width:100%;padding:12px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">
+    Gönder
+  </button>
+  <p id="stoaix-form-msg" style="margin-top:8px;font-size:13px;text-align:center;display:none;"></p>
+</form>
+<script>
+document.getElementById('stoaix-lead-form').addEventListener('submit',function(e){
+  e.preventDefault();
+  var btn=this.querySelector('button[type="submit"]');
+  var msg=document.getElementById('stoaix-form-msg');
+  btn.disabled=true; btn.textContent='Gönderiliyor...';
+  msg.style.display='none';
+  fetch('${config.webhook_url}',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-api-key':'${config.api_key}'},
+    body:JSON.stringify(Object.fromEntries(new FormData(this)))
+  })
+  .then(function(r){return r.json()})
+  .then(function(d){
+    if(d.success){
+      msg.style.color='#059669'; msg.textContent='Talebiniz alındı! En kısa sürede dönüş yapacağız.';
+      msg.style.display='block'; e.target.reset();
+    } else {
+      msg.style.color='#dc2626'; msg.textContent=d.message||'Bir hata oluştu.';
+      msg.style.display='block';
+    }
+    btn.disabled=false; btn.textContent='Gönder';
+  })
+  .catch(function(){
+    msg.style.color='#dc2626'; msg.textContent='Bağlantı hatası. Lütfen tekrar deneyin.';
+    msg.style.display='block'; btn.disabled=false; btn.textContent='Gönder';
+  });
+});
+</script>` : ''
+
+  // ── JS snippet for existing forms ──
+  const jsSnippet = config?.api_key ? `<!-- Mevcut formunuza ekleyin: #YOUR_FORM_ID yerine formunuzun ID'sini yazın -->
+<script>
 document.querySelector('#YOUR_FORM_ID').addEventListener('submit', function(e) {
   e.preventDefault();
   fetch('${config.webhook_url}', {
@@ -1182,7 +1243,7 @@ document.querySelector('#YOUR_FORM_ID').addEventListener('submit', function(e) {
   const curlSnippet = config?.api_key ? `curl -X POST ${config.webhook_url} \\
   -H "Content-Type: application/json" \\
   -H "x-api-key: ${config.api_key}" \\
-  -d '{"name":"Test","phone":"05551234567","email":"test@test.com"}'` : ''
+  -d '{"full_name":"Test","phone":"05551234567","email":"test@test.com"}'` : ''
 
   if (loading) {
     return (
@@ -1341,22 +1402,50 @@ document.querySelector('#YOUR_FORM_ID').addEventListener('submit', function(e) {
         </div>
       )}
 
-      {/* Code Snippets */}
+      {/* Embeddable HTML Form */}
+      {config?.api_key && (
+        <div className="bg-white rounded-xl border border-brand-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-brand-100 bg-brand-50">
+            <span className="text-sm font-semibold text-brand-800">Hazır Form Kodu (Kolay Yöntem)</span>
+            <p className="text-xs text-brand-600 mt-0.5">Bu kodu web sitenize yapıştırmanız yeterli. Form otomatik çalışır.</p>
+          </div>
+          <div className="px-5 py-4 space-y-3">
+            <div className="bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2.5 text-xs text-emerald-700">
+              <strong>Nasıl kullanılır:</strong> Aşağıdaki kodu kopyalayın ve web sitenizin HTML'ine (iletişim sayfası, popup, footer vb.) yapıştırın.
+              Form görünümünü CSS ile özelleştirebilirsiniz. Gönderilen her form otomatik olarak lead olarak kaydedilir ve AI akışlarınız tetiklenir.
+            </div>
+            <div className="flex items-center justify-end">
+              <button onClick={() => copyToClipboard(htmlFormSnippet, 'html')} className="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-lg border border-brand-200 transition-colors">
+                {copied === 'html' ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />} HTML Kodu Kopyala
+              </button>
+            </div>
+            <pre className="bg-slate-900 text-slate-100 text-xs p-4 rounded-lg overflow-x-auto whitespace-pre max-h-80 overflow-y-auto">
+              {htmlFormSnippet}
+            </pre>
+          </div>
+        </div>
+      )}
+
+      {/* Advanced Integration */}
       {config?.api_key && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100">
-            <span className="text-sm font-semibold text-slate-800">Entegrasyon Kodları</span>
+            <span className="text-sm font-semibold text-slate-800">Gelişmiş Entegrasyon (Manuel)</span>
+            <p className="text-xs text-slate-400 mt-0.5">Mevcut formunuz varsa veya özel entegrasyon gerekiyorsa aşağıdaki kodları kullanın.</p>
           </div>
           <div className="px-5 py-4 space-y-4">
             {/* JS Snippet */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-medium text-slate-500">JavaScript</label>
-                <button onClick={() => copyToClipboard(jsSnippet, 'js')} className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700">
+                <div>
+                  <label className="text-xs font-medium text-slate-500">JavaScript — Mevcut Forma Bağlama</label>
+                  <p className="text-xs text-slate-400">Sitenizde zaten bir form varsa, bu kodu formunuzun altına ekleyin. <code className="bg-slate-100 px-1 rounded">#YOUR_FORM_ID</code> kısmını formunuzun ID'si ile değiştirin.</p>
+                </div>
+                <button onClick={() => copyToClipboard(jsSnippet, 'js')} className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 flex-shrink-0 ml-3">
                   {copied === 'js' ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />} Kopyala
                 </button>
               </div>
-              <pre className="bg-slate-900 text-slate-100 text-xs p-4 rounded-lg overflow-x-auto whitespace-pre">
+              <pre className="bg-slate-900 text-slate-100 text-xs p-4 rounded-lg overflow-x-auto whitespace-pre mt-2">
                 {jsSnippet}
               </pre>
             </div>
@@ -1364,14 +1453,33 @@ document.querySelector('#YOUR_FORM_ID').addEventListener('submit', function(e) {
             {/* cURL */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-medium text-slate-500">cURL</label>
-                <button onClick={() => copyToClipboard(curlSnippet, 'curl')} className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700">
+                <div>
+                  <label className="text-xs font-medium text-slate-500">cURL — API Testi</label>
+                  <p className="text-xs text-slate-400">Terminal'den test etmek için kullanın.</p>
+                </div>
+                <button onClick={() => copyToClipboard(curlSnippet, 'curl')} className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 flex-shrink-0 ml-3">
                   {copied === 'curl' ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />} Kopyala
                 </button>
               </div>
-              <pre className="bg-slate-900 text-slate-100 text-xs p-4 rounded-lg overflow-x-auto whitespace-pre">
+              <pre className="bg-slate-900 text-slate-100 text-xs p-4 rounded-lg overflow-x-auto whitespace-pre mt-2">
                 {curlSnippet}
               </pre>
+            </div>
+
+            {/* Field names info */}
+            <div className="bg-slate-50 border border-slate-100 rounded-lg px-4 py-3 text-xs text-slate-500">
+              <p className="font-medium text-slate-600 mb-1.5">Tanınan alan adları (otomatik eşleşir):</p>
+              <div className="grid grid-cols-2 gap-1">
+                <span><code className="bg-white px-1 rounded border">full_name</code> / <code className="bg-white px-1 rounded border">name</code> / <code className="bg-white px-1 rounded border">ad_soyad</code></span>
+                <span>→ Ad Soyad</span>
+                <span><code className="bg-white px-1 rounded border">phone</code> / <code className="bg-white px-1 rounded border">telefon</code> / <code className="bg-white px-1 rounded border">tel</code></span>
+                <span>→ Telefon</span>
+                <span><code className="bg-white px-1 rounded border">email</code> / <code className="bg-white px-1 rounded border">eposta</code></span>
+                <span>→ E-posta</span>
+                <span><code className="bg-white px-1 rounded border">city</code> / <code className="bg-white px-1 rounded border">sehir</code></span>
+                <span>→ Şehir</span>
+              </div>
+              <p className="mt-2 text-slate-400">Diğer tüm alanlar otomatik olarak lead'in ek verilerine kaydedilir. Yukarıdaki "Alan Eşleştirme" bölümünden özel eşleştirmeler tanımlayabilirsiniz.</p>
             </div>
 
             {/* Test */}
