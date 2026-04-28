@@ -273,15 +273,51 @@ function AgentPageInner() {
       if (!resolvedOrgId) { setLoading(false); return }
       setOrgId(resolvedOrgId)
 
-      // Her iki kanalı da yükle (ana + senaryo playbook'lar)
-      const { data: playbooks } = await supabase
-        .from('agent_playbooks')
-        .select('id, channel, scenario, system_prompt_template, opening_message, hard_blocks, features, few_shot_examples, fallback_responses, handoff_triggers')
-        .eq('organization_id', resolvedOrgId)
-        .eq('is_active', true)
-        .in('channel', ['voice', 'whatsapp', 'chat', 'all'])
-        .order('version', { ascending: false })
+      // Tüm bağımsız sorguları paralel çalıştır
+      const [
+        { data: playbooks },
+        { data: schemas },
+        { count },
+        { data: orgData },
+        routingResult,
+        billingResult,
+        workflowsResult,
+      ] = await Promise.all([
+        // 1. Playbooks
+        supabase
+          .from('agent_playbooks')
+          .select('id, channel, scenario, system_prompt_template, opening_message, hard_blocks, features, few_shot_examples, fallback_responses, handoff_triggers')
+          .eq('organization_id', resolvedOrgId)
+          .eq('is_active', true)
+          .in('channel', ['voice', 'whatsapp', 'chat', 'all'])
+          .order('version', { ascending: false }),
+        // 2. Intake schemas
+        supabase
+          .from('intake_schemas')
+          .select('id, channel, fields')
+          .eq('organization_id', resolvedOrgId)
+          .in('channel', ['voice', 'whatsapp']),
+        // 3. KB count
+        supabase
+          .from('knowledge_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('organization_id', resolvedOrgId)
+          .eq('is_active', true),
+        // 4. Organization data
+        supabase
+          .from('organizations')
+          .select('name, channel_config, ai_persona')
+          .eq('id', resolvedOrgId)
+          .single(),
+        // 5. Routing rules
+        fetch('/api/agent/routing-rules').then(r => r.ok ? r.json() : null).catch(() => null),
+        // 6. Billing limits
+        fetch('/api/billing/limits').then(r => r.ok ? r.json() : null).catch(() => null),
+        // 7. Workflows
+        fetch('/api/workflows/templates').then(r => r.ok ? r.json() : null).catch(() => null),
+      ])
 
+      // Process playbooks
       const parsePlaybook = (pb: any): PlaybookState => ({
         id: pb.id,
         systemPrompt: pb.system_prompt_template || '',
@@ -307,14 +343,12 @@ function AgentPageInner() {
         if (voicePb)    setVoice(parsePlaybook(voicePb))
         if (whatsappPb) setWhatsapp(parsePlaybook(whatsappPb))
 
-        // Senaryo playbook'larını yükle
         const spMap: Record<string, PlaybookState> = {}
         for (const sp of scenarioPbs) {
           spMap[sp.scenario] = parsePlaybook(sp)
         }
         setScenarioPlaybooks(spMap)
 
-        // Handoff triggers yükle (voice playbook'tan)
         const activePb = voicePb || whatsappPb
         if (activePb) {
           const ht = (activePb as any).handoff_triggers as Record<string, any> | null
@@ -329,13 +363,7 @@ function AgentPageInner() {
         }
       }
 
-      // Intake schema yükle
-      const { data: schemas } = await supabase
-        .from('intake_schemas')
-        .select('id, channel, fields')
-        .eq('organization_id', resolvedOrgId)
-        .in('channel', ['voice', 'whatsapp'])
-
+      // Process intake schemas
       if (schemas) {
         const vs = schemas.find(s => s.channel === 'voice')
         const ws = schemas.find(s => s.channel === 'whatsapp')
@@ -343,20 +371,10 @@ function AgentPageInner() {
         if (ws) { setWhatsappIntake(ws.fields ?? []); setWaIntakeId(ws.id) }
       }
 
-      // KB item sayısını çek
-      const { count } = await supabase
-        .from('knowledge_items')
-        .select('id', { count: 'exact', head: true })
-        .eq('organization_id', resolvedOrgId)
-        .eq('is_active', true)
+      // Process KB count
       setKbCount(count ?? 0)
 
-      // Voice aktif mi? + ai_persona yükle
-      const { data: orgData } = await supabase
-        .from('organizations')
-        .select('name, channel_config, ai_persona')
-        .eq('id', resolvedOrgId)
-        .single()
+      // Process org data
       const cc = (orgData?.channel_config ?? {}) as Record<string, any>
       setVoiceActive(cc?.voice_inbound?.active === true || cc?.voice_outbound?.active === true)
       setHasCalendar(cc?.calendar?.provider != null)
@@ -365,44 +383,30 @@ function AgentPageInner() {
       setOrgName(orgData?.name || '')
       setClinicType(ap.clinic_type || 'other')
 
-      // Routing config yükle
-      try {
-        const rRes = await fetch('/api/agent/routing-rules')
-        if (rRes.ok) {
-          const rData = await rRes.json()
-          if (rData.routing_rules) setRoutingConfig(rData.routing_rules)
-          if (rData.working_hours && Object.keys(rData.working_hours).length) setWorkingHours(rData.working_hours)
-          if (rData.handoff_triggers) {
-            const ht = rData.handoff_triggers
-            setHandoffConfig({
-              keywords: Array.isArray(ht.keywords) ? ht.keywords : ['insan', 'danışman', 'müdür', 'temsilci', 'yönetici'],
-              frustration_keywords: Array.isArray(ht.frustration_keywords) ? ht.frustration_keywords : ['saçma', 'berbat', 'rezalet', 'şikayet'],
-              missing_required_after_turns: ht.missing_required_after_turns ?? 10,
-              kb_empty_consecutive: ht.kb_empty_consecutive ?? 3,
-            })
-          }
+      // Process routing config
+      if (routingResult) {
+        if (routingResult.routing_rules) setRoutingConfig(routingResult.routing_rules)
+        if (routingResult.working_hours && Object.keys(routingResult.working_hours).length) setWorkingHours(routingResult.working_hours)
+        if (routingResult.handoff_triggers) {
+          const ht = routingResult.handoff_triggers
+          setHandoffConfig({
+            keywords: Array.isArray(ht.keywords) ? ht.keywords : ['insan', 'danışman', 'müdür', 'temsilci', 'yönetici'],
+            frustration_keywords: Array.isArray(ht.frustration_keywords) ? ht.frustration_keywords : ['saçma', 'berbat', 'rezalet', 'şikayet'],
+            missing_required_after_turns: ht.missing_required_after_turns ?? 10,
+            kb_empty_consecutive: ht.kb_empty_consecutive ?? 3,
+          })
         }
-      } catch {}
+      }
 
-      // Billing entitlements
-      try {
-        const limRes = await fetch('/api/billing/limits')
-        if (limRes.ok) {
-          const limData = await limRes.json()
-          setHasVoiceEntitlement(limData.entitlements?.voice_agent_inbound?.enabled ?? true)
-        }
-      } catch {}
+      // Process billing entitlements
+      if (billingResult) {
+        setHasVoiceEntitlement(billingResult.entitlements?.voice_agent_inbound?.enabled ?? true)
+      }
 
-      // Workflow durumları yükle
-      try {
-        const wfRes = await fetch('/api/workflows/templates')
-        if (wfRes.ok) {
-          const wfData = await wfRes.json()
-          if (Array.isArray(wfData)) {
-            setWorkflows(wfData.map((w: any) => ({ id: w.id, name: w.name, channel: w.channel || 'multi', is_active: !!w.is_active })))
-          }
-        }
-      } catch {}
+      // Process workflows
+      if (Array.isArray(workflowsResult)) {
+        setWorkflows(workflowsResult.map((w: any) => ({ id: w.id, name: w.name, channel: w.channel || 'multi', is_active: !!w.is_active })))
+      }
 
       setLoading(false)
     })()
