@@ -4,6 +4,7 @@ import { useState, Suspense } from 'react'
 import {
   Instagram, Plug, Ban,
 } from 'lucide-react'
+import TopBar from '@/components/TopBar'
 import { IntegrationCard } from '@/components/integrations/IntegrationCard'
 import { ConfigDrawer } from '@/components/integrations/ConfigDrawer'
 import { WhatsAppConfig } from '@/components/integrations/WhatsAppConfig'
@@ -58,16 +59,39 @@ export default function IntegrationsPage() {
   const [calStatus, setCalStatus] = useState<{ connected: boolean }>({ connected: false })
   const [dsStatus, setDsStatus] = useState<{ connected: boolean }>({ connected: false })
   const [voiceStatus, setVoiceStatus] = useState<Record<string, boolean>>({})
+  const [activeCategory, setActiveCategory] = useState<'all' | 'messaging' | 'voice' | 'calendar' | 'other'>('all')
+
+  const categories = [
+    { key: 'all' as const, label: 'Tümü' },
+    { key: 'messaging' as const, label: 'Mesajlaşma' },
+    { key: 'voice' as const, label: 'Ses/PBX' },
+    { key: 'calendar' as const, label: 'Takvim' },
+    { key: 'other' as const, label: 'Diğer' },
+  ]
 
   return (
     <div className="max-w-6xl mx-auto py-8 px-4">
-      <div className="flex items-center gap-3 mb-8">
-        <Plug size={22} className="text-brand-600" />
-        <h1 className="text-xl font-semibold text-slate-800">Entegrasyonlar</h1>
+      <TopBar title="Entegrasyonlar" subtitle="Üçüncü parti bağlantılar" />
+
+      {/* Category filter chips */}
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {categories.map(cat => (
+          <button
+            key={cat.key}
+            onClick={() => setActiveCategory(cat.key)}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              activeCategory === cat.key
+                ? 'bg-slate-900 text-white'
+                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            {cat.label}
+          </button>
+        ))}
       </div>
 
       {/* ── Mesajlasma ────────────────────────────────────────────── */}
-      <section className="mb-8">
+      {(activeCategory === 'all' || activeCategory === 'messaging') && <section className="mb-8">
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
           Mesajlasma
         </h2>
@@ -104,10 +128,10 @@ export default function IntegrationsPage() {
             />
           </Suspense>
         </div>
-      </section>
+      </section>}
 
       {/* ── Ses / Sanal Santral ───────────────────────────────────── */}
-      <section className="mb-8">
+      {(activeCategory === 'all' || activeCategory === 'voice') && <section className="mb-8">
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
           Ses / Sanal Santral
         </h2>
@@ -123,10 +147,10 @@ export default function IntegrationsPage() {
             />
           ))}
         </div>
-      </section>
+      </section>}
 
       {/* ── Takvim ────────────────────────────────────────────────── */}
-      <section className="mb-8">
+      {(activeCategory === 'all' || activeCategory === 'calendar') && <section className="mb-8">
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
           Takvim
         </h2>
@@ -150,10 +174,10 @@ export default function IntegrationsPage() {
             />
           </Suspense>
         </div>
-      </section>
+      </section>}
 
       {/* ── Diger ─────────────────────────────────────────────────── */}
-      <section className="mb-8">
+      {(activeCategory === 'all' || activeCategory === 'other') && <section className="mb-8">
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
           Diger
         </h2>
@@ -166,7 +190,7 @@ export default function IntegrationsPage() {
             onClick={() => openDrawer('excluded-phones')}
           />
         </div>
-      </section>
+      </section>}
 
       {/* ── Drawer'lar ────────────────────────────────────────────── */}
 

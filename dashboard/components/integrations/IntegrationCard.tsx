@@ -7,7 +7,7 @@ export interface IntegrationCardProps {
   icon: ReactNode
   name: string
   description: string
-  status: 'connected' | 'disconnected' | 'loading' | 'coming_soon'
+  status: 'connected' | 'disconnected' | 'loading' | 'coming_soon' | 'action_needed'
   statusLabel?: string
   badge?: string
   helperText?: string
@@ -29,10 +29,10 @@ export function IntegrationCard({
   return (
     <button
       onClick={isDisabled ? undefined : onClick}
-      className={`rounded-xl border p-5 text-left transition-all group w-full ${
+      className={`rounded-2xl border p-5 text-left transition-all group w-full ${
         isDisabled
           ? 'bg-slate-50 border-slate-200 cursor-default opacity-75'
-          : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm cursor-pointer'
+          : 'bg-white border-slate-200 hover:border-sky-200 hover:shadow-md cursor-pointer'
       }`}
     >
       <div className="flex items-start justify-between gap-3">
@@ -72,6 +72,11 @@ export function IntegrationCard({
           <div className="flex items-center gap-1.5">
             <Clock size={13} className="text-amber-500" />
             <span className="text-xs font-medium text-amber-600">Yakinda</span>
+          </div>
+        ) : status === 'action_needed' ? (
+          <div className="flex items-center gap-1.5">
+            <Clock size={13} className="text-amber-500" />
+            <span className="text-xs font-medium text-amber-600">{statusLabel ?? 'Eylem gerekli'}</span>
           </div>
         ) : status === 'connected' ? (
           <div className="flex items-center gap-1.5">

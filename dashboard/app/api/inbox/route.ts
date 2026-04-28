@@ -74,8 +74,8 @@ export async function GET(request: NextRequest) {
   // Use !inner join for lead status filtering (DB-level) vs normal left join
   const filterByLead = leadStatus && leadStatus !== 'all'
   const selectStr = filterByLead
-    ? `id, channel, mode, status, started_at, contact:contacts(id, full_name, phone, channel_identifiers), lead:leads!inner(id, qualification_score, status)`
-    : `id, channel, mode, status, started_at, contact:contacts(id, full_name, phone, channel_identifiers), lead:leads(id, qualification_score, status)`
+    ? `id, channel, mode, status, started_at, contact:contacts(id, full_name, phone, channel_identifiers), lead:leads!inner(id, qualification_score, status, collected_data, source_channel)`
+    : `id, channel, mode, status, started_at, contact:contacts(id, full_name, phone, channel_identifiers), lead:leads(id, qualification_score, status, collected_data, source_channel)`
 
   // Channel validation early
   if (channel && channel !== 'all' && !VALID_CHANNELS.includes(channel)) {
