@@ -6,7 +6,7 @@ import {
   Save, Loader2, Plus, Trash2, Bot, Mic, MessageSquare, ListChecks,
   FlaskConical, PhoneForwarded, Clock, ToggleLeft, ToggleRight, Lightbulb,
   ArrowUpRight, CheckCircle2, BookOpen, AlertTriangle, X, Lock,
-  ArrowLeft, ArrowRight, Zap,
+  ArrowLeft, ArrowRight, Zap, Pencil, ChevronUp, ChevronDown,
 } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import AgentTestPanel from '@/components/agent/AgentTestPanel'
@@ -120,9 +120,10 @@ const TONE_OPTIONS = [
 interface IntakeField {
   key: string
   label: string
-  type: string
-  priority: 'must' | 'should'
+  type: 'text' | 'phone' | 'email' | 'number' | 'select'
+  priority: 'must' | 'should' | 'nice'
   voice_prompt?: string
+  options?: string[]
 }
 
 const EMPTY: PlaybookState = {
@@ -202,6 +203,8 @@ function AgentPageInner() {
 
   const [savingIntake, setSavingIntake]                 = useState<boolean>(false)
   const [intakeSaved, setIntakeSaved]                   = useState(false)
+  const [expandedIntakeIdx, setExpandedIntakeIdx]       = useState<number | null>(null)
+  const [addingIntake, setAddingIntake]                 = useState(false)
 
   const [kbCount, setKbCount]               = useState(0)
   const [activeTipIndex, setActiveTipIndex] = useState(0)
@@ -496,14 +499,56 @@ function AgentPageInner() {
 
   function removeIntakeField(i: number) {
     setCurrentIntake(prev => prev.filter((_, idx) => idx !== i))
+    if (expandedIntakeIdx === i) { setExpandedIntakeIdx(null); setAddingIntake(false) }
+    else if (expandedIntakeIdx !== null && expandedIntakeIdx > i) setExpandedIntakeIdx(expandedIntakeIdx - 1)
+  }
+
+  function toSnakeKey(label: string): string {
+    return label
+      .toLowerCase()
+      .replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ı/g, 'i')
+      .replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_|_$/g, '')
+  }
+
+  function updateIntakeField(i: number, partial: Partial<IntakeField>) {
+    setCurrentIntake(prev => prev.map((f, idx) => idx === i ? { ...f, ...partial } : f))
+  }
+
+  function togglePriority(i: number) {
+    setCurrentIntake(prev => prev.map((f, idx) => {
+      if (idx !== i) return f
+      return { ...f, priority: f.priority === 'must' ? 'should' : 'must' }
+    }))
+  }
+
+  function addIntakeField() {
+    const newField: IntakeField = { key: '', label: '', type: 'text', priority: 'should' }
+    setCurrentIntake(prev => [...prev, newField])
+    setExpandedIntakeIdx(currentIntake.length)
+    setAddingIntake(true)
+  }
+
+  function collapseIntakeField() {
+    if (addingIntake && expandedIntakeIdx !== null) {
+      const field = currentIntake[expandedIntakeIdx]
+      if (!field || !field.label.trim()) {
+        setCurrentIntake(prev => prev.filter((_, idx) => idx !== expandedIntakeIdx))
+      }
+    }
+    setExpandedIntakeIdx(null)
+    setAddingIntake(false)
   }
 
   async function handleSaveIntake() {
     if (!orgId) return
+    // Collapse any open accordion & remove empty fields
+    collapseIntakeField()
     setSavingIntake(true)
     const supabase = createClient()
     const ch      = activeChannel
-    const fields  = currentIntake
+    const fields  = currentIntake.filter(f => f.label.trim())
 
     if (currentIntakeId) {
       await supabase
@@ -1186,28 +1231,146 @@ function AgentPageInner() {
                 </div>
               </div>
 
-              {currentIntake.length === 0 ? (
-                <p className="text-sm text-slate-400 py-1">Henüz alan eklenmemiş. AI Öner butonunu kullanın.</p>
+              {currentIntake.length === 0 && !addingIntake ? (
+                <p className="text-sm text-slate-400 py-1">Henüz alan eklenmemiş. Aşağıdan ekleyin veya AI Öner butonunu kullanın.</p>
               ) : (
                 <div className="space-y-2">
-                  {currentIntake.map((field, i) => (
-                    <div key={field.key} className="flex items-center gap-3 px-3 py-2.5 border border-slate-100 rounded-lg bg-slate-50">
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm text-slate-700">{field.label}</span>
-                        <span className="ml-2 text-xs text-slate-400">{field.key}</span>
+                  {currentIntake.map((field, i) => {
+                    const isExpanded = expandedIntakeIdx === i
+                    return (
+                      <div key={`${field.key || 'new'}-${i}`} className="border border-slate-100 rounded-lg bg-slate-50 overflow-hidden">
+                        {/* Collapsed row */}
+                        <div className="flex items-center gap-3 px-3 py-2.5">
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm text-slate-700">{field.label || <span className="italic text-slate-400">Yeni alan...</span>}</span>
+                            {field.key && <span className="ml-2 text-xs text-slate-400 font-mono">{field.key}</span>}
+                          </div>
+                          <button
+                            onClick={() => togglePriority(i)}
+                            title="Önceliği değiştir"
+                            className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 cursor-pointer transition-colors ${
+                              field.priority === 'must'
+                                ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                                : field.priority === 'nice'
+                                  ? 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                                  : 'bg-amber-50 text-amber-600 hover:bg-amber-100'
+                            }`}
+                          >
+                            {field.priority === 'must' ? 'Zorunlu' : field.priority === 'nice' ? 'Bonus' : 'Opsiyonel'}
+                          </button>
+                          <button
+                            onClick={() => isExpanded ? collapseIntakeField() : (setExpandedIntakeIdx(i), setAddingIntake(false))}
+                            className="text-slate-400 hover:text-brand-500 transition-colors flex-shrink-0"
+                            title={isExpanded ? 'Kapat' : 'Düzenle'}
+                          >
+                            {isExpanded ? <ChevronUp size={14} /> : <Pencil size={14} />}
+                          </button>
+                          <button onClick={() => removeIntakeField(i)} className="text-slate-300 hover:text-red-400 transition-colors flex-shrink-0">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+
+                        {/* Expanded accordion */}
+                        {isExpanded && (
+                          <div className="border-t border-slate-100 px-4 py-3 space-y-3 bg-white">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs text-slate-500 mb-1">Etiket</label>
+                                <input
+                                  value={field.label}
+                                  onChange={e => {
+                                    const label = e.target.value
+                                    const autoKey = toSnakeKey(label)
+                                    updateIntakeField(i, { label, key: autoKey })
+                                  }}
+                                  placeholder="örn: Alerji Bilgisi"
+                                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                                  autoFocus={addingIntake}
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-slate-500 mb-1">Anahtar</label>
+                                <div className="flex gap-1.5">
+                                  <input
+                                    value={field.key}
+                                    onChange={e => updateIntakeField(i, { key: e.target.value })}
+                                    placeholder="alerji_bilgisi"
+                                    className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                                  />
+                                  <button
+                                    onClick={() => updateIntakeField(i, { key: toSnakeKey(field.label) })}
+                                    title="Etiketten otomatik oluştur"
+                                    className="px-2 py-2 text-xs bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors text-slate-500"
+                                  >
+                                    Auto
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs text-slate-500 mb-1">Tip</label>
+                                <select
+                                  value={field.type}
+                                  onChange={e => updateIntakeField(i, { type: e.target.value as IntakeField['type'] })}
+                                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+                                >
+                                  <option value="text">Metin</option>
+                                  <option value="phone">Telefon</option>
+                                  <option value="email">E-posta</option>
+                                  <option value="number">Sayı</option>
+                                  <option value="select">Seçim listesi</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-xs text-slate-500 mb-1">Öncelik</label>
+                                <select
+                                  value={field.priority}
+                                  onChange={e => updateIntakeField(i, { priority: e.target.value as IntakeField['priority'] })}
+                                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+                                >
+                                  <option value="must">Zorunlu</option>
+                                  <option value="should">Opsiyonel</option>
+                                  <option value="nice">Bonus</option>
+                                </select>
+                              </div>
+                            </div>
+                            {editorView?.channel === 'voice' && (
+                              <div>
+                                <label className="block text-xs text-slate-500 mb-1">Soru (ses)</label>
+                                <input
+                                  value={field.voice_prompt || ''}
+                                  onChange={e => updateIntakeField(i, { voice_prompt: e.target.value })}
+                                  placeholder="örn: Herhangi bir alerjiniz var mı?"
+                                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                                />
+                              </div>
+                            )}
+                            {field.type === 'select' && (
+                              <div>
+                                <label className="block text-xs text-slate-500 mb-1">Seçenekler <span className="text-slate-400">(virgülle ayır)</span></label>
+                                <input
+                                  value={(field.options || []).join(', ')}
+                                  onChange={e => updateIntakeField(i, { options: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                                  placeholder="örn: Evet, Hayır, Bilmiyorum"
+                                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${
-                        field.priority === 'must' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'
-                      }`}>
-                        {field.priority === 'must' ? 'Zorunlu' : 'Opsiyonel'}
-                      </span>
-                      <button onClick={() => removeIntakeField(i)} className="text-slate-300 hover:text-red-400 transition-colors flex-shrink-0">
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
+
+              <button
+                onClick={addIntakeField}
+                className="flex items-center gap-1.5 text-sm text-brand-600 font-medium hover:text-brand-700"
+              >
+                <Plus size={15} /> Yeni Alan Ekle
+              </button>
 
             </div>}
 
