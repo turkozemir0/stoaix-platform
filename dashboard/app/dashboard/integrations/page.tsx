@@ -15,6 +15,7 @@ import { ExcludedPhonesConfig } from '@/components/integrations/ExcludedPhonesCo
 import { VoiceProviderConfig } from '@/components/integrations/VoiceProviderConfig'
 import { VOICE_PROVIDERS, PROVIDER_LIST } from '@/lib/voice-providers'
 import { useIsDemo } from '@/lib/demo-context'
+import { useLang } from '@/lib/lang-context'
 import {
   WhatsAppIcon,
   NetgsmIcon,
@@ -51,8 +52,20 @@ const VOICE_ICON_MAP: Record<string, React.ReactNode> = {
 
 type CategoryKey = 'all' | 'channels' | 'calendar' | 'crm' | 'clinic_pms' | 'automation'
 
+const SECTION_LABELS: Record<string, { tr: string; en: string }> = {
+  channels: { tr: 'Kanallar', en: 'Channels' },
+  voice: { tr: 'Ses / Sanal Santral', en: 'Voice / PBX' },
+  calendar: { tr: 'Takvim', en: 'Calendar' },
+  clinic_pms: { tr: 'Klinik PMS', en: 'Clinic PMS' },
+  crm: { tr: 'CRM', en: 'CRM' },
+  automation: { tr: 'Otomasyon', en: 'Automation' },
+  other: { tr: 'Diğer', en: 'Other' },
+}
+
 export default function IntegrationsPage() {
   const isDemo = useIsDemo()
+  const { lang } = useLang()
+  const isTr = lang === 'tr'
   const [activeDrawer, setActiveDrawer] = useState<DrawerId>(null)
 
   function openDrawer(id: DrawerId) {
@@ -69,17 +82,24 @@ export default function IntegrationsPage() {
   const [activeCategory, setActiveCategory] = useState<CategoryKey>('all')
 
   const categories: { key: CategoryKey; label: string }[] = [
-    { key: 'all', label: 'Tümü' },
-    { key: 'channels', label: 'Channels' },
-    { key: 'calendar', label: 'Calendar' },
+    { key: 'all', label: isTr ? 'Tümü' : 'All' },
+    { key: 'channels', label: isTr ? 'Kanallar' : 'Channels' },
+    { key: 'calendar', label: isTr ? 'Takvim' : 'Calendar' },
     { key: 'crm', label: 'CRM' },
-    { key: 'clinic_pms', label: 'Clinic PMS' },
-    { key: 'automation', label: 'Automation' },
+    { key: 'clinic_pms', label: isTr ? 'Klinik PMS' : 'Clinic PMS' },
+    { key: 'automation', label: isTr ? 'Otomasyon' : 'Automation' },
   ]
+
+  function sectionTitle(key: string) {
+    return SECTION_LABELS[key]?.[lang] ?? key
+  }
 
   return (
     <div className="max-w-6xl mx-auto py-8 px-4">
-      <TopBar title="Entegrasyonlar" subtitle="Üçüncü parti bağlantılar" />
+      <TopBar
+        title={isTr ? 'Entegrasyonlar' : 'Integrations'}
+        subtitle={isTr ? 'Üçüncü parti bağlantılar' : 'Third-party connections'}
+      />
 
       {/* Category filter chips */}
       <div className="flex gap-2 mb-6 flex-wrap">
@@ -101,16 +121,16 @@ export default function IntegrationsPage() {
       {/* ── Channels — Messaging ─────────────────────────────────── */}
       {(activeCategory === 'all' || activeCategory === 'channels') && <section className="mb-8">
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
-          Channels
+          {sectionTitle('channels')}
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <Suspense fallback={<CardSkeleton />}>
             <IntegrationCard
               icon={<WhatsAppIcon size={24} />}
               name="WhatsApp API"
-              description="Sadece API üzerinden bağlantı (Manuel)"
-              helperText="Meta Business Suite'ten Phone Number ID ve Access Token ile bağlanın."
-              category="CHANNELS"
+              description={isTr ? 'Sadece API üzerinden bağlantı (Manuel)' : 'API-only connection (Manual)'}
+              helperText={isTr ? 'Meta Business Suite\'ten Phone Number ID ve Access Token ile bağlanın.' : 'Connect with Phone Number ID and Access Token from Meta Business Suite.'}
+              category="channels"
               status={waStatus.connected ? 'connected' : 'disconnected'}
               statusLabel={waStatus.label}
               onClick={() => openDrawer('whatsapp')}
@@ -120,10 +140,10 @@ export default function IntegrationsPage() {
             <IntegrationCard
               icon={<WhatsAppIcon size={24} />}
               name="WhatsApp Business"
-              description="Telefonunuzda ve platform üzerinde tam kontrol"
-              helperText="Meta Embedded Signup ile tek tıkla bağlantı."
-              badge="1 hafta sonra"
-              category="CHANNELS"
+              description={isTr ? 'Telefonunuzda ve platform üzerinde tam kontrol' : 'Full control on your phone and platform'}
+              helperText={isTr ? 'Meta Embedded Signup ile tek tıkla bağlantı.' : 'One-click connection via Meta Embedded Signup.'}
+              badge={isTr ? '1 hafta sonra' : 'In 1 week'}
+              category="channels"
               status="coming_soon"
             />
           </Suspense>
@@ -131,8 +151,8 @@ export default function IntegrationsPage() {
             <IntegrationCard
               icon={<Instagram size={24} className="text-pink-500" />}
               name="Instagram DM"
-              description="Instagram Direct mesajları"
-              category="CHANNELS"
+              description={isTr ? 'Instagram Direct mesajları' : 'Instagram Direct messages'}
+              category="channels"
               status={igStatus.connected ? 'connected' : 'disconnected'}
               statusLabel={igStatus.label}
               onClick={() => openDrawer('instagram')}
@@ -144,7 +164,7 @@ export default function IntegrationsPage() {
       {/* ── Channels — Voice / PBX ──────────────────────────────── */}
       {(activeCategory === 'all' || activeCategory === 'channels') && <section className="mb-8">
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
-          Voice / PBX
+          {sectionTitle('voice')}
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {PROVIDER_LIST.map((p) => (
@@ -153,7 +173,7 @@ export default function IntegrationsPage() {
               icon={VOICE_ICON_MAP[p.id]}
               name={p.name}
               description={p.description}
-              category="CHANNELS"
+              category="channels"
               status={voiceStatus[p.id] ? 'connected' : 'disconnected'}
               onClick={() => openDrawer(p.id)}
             />
@@ -164,15 +184,15 @@ export default function IntegrationsPage() {
       {/* ── Calendar ─────────────────────────────────────────────── */}
       {(activeCategory === 'all' || activeCategory === 'calendar') && <section className="mb-8">
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
-          Calendar
+          {sectionTitle('calendar')}
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <Suspense fallback={<CardSkeleton />}>
             <IntegrationCard
               icon={<GoogleCalendarIcon size={24} />}
               name="Google Takvim"
-              description="Randevu yönetimi"
-              category="CALENDAR"
+              description={isTr ? 'Randevu yönetimi' : 'Appointment management'}
+              category="calendar"
               status={calStatus.connected ? 'connected' : 'disconnected'}
               onClick={() => openDrawer('calendar')}
             />
@@ -181,8 +201,8 @@ export default function IntegrationsPage() {
             <IntegrationCard
               icon={<CalendlyIcon size={24} />}
               name="Calendly"
-              description="Online randevu planlama"
-              category="CALENDAR"
+              description={isTr ? 'Online randevu planlama' : 'Online appointment scheduling'}
+              category="calendar"
               status="coming_soon"
             />
           </Suspense>
@@ -192,15 +212,15 @@ export default function IntegrationsPage() {
       {/* ── Clinic PMS ───────────────────────────────────────────── */}
       {(activeCategory === 'all' || activeCategory === 'clinic_pms') && <section className="mb-8">
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
-          Clinic PMS
+          {sectionTitle('clinic_pms')}
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <Suspense fallback={<CardSkeleton />}>
             <IntegrationCard
               icon={<DentSoftIcon size={24} />}
               name="DentSoft"
-              description="Diş kliniği takvim entegrasyonu"
-              category="CALENDAR"
+              description={isTr ? 'Diş kliniği takvim entegrasyonu' : 'Dental clinic calendar integration'}
+              category="clinic_pms"
               status={dsStatus.connected ? 'connected' : 'disconnected'}
               onClick={() => openDrawer('dentsoft')}
             />
@@ -217,22 +237,22 @@ export default function IntegrationsPage() {
           <IntegrationCard
             icon={<HubSpotIcon size={24} />}
             name="HubSpot"
-            description="CRM, pazarlama ve satış otomasyonu"
-            category="CRM"
+            description={isTr ? 'CRM, pazarlama ve satış otomasyonu' : 'CRM, marketing & sales automation'}
+            category="crm"
             status="coming_soon"
           />
           <IntegrationCard
             icon={<SalesforceIcon size={24} />}
             name="Salesforce"
-            description="Kurumsal CRM ve müşteri yönetimi"
-            category="CRM"
+            description={isTr ? 'Kurumsal CRM ve müşteri yönetimi' : 'Enterprise CRM & customer management'}
+            category="crm"
             status="coming_soon"
           />
           <IntegrationCard
             icon={<PipedriveIcon size={24} />}
             name="Pipedrive"
-            description="Satış pipeline ve anlaşma yönetimi"
-            category="CRM"
+            description={isTr ? 'Satış pipeline ve anlaşma yönetimi' : 'Sales pipeline & deal management'}
+            category="crm"
             status="coming_soon"
           />
         </div>
@@ -241,14 +261,14 @@ export default function IntegrationsPage() {
       {/* ── Automation ───────────────────────────────────────────── */}
       {(activeCategory === 'all' || activeCategory === 'automation') && <section className="mb-8">
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
-          Automation
+          {sectionTitle('automation')}
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <IntegrationCard
             icon={<ZapierIcon size={24} />}
             name="Zapier"
-            description="5.000+ uygulama ile otomasyon bağlantısı"
-            category="AUTOMATION"
+            description={isTr ? '5.000+ uygulama ile otomasyon bağlantısı' : 'Automation with 5,000+ apps'}
+            category="automation"
             status="coming_soon"
           />
         </div>
@@ -257,14 +277,14 @@ export default function IntegrationsPage() {
       {/* ── Other ────────────────────────────────────────────────── */}
       {activeCategory === 'all' && <section className="mb-8">
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
-          Diğer
+          {sectionTitle('other')}
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <IntegrationCard
             icon={<Ban size={24} className="text-slate-500" />}
-            name="Hariç Numaralar"
-            description="AI yanıt vermesin istediğiniz numaralar"
-            category="OTHER"
+            name={isTr ? 'Hariç Numaralar' : 'Excluded Numbers'}
+            description={isTr ? 'AI yanıt vermesin istediğiniz numaralar' : 'Numbers you want the AI to skip'}
+            category="other"
             status="disconnected"
             onClick={() => openDrawer('excluded-phones')}
           />
@@ -281,7 +301,7 @@ export default function IntegrationsPage() {
       >
         <Suspense fallback={<DrawerSkeleton />}>
           <WhatsAppConfig
-            onStatusChange={(c, phone) => setWaStatus({ connected: c, label: phone ? `Bagli — ${phone}` : undefined })}
+            onStatusChange={(c, phone) => setWaStatus({ connected: c, label: phone ? `${isTr ? 'Bağlı' : 'Connected'} — ${phone}` : undefined })}
           />
         </Suspense>
       </ConfigDrawer>
@@ -328,7 +348,7 @@ export default function IntegrationsPage() {
       <ConfigDrawer
         open={activeDrawer === 'excluded-phones'}
         onClose={() => setActiveDrawer(null)}
-        title="Hariç Numaralar"
+        title={isTr ? 'Hariç Numaralar' : 'Excluded Numbers'}
         icon={<Ban size={18} className="text-slate-500" />}
       >
         <ExcludedPhonesConfig />
@@ -373,6 +393,7 @@ function DrawerSkeleton() {
   return (
     <div className="flex items-center gap-2 text-slate-400 text-sm py-8">
       <div className="w-4 h-4 border-2 border-slate-300 border-t-transparent rounded-full animate-spin" />
+      {/* Always Turkish here since it's a quick loading state */}
       Yükleniyor...
     </div>
   )
