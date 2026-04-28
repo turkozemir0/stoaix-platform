@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { MessageSquare, Phone, Instagram, Send, RefreshCw, Bot, User } from 'lucide-react'
+import { MessageSquare, Phone, Instagram, Send, RefreshCw, Bot, User, Search, Loader2 } from 'lucide-react'
 import { useIsDemo } from '@/lib/demo-context'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -129,6 +129,8 @@ const LEAD_STATUS_LABELS: Record<string, Record<string, string>> = {
   en: { all: 'All', new: 'New', in_progress: 'Qualifying', qualified: 'Appt.', handed_off: 'Hot Lead', nurturing: 'Nurturing', converted: 'Won', lost: 'Lost' },
 }
 
+const PAGE_SIZE = 20
+
 export default function InboxClient({ orgId, lang, currentUserId, userRole }: Props) {
   const isDemo = useIsDemo()
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -138,34 +140,90 @@ export default function InboxClient({ orgId, lang, currentUserId, userRole }: Pr
   const [channelFilter, setChannelFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [loadingConvs, setLoadingConvs] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [loadingMsgs, setLoadingMsgs] = useState(false)
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [handoffLoading, setHandoffLoading] = useState(false)
+
+  // Pagination + Search state
+  const [hasMore, setHasMore] = useState(false)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [searchInput, setSearchInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const supabase = useMemo(() => createClient(), [])
 
   const sl = LEAD_STATUS_LABELS[lang] ?? LEAD_STATUS_LABELS.tr
 
+  // ─── Search debounce ─────────────────────────────────────────────────
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchInput(value)
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    searchTimerRef.current = setTimeout(() => {
+      setSearchQuery(value.trim())
+    }, 400)
+  }, [])
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    }
+  }, [])
+
   // ─── Fetch conversation list ─────────────────────────────────────────────
-  const fetchConversations = useCallback(async () => {
-    setLoadingConvs(true)
+  const fetchConversations = useCallback(async (append = false, cursorOverride?: string | null) => {
+    if (append) {
+      setLoadingMore(true)
+    } else {
+      setLoadingConvs(true)
+    }
     try {
       const params = new URLSearchParams()
       if (channelFilter !== 'all') params.set('channel', channelFilter)
       if (statusFilter !== 'all') params.set('leadStatus', statusFilter)
+      if (searchQuery && searchQuery.length >= 2) params.set('search', searchQuery)
+      params.set('limit', String(PAGE_SIZE))
+
+      const useCursor = append ? (cursorOverride ?? nextCursor) : null
+      if (useCursor) params.set('cursor', useCursor)
+
       const res = await fetch(`/api/inbox?${params}`)
       if (!res.ok) { console.error(`[inbox] conversations fetch ${res.status}`); return }
       const json = await res.json()
-      if (json.conversations) setConversations(json.conversations)
+
+      if (append) {
+        setConversations(prev => [...prev, ...(json.conversations ?? [])])
+      } else {
+        setConversations(json.conversations ?? [])
+      }
+      setHasMore(json.hasMore ?? false)
+      setNextCursor(json.nextCursor ?? null)
     } catch (err) {
       console.error('[inbox] conversations fetch error:', err)
     } finally {
       setLoadingConvs(false)
+      setLoadingMore(false)
     }
-  }, [channelFilter, statusFilter])
+  }, [channelFilter, statusFilter, searchQuery, nextCursor])
 
-  useEffect(() => { fetchConversations() }, [fetchConversations])
+  // Reset + fetch when filters or search change
+  useEffect(() => {
+    setConversations([])
+    setNextCursor(null)
+    setHasMore(false)
+    fetchConversations(false, null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelFilter, statusFilter, searchQuery])
+
+  // ─── Load more handler ────────────────────────────────────────────────
+  const handleLoadMore = useCallback(() => {
+    if (!hasMore || loadingMore) return
+    fetchConversations(true)
+  }, [hasMore, loadingMore, fetchConversations])
 
   // ─── Fetch messages for selected conversation ────────────────────────────
   const fetchMessages = useCallback(async (convId: string) => {
@@ -253,12 +311,12 @@ export default function InboxClient({ orgId, lang, currentUserId, userRole }: Pr
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'conversations', filter: `organization_id=eq.${orgId}` },
-        () => { void fetchConversations() }
+        () => { void fetchConversations(false, null) }
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'conversations', filter: `organization_id=eq.${orgId}` },
-        () => { void fetchConversations() }
+        () => { void fetchConversations(false, null) }
       )
       .subscribe()
 
@@ -267,7 +325,7 @@ export default function InboxClient({ orgId, lang, currentUserId, userRole }: Pr
 
   // ─── Fallback: poll conversation list every 30s (silent) ─────────────────
   useEffect(() => {
-    const interval = setInterval(() => void fetchConversations(), 30_000)
+    const interval = setInterval(() => void fetchConversations(false, null), 30_000)
     return () => clearInterval(interval)
   }, [fetchConversations])
 
@@ -326,7 +384,7 @@ export default function InboxClient({ orgId, lang, currentUserId, userRole }: Pr
           ? { ...c, last_message: { conversation_id: selectedId, content: sentContent, role: 'assistant', created_at: sentAt } }
           : c
       ))
-      void fetchConversations()
+      void fetchConversations(false, null)
     } finally {
       setSending(false)
     }
@@ -354,12 +412,24 @@ export default function InboxClient({ orgId, lang, currentUserId, userRole }: Pr
               {lang === 'tr' ? 'Gelen Kutusu' : 'Inbox'}
             </h2>
             <button
-              onClick={fetchConversations}
+              onClick={() => fetchConversations(false, null)}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
               title={lang === 'tr' ? 'Yenile' : 'Refresh'}
             >
               <RefreshCw size={14} className={loadingConvs ? 'animate-spin' : ''} />
             </button>
+          </div>
+
+          {/* Search input */}
+          <div className="relative mb-2">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchInput}
+              onChange={e => handleSearchChange(e.target.value)}
+              placeholder={lang === 'tr' ? 'İsim veya numara ara...' : 'Search name or phone...'}
+              className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-400 placeholder:text-slate-400"
+            />
           </div>
 
           {/* Channel filter */}
@@ -405,42 +475,66 @@ export default function InboxClient({ orgId, lang, currentUserId, userRole }: Pr
             </div>
           ) : conversations.length === 0 ? (
             <div className="p-6 text-center text-slate-400 text-sm">
-              {lang === 'tr' ? 'Konuşma yok' : 'No conversations'}
+              {searchQuery
+                ? (lang === 'tr' ? 'Sonuç bulunamadı' : 'No results found')
+                : (lang === 'tr' ? 'Konuşma yok' : 'No conversations')}
             </div>
           ) : (
-            conversations.map(conv => (
-              <button
-                key={conv.id}
-                onClick={() => setSelectedId(conv.id)}
-                className={`w-full text-left px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors ${
-                  selectedId === conv.id ? 'bg-brand-50 border-l-2 border-l-brand-500' : ''
-                }`}
-              >
-                <div className="flex items-start justify-between gap-1 mb-1">
-                  <p className="text-sm font-medium text-slate-800 truncate flex-1">
-                    {conv.contact?.full_name ?? conv.contact?.phone ?? '—'}
-                  </p>
-                  <span className="text-[11px] text-slate-400 shrink-0">
-                    {timeAgo(conv.started_at, lang)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 mb-1">
-                  <ChannelBadge channel={conv.channel} />
-                  {conv.lead && <ScoreDot score={conv.lead.qualification_score} />}
-                  {conv.mode === 'human' && (
-                    <span className="text-[10px] bg-purple-50 text-purple-600 border border-purple-200 px-1.5 py-0.5 rounded font-medium">
-                      Human
+            <>
+              {conversations.map(conv => (
+                <button
+                  key={conv.id}
+                  onClick={() => setSelectedId(conv.id)}
+                  className={`w-full text-left px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors ${
+                    selectedId === conv.id ? 'bg-brand-50 border-l-2 border-l-brand-500' : ''
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-1 mb-1">
+                    <p className="text-sm font-medium text-slate-800 truncate flex-1">
+                      {conv.contact?.full_name ?? conv.contact?.phone ?? '—'}
+                    </p>
+                    <span className="text-[11px] text-slate-400 shrink-0">
+                      {timeAgo(conv.started_at, lang)}
                     </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <ChannelBadge channel={conv.channel} />
+                    {conv.lead && <ScoreDot score={conv.lead.qualification_score} />}
+                    {conv.mode === 'human' && (
+                      <span className="text-[10px] bg-purple-50 text-purple-600 border border-purple-200 px-1.5 py-0.5 rounded font-medium">
+                        Human
+                      </span>
+                    )}
+                  </div>
+                  {conv.last_message && (
+                    <p className="text-xs text-slate-400 truncate">
+                      {conv.last_message.role === 'assistant' ? '↑ ' : ''}
+                      {conv.last_message.content}
+                    </p>
                   )}
+                </button>
+              ))}
+
+              {/* Load More button */}
+              {hasMore && (
+                <div className="p-3 text-center">
+                  <button
+                    onClick={handleLoadMore}
+                    disabled={loadingMore}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 disabled:opacity-60 rounded-lg transition-colors"
+                  >
+                    {loadingMore ? (
+                      <>
+                        <Loader2 size={12} className="animate-spin" />
+                        {lang === 'tr' ? 'Yükleniyor…' : 'Loading…'}
+                      </>
+                    ) : (
+                      lang === 'tr' ? 'Daha Fazla Göster' : 'Load More'
+                    )}
+                  </button>
                 </div>
-                {conv.last_message && (
-                  <p className="text-xs text-slate-400 truncate">
-                    {conv.last_message.role === 'assistant' ? '↑ ' : ''}
-                    {conv.last_message.content}
-                  </p>
-                )}
-              </button>
-            ))
+              )}
+            </>
           )}
         </div>
       </div>
