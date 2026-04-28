@@ -62,15 +62,44 @@ function sanitizeString(value: unknown, maxLen: number): string {
   return value.slice(0, maxLen)
 }
 
+// ─── Honeypot field (invisible to humans, bots auto-fill it) ─────────────────
+
+const HONEYPOT_FIELD = '_hp_website'
+
+// ─── Cloudflare Turnstile server-side verification ──────────────────────────
+
+const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
+// Platform-wide Turnstile secret key (set in Vercel env vars)
+const TURNSTILE_SECRET = process.env.TURNSTILE_SECRET_KEY || ''
+
+async function verifyTurnstile(token: string, ip: string | null): Promise<boolean> {
+  if (!TURNSTILE_SECRET) return true // not configured → skip
+  try {
+    const params: Record<string, string> = { secret: TURNSTILE_SECRET, response: token }
+    if (ip) params.remoteip = ip
+    const res = await fetch(TURNSTILE_VERIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(params),
+    })
+    const data = await res.json() as { success: boolean }
+    return data.success === true
+  } catch {
+    // Turnstile down → allow through (don't block real users)
+    console.error('[form-submit] Turnstile verification error, allowing through')
+    return true
+  }
+}
+
+// ─── Body size limit ─────────────────────────────────────────────────────────
+
+const MAX_BODY_SIZE = 64 * 1024 // 64 KB
+
 // ─── OPTIONS (CORS preflight) ────────────────────────────────────────────────
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
 }
-
-// ─── Body size limit ─────────────────────────────────────────────────────────
-
-const MAX_BODY_SIZE = 64 * 1024 // 64 KB — a form submission should never exceed this
 
 // ─── POST /api/public/form-submit ────────────────────────────────────────────
 
@@ -102,21 +131,42 @@ export async function POST(request: NextRequest) {
     }
 
     const apiKey = headerKey || (body._api_key as string) || ''
-    // Remove _api_key from body so it doesn't leak into collected_data
     delete body._api_key
 
     if (!apiKey) {
       return corsJson({ error: 'missing_api_key', message: 'x-api-key header or _api_key body field required' }, 401)
     }
 
-    // 3. Rate limit
+    // 3. Honeypot check — if filled, silently succeed (don't reveal to bot)
+    if (body[HONEYPOT_FIELD]) {
+      return corsJson({ success: true, contact_id: '00000000-0000-0000-0000-000000000000', lead_id: '00000000-0000-0000-0000-000000000000' })
+    }
+
+    // 4. Turnstile verification (if token present or secret configured)
+    const turnstileToken = body['cf-turnstile-response'] || body._turnstile || ''
+    delete body['cf-turnstile-response']
+    delete body._turnstile
+
+    if (TURNSTILE_SECRET) {
+      // Secret is configured → Turnstile is required
+      if (!turnstileToken) {
+        return corsJson({ error: 'captcha_required', message: 'CAPTCHA verification is required' }, 403)
+      }
+      const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null
+      const valid = await verifyTurnstile(turnstileToken, clientIp)
+      if (!valid) {
+        return corsJson({ error: 'captcha_failed', message: 'CAPTCHA verification failed' }, 403)
+      }
+    }
+
+    // 5. Rate limit
     if (isRateLimited(apiKey)) {
       return corsJson({ error: 'rate_limited', message: 'Too many requests. Max 60/min per key.' }, 429)
     }
 
     const service = getServiceClient()
 
-    // 4. Look up org by API key
+    // 6. Look up org by API key
     const { data: orgs, error: orgErr } = await service
       .from('organizations')
       .select('id, status, channel_config')
@@ -128,24 +178,24 @@ export async function POST(request: NextRequest) {
 
     const org = orgs[0]
 
-    // 5. Check org status
+    // 7. Check org status
     if (org.status !== 'active') {
       return corsJson({ error: 'org_inactive', message: 'Organization is not active' }, 403)
     }
 
-    // 6. Check webhook active flag
+    // 8. Check webhook active flag
     const formConfig = (org.channel_config as any)?.website_forms
     if (!formConfig?.active) {
       return corsJson({ error: 'webhook_disabled', message: 'Website form webhook is disabled for this organization' }, 403)
     }
 
-    // 7. Entitlement check
+    // 9. Entitlement check
     const ent = await checkEntitlement(org.id, 'website_form_webhook')
     if (!ent.enabled) {
       return corsJson({ error: 'feature_not_available', message: 'Website form webhook is not available on your plan' }, 403)
     }
 
-    // 8. Apply field mapping
+    // 10. Apply field mapping
     const fieldMapping: Record<string, string> = formConfig.field_mapping ?? {}
     const reverseMapping: Record<string, string> = {}
     for (const [formField, targetField] of Object.entries(fieldMapping)) {
@@ -178,7 +228,7 @@ export async function POST(request: NextRequest) {
     const city = mapped.city || body.city || body.sehir || body.il || ''
     const country = mapped.country || body.country || body.ulke || ''
 
-    // 9. Normalize phone
+    // 11. Normalize phone
     const defaultCC = formConfig.default_country_code || '90'
     const phone = rawPhone ? normalizePhone(String(rawPhone), defaultCC) : null
 
@@ -187,7 +237,7 @@ export async function POST(request: NextRequest) {
       return corsJson({ error: 'missing_contact_info', message: 'At least phone or email is required' }, 400)
     }
 
-    // 10. Contact dedup (phone first, then email)
+    // 12. Contact dedup (phone first, then email)
     let contactId: string | null = null
 
     if (phone) {
@@ -212,7 +262,7 @@ export async function POST(request: NextRequest) {
       if (byEmail) contactId = byEmail.id
     }
 
-    // 11. Insert or use existing contact
+    // 13. Insert or use existing contact
     if (!contactId) {
       const { data: newContact, error: contactErr } = await service
         .from('contacts')
@@ -238,7 +288,7 @@ export async function POST(request: NextRequest) {
       contactId = newContact.id
     }
 
-    // 12. Insert lead (DB trigger will fire workflow)
+    // 14. Insert lead (DB trigger will fire workflow)
     const { data: newLead, error: leadErr } = await service
       .from('leads')
       .insert({
@@ -257,7 +307,7 @@ export async function POST(request: NextRequest) {
       return corsJson({ error: 'lead_create_failed', message: 'Could not create lead' }, 500)
     }
 
-    // 13. Success
+    // 15. Success
     return corsJson({
       success: true,
       contact_id: contactId,
