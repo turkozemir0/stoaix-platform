@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Plus, Loader2, Send, Trash2, RefreshCw, MessageSquare, Copy, Pencil, Zap } from 'lucide-react'
 import TemplateModal from '@/components/templates/TemplateModal'
 import { createClient } from '@/lib/supabase/client'
+import { useOrg } from '@/lib/org-context'
 import {
   TEMPLATE_PURPOSES,
   PURPOSE_LABELS,
@@ -173,6 +174,7 @@ function MyTemplateCard({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function TemplatesPage() {
+  const { orgId: ctxOrgId } = useOrg()
   const [tab, setTab]               = useState<'presets' | 'mine'>('presets')
   const [templates, setTemplates]   = useState<Template[]>([])
   const [presets, setPresets]       = useState<Template[]>([])
@@ -192,22 +194,19 @@ export default function TemplatesPage() {
 
   // Load org sector + language
   useEffect(() => {
+    if (!ctxOrgId) return
     const supabase = createClient()
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return
-      const { data: orgUser } = await supabase
-        .from('org_users').select('organization_id').eq('user_id', user.id).maybeSingle()
-      if (!orgUser) return
-      const { data: org } = await supabase
-        .from('organizations').select('sector, ai_persona').eq('id', orgUser.organization_id).single()
-      if (org?.sector) {
-        setOrgSector(org.sector)
-        setActiveSector(org.sector)
-      }
-      const lang = (org?.ai_persona as any)?.language
-      if (lang) setOrgLang(lang)
-    })
-  }, [])
+    supabase
+      .from('organizations').select('sector, ai_persona').eq('id', ctxOrgId).single()
+      .then(({ data: org }) => {
+        if (org?.sector) {
+          setOrgSector(org.sector)
+          setActiveSector(org.sector)
+        }
+        const lang = (org?.ai_persona as any)?.language
+        if (lang) setOrgLang(lang)
+      })
+  }, [ctxOrgId])
 
   // Sync template statuses from Meta, then reload
   const syncFromMeta = useCallback(async () => {

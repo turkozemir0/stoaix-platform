@@ -6,6 +6,7 @@ import BillingStatusBanner from '@/components/billing/BillingStatusBanner'
 import ConsentGuard from '@/components/ConsentGuard'
 import { LangProvider } from '@/lib/lang-context'
 import { DemoProvider } from '@/lib/demo-context'
+import { OrgProvider } from '@/lib/org-context'
 import DemoBanner from '@/components/DemoBanner'
 import type { Lang } from '@/lib/i18n'
 
@@ -39,6 +40,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <LangProvider initialLang={initialLang}>
       <DemoProvider isDemo={isDemo}>
+        <OrgProvider value={{ orgId, orgName, userRole, userId: user.id, isSuperAdmin: !!superAdmin }}>
         <div className="relative flex min-h-screen [min-height:100dvh] bg-transparent">
           <div className="pointer-events-none absolute inset-0 overflow-hidden">
             <div className="absolute left-[-12rem] top-[-10rem] h-[24rem] w-[24rem] rounded-full bg-sky-200/30 blur-3xl" />
@@ -57,6 +59,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             )}
           </main>
         </div>
+        </OrgProvider>
       </DemoProvider>
     </LangProvider>
   )

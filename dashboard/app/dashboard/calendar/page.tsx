@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { useOrg } from '@/lib/org-context'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -137,6 +138,7 @@ function timeAgo(iso: string) {
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 export default function CalendarPage() {
+  const { orgId: ctxOrgId } = useOrg()
   const today       = new Date()
   const [viewYear, setViewYear]   = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth())
@@ -276,21 +278,17 @@ export default function CalendarPage() {
   // Lead search for modal
   async function loadLeads(search = '') {
     setLeadsLoading(true)
+    if (!ctxOrgId) { setLeadsLoading(false); return }
     const sb = createClient()
-    const { data: { user } } = await sb.auth.getUser()
-    if (!user) { setLeadsLoading(false); return }
-    const { data: orgUser } = await sb
-      .from('org_users').select('organization_id').eq('user_id', user.id).maybeSingle()
-    if (!orgUser) { setLeadsLoading(false); return }
     let query = sb.from('leads')
       .select('id, qualification_score, contacts(full_name, phone)')
-      .eq('organization_id', orgUser.organization_id)
+      .eq('organization_id', ctxOrgId)
       .not('status', 'in', '("converted","lost")')
       .order('updated_at', { ascending: false })
       .limit(20)
     if (search) {
       const { data: cm } = await sb.from('contacts').select('id')
-        .eq('organization_id', orgUser.organization_id)
+        .eq('organization_id', ctxOrgId)
         .ilike('full_name', `%${search}%`).limit(20)
       const ids = (cm ?? []).map((c: any) => c.id)
       if (!ids.length) { setLeads([]); setLeadsLoading(false); return }

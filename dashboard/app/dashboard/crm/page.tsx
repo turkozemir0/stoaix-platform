@@ -14,6 +14,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import KanbanBoard from '../leads/KanbanBoard'
 import { useIsDemo } from '@/lib/demo-context'
+import { useOrg } from '@/lib/org-context'
 import PipelineSelector from '@/components/crm/PipelineSelector'
 import StatCard from '@/components/StatCard'
 import type { Pipeline } from '@/lib/types'
@@ -809,24 +810,8 @@ function CRMPageInner() {
   const [activeTab, setActiveTab] = useState<CRMTab>(
     ['leads', 'leadforms', 'proposals', 'followup'].includes(initialTab) ? initialTab : 'leads'
   )
-  const [orgId, setOrgId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    async function loadOrg() {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: orgUser } = await supabase
-        .from('org_users')
-        .select('organization_id')
-        .eq('user_id', user.id)
-        .maybeSingle()
-      if (orgUser) setOrgId(orgUser.organization_id)
-      setLoading(false)
-    }
-    loadOrg()
-  }, [])
+  const { orgId } = useOrg()
+  const loading = false
 
   const tabs: { key: CRMTab; label: string }[] = [
     { key: 'leads',     label: 'Leads' },

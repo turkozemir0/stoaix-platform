@@ -11,6 +11,7 @@ import {
 import { useSearchParams } from 'next/navigation'
 import AgentTestPanel from '@/components/agent/AgentTestPanel'
 import { useIsDemo } from '@/lib/demo-context'
+import { useOrg } from '@/lib/org-context'
 import { getWhatsappTemplates, getVoiceTemplates } from '@/lib/agent-templates'
 import type { AgentTemplate } from '@/lib/agent-templates'
 import KnowledgeClient from '../knowledge/KnowledgeClient'
@@ -183,6 +184,7 @@ function AgentPageInner() {
   const initialPageTab = searchParams.get('tab') === 'knowledge' ? 'knowledge' : 'agent'
   const [pageTab, setPageTab] = useState<'agent' | 'knowledge'>(initialPageTab as 'agent' | 'knowledge')
   const isDemo = useIsDemo()
+  const { orgId: ctxOrgId, isSuperAdmin } = useOrg()
 
   const [orgId, setOrgId] = useState('')
   const [loading, setLoading] = useState(true)
@@ -253,19 +255,11 @@ function AgentPageInner() {
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.auth.getUser().then(async ({ data }) => {
-      if (!data.user) return
+    ;(async () => {
+      let resolvedOrgId = ctxOrgId ?? ''
 
-      let resolvedOrgId = ''
-      const { data: ou } = await supabase
-        .from('org_users')
-        .select('organization_id')
-        .eq('user_id', data.user.id)
-        .maybeSingle()
-
-      if (ou) {
-        resolvedOrgId = ou.organization_id
-      } else {
+      // Super admin without org — fall back to first active org
+      if (!resolvedOrgId && isSuperAdmin) {
         const { data: firstOrg } = await supabase
           .from('organizations')
           .select('id')
@@ -411,8 +405,8 @@ function AgentPageInner() {
       } catch {}
 
       setLoading(false)
-    })
-  }, [])
+    })()
+  }, [ctxOrgId, isSuperAdmin])
 
 
   async function handleSave() {

@@ -12,6 +12,7 @@ import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useT } from '@/lib/lang-context'
 import { useIsDemo } from '@/lib/demo-context'
+import { useOrg } from '@/lib/org-context'
 import DunningBanner from '@/components/billing/DunningBanner'
 import TrialBanner from '@/components/billing/TrialBanner'
 import CancelSubscriptionModal from '@/components/billing/CancelSubscriptionModal'
@@ -837,8 +838,8 @@ interface Ticket {
 function SupportSection() {
   const isDemo = useIsDemo()
   const t = useT()
+  const { orgId } = useOrg()
   const [tickets, setTickets] = useState<Ticket[]>([])
-  const [orgId, setOrgId] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [subject, setSubject] = useState('')
@@ -849,29 +850,18 @@ function SupportSection() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!orgId) { setLoading(false); return }
     const supabase = createClient()
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) return
-      supabase
-        .from('org_users')
-        .select('organization_id')
-        .eq('user_id', data.user.id)
-        .maybeSingle()
-        .then(({ data: ou }) => {
-          if (!ou) { setLoading(false); return }
-          setOrgId(ou.organization_id)
-          supabase
-            .from('support_tickets')
-            .select('id, subject, message, status, priority, admin_notes, created_at')
-            .eq('organization_id', ou.organization_id)
-            .order('created_at', { ascending: false })
-            .then(({ data: rows }) => {
-              setTickets(rows ?? [])
-              setLoading(false)
-            })
-        })
-    })
-  }, [])
+    supabase
+      .from('support_tickets')
+      .select('id, subject, message, status, priority, admin_notes, created_at')
+      .eq('organization_id', orgId)
+      .order('created_at', { ascending: false })
+      .then(({ data: rows }) => {
+        setTickets(rows ?? [])
+        setLoading(false)
+      })
+  }, [orgId])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
