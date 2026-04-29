@@ -1,17 +1,19 @@
 -- =============================================================================
--- Workflow Trigger Fix — Hardcode URL + Secret
--- Supabase Cloud'da ALTER DATABASE SET izni yok; direkt hardcode ediyoruz.
+-- Secret Rotation — Workflow trigger fonksiyonlarını yeni secret ile güncelle
+-- Eski secret GitHub'a sızmıştı, rotate edildi.
+-- =============================================================================
+-- Bu dosyayı Supabase SQL Editor'dan çalıştır.
+-- NOT: Yeni secret'ı bu dosyaya YAZMA, Supabase SQL Editor'a yapıştırırken
+--      <NEW_SECRET> yerine Vercel'deki WORKFLOW_INTERNAL_SECRET değerini koy.
 -- =============================================================================
 
--- ADIM 1: Bu dosyayı çalıştırmadan önce aşağıdaki sabit değerleri belirle:
---   _DASHBOARD_URL : https://platform.stoaix.com
---   _INTERNAL_SECRET : <VERCEL_ENV_VAR>
---   Aynı secret değerini Vercel'e WORKFLOW_INTERNAL_SECRET olarak ekle.
-
--- ── fn_notify_workflow_lead ───────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.fn_notify_workflow_lead()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
+  IF (NEW.collected_data->>'_bulk_import') = 'true' THEN
+    RETURN NEW;
+  END IF;
+
   PERFORM net.http_post(
     url     := 'https://platform.stoaix.com/api/workflows/process-trigger',
     body    := json_build_object(
@@ -20,7 +22,7 @@ BEGIN
       'ref_id', NEW.id,
       'data',   row_to_json(NEW)
     )::text,
-    headers := '{"Content-Type":"application/json","x-internal-secret":"REPLACE_WITH_YOUR_SECRET"}'::jsonb
+    headers := '{"Content-Type":"application/json","x-internal-secret":"<NEW_SECRET>"}'::jsonb
   );
   RETURN NEW;
 EXCEPTION WHEN OTHERS THEN
@@ -28,7 +30,6 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
--- ── fn_notify_workflow_appointment ───────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.fn_notify_workflow_appointment()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
@@ -40,7 +41,7 @@ BEGIN
       'ref_id', NEW.id,
       'data',   row_to_json(NEW)
     )::text,
-    headers := '{"Content-Type":"application/json","x-internal-secret":"REPLACE_WITH_YOUR_SECRET"}'::jsonb
+    headers := '{"Content-Type":"application/json","x-internal-secret":"<NEW_SECRET>"}'::jsonb
   );
   RETURN NEW;
 EXCEPTION WHEN OTHERS THEN
@@ -48,7 +49,6 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
--- ── fn_notify_workflow_appointment_status ────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.fn_notify_workflow_appointment_status()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
@@ -70,7 +70,7 @@ BEGIN
       'ref_id', NEW.id,
       'data',   row_to_json(NEW)
     )::text,
-    headers := '{"Content-Type":"application/json","x-internal-secret":"REPLACE_WITH_YOUR_SECRET"}'::jsonb
+    headers := '{"Content-Type":"application/json","x-internal-secret":"<NEW_SECRET>"}'::jsonb
   );
   RETURN NEW;
 EXCEPTION WHEN OTHERS THEN

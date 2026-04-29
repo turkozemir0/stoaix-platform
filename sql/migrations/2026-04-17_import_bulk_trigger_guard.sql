@@ -20,7 +20,7 @@ BEGIN
       'ref_id', NEW.id,
       'data',   row_to_json(NEW)
     )::text,
-    headers := '{"Content-Type":"application/json","x-internal-secret":"Kw9XpdxedhX1VoijU7JA"}'::jsonb
+    headers := '{"Content-Type":"application/json","x-internal-secret":"<VERCEL_ENV_VAR>"}'::jsonb
   );
   RETURN NEW;
 EXCEPTION WHEN OTHERS THEN
