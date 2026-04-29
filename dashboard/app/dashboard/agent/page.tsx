@@ -154,12 +154,10 @@ const VOICE_MODEL_OPTIONS = [
   { value: 'claude-sonnet-4-6',        label: 'Claude Sonnet 4.6 (Önerilen)' },
   { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (Hızlı)' },
   { value: 'gpt-4o-mini',              label: 'GPT-4o Mini' },
-  { value: 'gpt-4o',                   label: 'GPT-4o' },
 ]
 
 const CHAT_MODEL_OPTIONS = [
   { value: 'gpt-4o-mini',              label: 'GPT-4o Mini (Önerilen)' },
-  { value: 'gpt-4o',                   label: 'GPT-4o' },
   { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
   { value: 'claude-sonnet-4-6',        label: 'Claude Sonnet 4.6' },
 ]

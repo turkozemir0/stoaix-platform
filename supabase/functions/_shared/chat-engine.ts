@@ -397,15 +397,22 @@ async function runChatEngine(
   // Build system prompt — guardrails in org's language
   const orgLang = (org as any).default_language as string | undefined
   const persona      = org.ai_persona as Record<string, string>
-  const systemPrompt = [
+
+  // Stable part — same per org, cacheable by Claude prompt caching
+  const stablePrompt = [
     playbook.system_prompt_template,
     kbContext ? `\n\n[BİLGİ TABANI]\n${kbContext}` : '',
-    profileSection,
     `\nOrganizasyon: ${org.name}`,
     persona?.persona_name ? `\nSenin adın: ${persona.persona_name}` : '',
     fewShotSection,
     getChatGuardrails(orgLang),
   ].filter(Boolean).join('')
+
+  // Dynamic part — changes per conversation (customer profile)
+  const dynamicPrompt = profileSection || ''
+
+  // Full system prompt for OpenAI (single string, auto-cached by OpenAI)
+  const systemPrompt = dynamicPrompt ? `${stablePrompt}${dynamicPrompt}` : stablePrompt
 
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
     ...history.slice(-(MAX_HISTORY * 2 - 1)),
@@ -425,7 +432,10 @@ async function runChatEngine(
         body: JSON.stringify({
           model,
           max_tokens: 240,
-          system: systemPrompt,
+          system: [
+            { type: 'text', text: stablePrompt, cache_control: { type: 'ephemeral' } },
+            ...(dynamicPrompt ? [{ type: 'text', text: dynamicPrompt }] : []),
+          ],
           messages,
         }),
       })

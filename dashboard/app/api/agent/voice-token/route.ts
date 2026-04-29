@@ -9,7 +9,7 @@ const LIVEKIT_URL    = process.env.LIVEKIT_URL!
 const LIVEKIT_KEY    = process.env.LIVEKIT_API_KEY!
 const LIVEKIT_SECRET = process.env.LIVEKIT_API_SECRET!
 
-const ALLOWED_MODELS = ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'gpt-4o-mini', 'gpt-4o']
+const ALLOWED_MODELS = ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'gpt-4o-mini']
 
 const ALLOWED_SCENARIOS = [
   'first_contact', 'warm_followup', 'appt_confirm',

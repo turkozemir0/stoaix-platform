@@ -4,7 +4,7 @@ import { createClient as sbAdmin } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 import { isDemoOrg, getDemoRef, checkDemoRateLimit, incrementDemoUsage } from '@/lib/demo-guard'
 
-const ALLOWED_MODELS = ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'gpt-4o-mini', 'gpt-4o']
+const ALLOWED_MODELS = ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'gpt-4o-mini']
 
 function getServiceClient() {
   return sbAdmin(
@@ -22,7 +22,6 @@ const MODEL_COSTS: Record<string, { input: number; output: number }> = {
   'claude-sonnet-4-6':         { input: 3.00,  output: 15.00 },
   'claude-haiku-4-5-20251001': { input: 1.00,  output: 5.00  },
   'gpt-4o-mini':               { input: 0.15,  output: 0.60  },
-  'gpt-4o':                    { input: 2.50,  output: 10.00 },
 }
 
 export async function POST(req: NextRequest) {

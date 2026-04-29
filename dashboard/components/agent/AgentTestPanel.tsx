@@ -32,7 +32,6 @@ const MODELS = [
   { id: 'claude-sonnet-4-6',         label: 'Claude Sonnet 4.6',  costPerMin: 0.0082 },
   { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5',   costPerMin: 0.0056 },
   { id: 'gpt-4o-mini',               label: 'GPT-4o Mini',         costPerMin: 0.0045 },
-  { id: 'gpt-4o',                    label: 'GPT-4o',              costPerMin: 0.0070 },
 ]
 
 // ─── Types ────────────────────────────────────────────────────────────────────
