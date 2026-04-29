@@ -14,7 +14,8 @@
     "eval:dental": "cd ../evals && npx promptfoo eval -c promptfoo-dental.yaml",
     "eval:hair": "cd ../evals && npx promptfoo eval -c promptfoo-hair.yaml",
     "eval:medestetik": "cd ../evals && npx promptfoo eval -c promptfoo-medestetik.yaml",
-    "eval:all-sectors": "cd ../evals && npx promptfoo eval -c promptfoo-all-sectors.yaml"
+    "eval:all-sectors": "cd ../evals && npx promptfoo eval -c promptfoo-all-sectors.yaml",
+    "eval:estelife": "cd ../evals && npx promptfoo eval -c promptfoo-estelife.yaml"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
