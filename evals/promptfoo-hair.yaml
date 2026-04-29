@@ -33,4 +33,5 @@ tests:
   - file://tests/core/format.yaml
   - file://tests/core/red-team.yaml
   - file://tests/core/outbound.yaml
+  - file://tests/core/conversation-quality.yaml
   - file://tests/sectors/hair-transplant.yaml

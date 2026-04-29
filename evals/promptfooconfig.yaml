@@ -39,6 +39,7 @@ tests:
   - file://tests/06-outbound-scenarios.yaml
   - file://tests/07-chat-specific.yaml
   - file://tests/08-red-team.yaml
+  - file://tests/core/conversation-quality.yaml
 
 # ─── Sektör bazlı eval çalıştırma ───
 # npx promptfoo eval -c promptfoo-dental.yaml

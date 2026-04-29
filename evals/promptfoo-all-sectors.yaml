@@ -37,6 +37,7 @@ tests:
   - file://tests/core/format.yaml
   - file://tests/core/red-team.yaml
   - file://tests/core/outbound.yaml
+  - file://tests/core/conversation-quality.yaml
   # Sektör testleri (her biri kendi clinicType'ını set eder)
   - file://tests/sectors/dental.yaml
   - file://tests/sectors/hair-transplant.yaml

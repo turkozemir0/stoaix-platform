@@ -31,4 +31,5 @@ evaluateOptions:
   delay: 1000
 
 tests:
+  - file://tests/core/conversation-quality.yaml
   - file://tests/sectors/estelife-hair.yaml
