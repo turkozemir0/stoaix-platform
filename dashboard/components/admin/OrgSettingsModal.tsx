@@ -82,6 +82,8 @@ interface OrgDetail {
   name: string
   channel_config: ChannelConfig
   crm_config: CrmConfig
+  default_language?: string
+  timezone?: string
   _plan?: string
 }
 
@@ -169,7 +171,25 @@ const FORM_CC_OPTIONS = [
   { code: '971', label: 'AE (+971)' },
 ]
 
+const ORG_LANGUAGE_OPTIONS = [
+  { code: 'tr', label: 'Türkçe' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'en', label: 'English' },
+  { code: 'ar', label: 'العربية' },
+  { code: 'fr', label: 'Français' },
+  { code: 'es', label: 'Español' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'nl', label: 'Nederlands' },
+]
+
+const ORG_TIMEZONE_OPTIONS = [
+  { group: 'Avrupa', zones: ['Europe/Istanbul', 'Europe/Berlin', 'Europe/London', 'Europe/Paris', 'Europe/Moscow'] },
+  { group: 'Orta Doğu', zones: ['Asia/Dubai', 'Asia/Riyadh', 'Asia/Baghdad'] },
+  { group: 'Amerika', zones: ['America/New_York', 'America/Chicago', 'America/Los_Angeles'] },
+]
+
 const TABS = [
+  { key: 'general',   label: 'Genel' },
   { key: 'channels',  label: 'Kanallar & Mesajlaşma' },
   { key: 'sip',       label: 'Ses / SIP' },
   { key: 'crm',       label: 'Dış CRM' },
@@ -235,7 +255,7 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
   const [loading, setLoading]     = useState(true)
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
-  const [activeTab, setActiveTab] = useState<'channels' | 'sip' | 'crm' | 'calendar' | 'forms'>('channels')
+  const [activeTab, setActiveTab] = useState<'general' | 'channels' | 'sip' | 'crm' | 'calendar' | 'forms'>('general')
 
   // ── Channels state ──
   const [waActive, setWaActive]       = useState(false)
@@ -289,6 +309,10 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
   const [calDsApiKey, setCalDsApiKey]               = useState('')
   const [calDsClinicId, setCalDsClinicId]           = useState('')
 
+  // ── General org state ──
+  const [orgLang, setOrgLang]       = useState('tr')
+  const [orgTimezone, setOrgTimezone] = useState('Europe/Berlin')
+
   // ── Web Forms state ──
   const [formsActive, setFormsActive]           = useState(false)
   const [formsApiKey, setFormsApiKey]           = useState('')
@@ -300,6 +324,10 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
   // ── Load ──
   useEffect(() => {
     fetch(`/api/admin/orgs/${orgId}`).then(r => r.json()).then((data: OrgDetail) => {
+      // general
+      setOrgLang(data.default_language ?? 'tr')
+      setOrgTimezone(data.timezone ?? 'Europe/Berlin')
+
       const cc = (data.channel_config ?? {}) as Partial<ChannelConfig>
 
       // channels
@@ -512,7 +540,7 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
     const res = await fetch(`/api/admin/orgs/${orgId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel_config: channelConfig, crm_config: crmConfig }),
+      body: JSON.stringify({ channel_config: channelConfig, crm_config: crmConfig, default_language: orgLang, timezone: orgTimezone }),
     })
 
       if (!res.ok) { const d = await res.json(); setError(d.error || 'Kayıt başarısız'); return }
@@ -558,6 +586,47 @@ export default function OrgSettingsModal({ orgId, orgName, onClose, onSaved }: P
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+
+              {/* ── GENERAL TAB ── */}
+              {activeTab === 'general' && (
+                <div className="space-y-5">
+                  <SectionLabel>Genel Ayarlar</SectionLabel>
+
+                  {/* Language */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1.5">Varsayılan Dil</label>
+                    <select
+                      value={orgLang}
+                      onChange={e => setOrgLang(e.target.value)}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    >
+                      {ORG_LANGUAGE_OPTIONS.map(l => (
+                        <option key={l.code} value={l.code}>{l.label}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-slate-400 mt-1">AI asistanın ve sistem mesajlarının varsayılan dili</p>
+                  </div>
+
+                  {/* Timezone */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1.5">Saat Dilimi</label>
+                    <select
+                      value={orgTimezone}
+                      onChange={e => setOrgTimezone(e.target.value)}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    >
+                      {ORG_TIMEZONE_OPTIONS.map(g => (
+                        <optgroup key={g.group} label={g.group}>
+                          {g.zones.map(z => (
+                            <option key={z} value={z}>{z}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                    <p className="text-xs text-slate-400 mt-1">İş akışları ve randevu zamanlaması için kullanılır</p>
+                  </div>
+                </div>
+              )}
 
               {/* ── CHANNELS TAB ── */}
               {activeTab === 'channels' && (

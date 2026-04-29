@@ -1496,18 +1496,160 @@ document.querySelector('#YOUR_FORM_ID').addEventListener('submit', function(e) {
   )
 }
 
+// ─── Language & Timezone constants ───────────────────────────────────────────
+
+const LANGUAGE_OPTIONS = [
+  { code: 'tr', label: 'Türkçe' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'en', label: 'English' },
+  { code: 'ar', label: 'العربية' },
+  { code: 'fr', label: 'Français' },
+  { code: 'es', label: 'Español' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'nl', label: 'Nederlands' },
+]
+
+const TIMEZONE_OPTIONS = [
+  { group: 'Avrupa', zones: ['Europe/Istanbul', 'Europe/Berlin', 'Europe/London', 'Europe/Paris', 'Europe/Moscow'] },
+  { group: 'Orta Doğu', zones: ['Asia/Dubai', 'Asia/Riyadh', 'Asia/Baghdad'] },
+  { group: 'Amerika', zones: ['America/New_York', 'America/Chicago', 'America/Los_Angeles'] },
+]
+
+// ─── General Section ─────────────────────────────────────────────────────────
+
+function GeneralSection() {
+  const { userRole } = useOrg()
+  const isDemo = useIsDemo()
+  const readOnly = userRole === 'muhasebe'
+
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [lang, setLang] = useState('tr')
+  const [tz, setTz] = useState('Europe/Berlin')
+  const [toast, setToast] = useState('')
+
+  useEffect(() => {
+    fetch('/api/settings/general')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d) {
+          setLang(d.default_language ?? 'tr')
+          setTz(d.timezone ?? 'Europe/Berlin')
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function handleSave() {
+    if (isDemo || readOnly) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/settings/general', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ default_language: lang, timezone: tz }),
+      })
+      if (res.ok) {
+        setToast('Ayarlar kaydedildi')
+        setTimeout(() => setToast(''), 3000)
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <div className="animate-pulse space-y-4">
+          <div className="h-4 w-32 bg-slate-100 rounded" />
+          <div className="h-10 w-64 bg-slate-100 rounded" />
+          <div className="h-4 w-32 bg-slate-100 rounded" />
+          <div className="h-10 w-64 bg-slate-100 rounded" />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-6">
+      <div className="flex items-center gap-2 mb-1">
+        <Globe size={18} className="text-brand-600" />
+        <h2 className="text-base font-semibold text-slate-800">Genel Ayarlar</h2>
+      </div>
+
+      {/* Language */}
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Varsayılan Dil</label>
+        <select
+          value={lang}
+          onChange={e => setLang(e.target.value)}
+          disabled={readOnly}
+          className="w-full max-w-xs border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
+        >
+          {LANGUAGE_OPTIONS.map(l => (
+            <option key={l.code} value={l.code}>{l.label}</option>
+          ))}
+        </select>
+        <p className="text-xs text-slate-400 mt-1">AI asistanın ve sistem mesajlarının varsayılan dili</p>
+      </div>
+
+      {/* Timezone */}
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Saat Dilimi</label>
+        <select
+          value={tz}
+          onChange={e => setTz(e.target.value)}
+          disabled={readOnly}
+          className="w-full max-w-xs border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
+        >
+          {TIMEZONE_OPTIONS.map(g => (
+            <optgroup key={g.group} label={g.group}>
+              {g.zones.map(z => (
+                <option key={z} value={z}>{z}</option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <p className="text-xs text-slate-400 mt-1">İş akışları ve randevu zamanlaması için kullanılır</p>
+      </div>
+
+      {/* Save */}
+      {!readOnly && (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+            Kaydet
+          </button>
+          {toast && (
+            <span className="text-sm text-emerald-600 flex items-center gap-1">
+              <Check size={14} /> {toast}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Settings Page ───────────────────────────────────────────────────────
 
-type SettingsTab = 'moduller' | 'billing' | 'pipelinelar' | 'formwebhook' | 'support'
+type SettingsTab = 'genel' | 'moduller' | 'billing' | 'pipelinelar' | 'formwebhook' | 'support'
 
 function SettingsPageInner() {
   const searchParams = useSearchParams()
-  const initialTab = (searchParams.get('tab') as SettingsTab) ?? 'moduller'
+  const initialTab = (searchParams.get('tab') as SettingsTab) ?? 'genel'
   const [activeTab, setActiveTab] = useState<SettingsTab>(
-    ['moduller', 'billing', 'pipelinelar', 'formwebhook', 'support'].includes(initialTab) ? initialTab : 'moduller'
+    ['genel', 'moduller', 'billing', 'pipelinelar', 'formwebhook', 'support'].includes(initialTab) ? initialTab : 'genel'
   )
 
   const tabs: { key: SettingsTab; label: string }[] = [
+    { key: 'genel',       label: 'Genel' },
     { key: 'moduller',    label: 'Modüller' },
     { key: 'billing',     label: 'Plan & Fatura' },
     { key: 'pipelinelar', label: 'Pipelinelar' },
@@ -1539,6 +1681,7 @@ function SettingsPageInner() {
         ))}
       </div>
 
+      {activeTab === 'genel'       && <GeneralSection />}
       {activeTab === 'moduller'    && <ModulesSection />}
       {activeTab === 'billing'     && <BillingSection />}
       {activeTab === 'pipelinelar' && <PipelineSettings />}
