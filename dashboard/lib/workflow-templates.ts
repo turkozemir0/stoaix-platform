@@ -377,7 +377,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     n8n_workflow_id: 'payment-followup-chat',
     config_fields: [
       { key: 'delay_days',  label: 'Ödeme tarihinden kaç gün sonra?', type: 'number', default: 3, unit: 'gün' },
-      { key: 'message_template', label: 'WhatsApp Template', type: 'template_picker', default: '', description: 'Meta\'da onaylı template seçin', template_purpose: 'followup' },
+      { key: 'message_template', label: 'WhatsApp Template', type: 'template_picker', default: '', description: 'Meta\'da onaylı template seçin', template_purpose: 'payment_followup' },
     ],
     steps_summary: [
       'Ödeme tarihinden {{delay_days}} gün sonra WA hatırlatması',

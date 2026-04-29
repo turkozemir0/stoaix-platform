@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Loader2, Send, Trash2, RefreshCw, MessageSquare, Copy, Pencil, Zap } from 'lucide-react'
+import { Plus, Loader2, Send, Trash2, RefreshCw, MessageSquare, Copy, Pencil, Zap, Star } from 'lucide-react'
 import TemplateModal from '@/components/templates/TemplateModal'
 import { createClient } from '@/lib/supabase/client'
 import { useOrg } from '@/lib/org-context'
@@ -24,6 +24,7 @@ interface Template {
   components:       any[]
   status:           TemplateStatus
   is_preset:        boolean
+  is_recommended:   boolean
   sector:           string | null
   purpose:          string | null
   meta_template_id: string | null
@@ -57,6 +58,12 @@ function PresetCard({ preset, onUse }: { preset: Template; onUse: (id: string) =
         <div className="min-w-0">
           <p className="font-mono text-xs text-slate-500 truncate">{preset.name}</p>
           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            {preset.is_recommended && (
+              <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-medium flex items-center gap-1 shrink-0">
+                <Star size={8} fill="currentColor" />
+                Sistem Önerisi
+              </span>
+            )}
             {preset.sector && (
               <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
                 {SECTOR_LABELS[preset.sector] ?? preset.sector}
@@ -302,10 +309,26 @@ export default function TemplatesPage() {
   })
 
   const presetsByPurpose = TEMPLATE_PURPOSES.reduce((acc, purpose) => {
-    const items = filteredPresets.filter((p) => p.purpose === purpose)
+    const items = filteredPresets
+      .filter((p) => p.purpose === purpose)
+      .sort((a, b) => (b.is_recommended ? 1 : 0) - (a.is_recommended ? 1 : 0))
     if (items.length > 0) acc[purpose] = items
     return acc
   }, {} as Record<string, Template[]>)
+
+  // ── Reactivation step sub-grouping helpers ──
+  const STEP_LABELS: Record<number, string> = {
+    1: 'Adım 1 — Nazik Hatırlatma',
+    2: 'Adım 2 — Değer Hatırlatma',
+    3: 'Adım 3 — Sosyal Kanıt',
+    4: 'Adım 4 — Özel Teklif',
+    5: 'Adım 5 — Son Bildirim',
+  }
+
+  function getStepNumber(name: string): number | null {
+    const m = name.match(/_reactivation_s(\d+)_/)
+    return m ? parseInt(m[1]) : null
+  }
 
   // ── My Templates filtering: by purpose ──
   const filteredMyTemplates = activePurpose === 'all'
@@ -465,6 +488,54 @@ export default function TemplatesPage() {
                 const items = presetsByPurpose[purpose]
                 if (!items) return null
                 const workflows = PURPOSE_WORKFLOW_NAMES[purpose] ?? []
+
+                // ── Reactivation step sub-grouping ──
+                if (purpose === 'reengagement') {
+                  const stepGroups: Record<number, Template[]> = {}
+                  const general: Template[] = []
+                  items.forEach((p) => {
+                    const step = getStepNumber(p.name)
+                    if (step) {
+                      if (!stepGroups[step]) stepGroups[step] = []
+                      stepGroups[step].push(p)
+                    } else {
+                      general.push(p)
+                    }
+                  })
+                  const stepNums = Object.keys(stepGroups).map(Number).sort((a, b) => a - b)
+
+                  return (
+                    <div key={purpose}>
+                      <div className="flex items-center gap-2 mb-3 flex-wrap">
+                        <h3 className="text-sm font-semibold text-slate-700">
+                          {PURPOSE_LABELS[purpose] ?? purpose}
+                        </h3>
+                        {workflows.map((wf) => (
+                          <span key={wf} className="inline-flex items-center gap-1 text-[10px] bg-brand-50 text-brand-600 border border-brand-100 rounded-full px-2 py-0.5">
+                            <Zap size={8} />{wf}
+                          </span>
+                        ))}
+                      </div>
+                      {general.length > 0 && (
+                        <div className="mb-4">
+                          <p className="text-xs text-slate-400 font-medium mb-2">Genel</p>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {general.map((p) => <PresetCard key={p.id} preset={p} onUse={usePreset} />)}
+                          </div>
+                        </div>
+                      )}
+                      {stepNums.map((step) => (
+                        <div key={step} className="mb-4">
+                          <p className="text-xs text-slate-400 font-medium mb-2">{STEP_LABELS[step] ?? `Adım ${step}`}</p>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {stepGroups[step].map((p) => <PresetCard key={p.id} preset={p} onUse={usePreset} />)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                }
+
                 return (
                   <div key={purpose}>
                     <div className="flex items-center gap-2 mb-3 flex-wrap">
